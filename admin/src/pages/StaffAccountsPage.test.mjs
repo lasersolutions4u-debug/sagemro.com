@@ -50,8 +50,17 @@ test('password and staff account fields have visible associated labels', () => {
     assert.match(app, new RegExp(`<label[^>]*htmlFor="${id}"`));
     assert.match(app, new RegExp(`<input[^>]*id="${id}"`));
   }
-  for (const id of ['staff-display-name', 'staff-login', 'staff-phone', 'staff-role', 'staff-market']) {
+  for (const id of ['staff-display-name', 'staff-login', 'staff-phone', 'staff-role']) {
     assert.match(page, new RegExp(`<label[^>]*htmlFor="${id}"`));
     assert.match(page, new RegExp(`<(?:input|select)[^>]*id="${id}"`));
   }
+});
+
+test('new staff inherit the current portal market without a selectable market field', () => {
+  assert.match(page, /market_scope: runtimeConfig\.market/);
+  assert.doesNotMatch(page, /<select[^>]*id="staff-market"/);
+  assert.match(page, /id="staff-market"[^>]*readOnly/);
+  assert.match(page, /htmlFor="staff-market"/);
+  assert.match(page, /Automatically assigned to this portal/);
+  assert.match(page, /自动归属当前后台/);
 });

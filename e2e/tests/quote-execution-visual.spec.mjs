@@ -6,6 +6,9 @@ import {
   dispatchWorkOrder,
   loginAdmin,
   onboardEngineer,
+  createBusinessOrderSession,
+  businessScope,
+  verifyFirstBusinessReceipt,
 } from '../support/journeys.mjs';
 import { e2eRuntime } from '../support/runtime.mjs';
 import {
@@ -175,6 +178,7 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
   let engineerContext;
   let customerContext;
   let adminContext;
+  let business;
 
   try {
     const onboarding = await test.step('onboard engineer', () => onboardEngineer({ browser, runtime }));
@@ -194,17 +198,7 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
     adminContext = await browser.newContext();
     const adminPage = await adminContext.newPage();
     adminPage.setDefaultTimeout(7_000);
-    await test.step('dispatch work order', async () => {
-      await loginAdmin(adminPage, runtime);
-      await dispatchWorkOrder({ page: adminPage, orderNo, engineer });
-    });
-
-    await test.step('accept assignment and prepare onsite state', async () => {
-      const workOrderId = await workOrderIdFor(customerPage, orderNo);
-      await openEngineerOrder(engineerPage, orderNo, workOrderId);
-      await engineerPage.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
-    });
-
+    await loginAdmin(adminPage, runtime);
     const workOrderId = await workOrderIdFor(customerPage, orderNo);
     expect(workOrderId).not.toBe('');
     localD1(`
@@ -214,28 +208,31 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
           planned_daily_start_time = '08:00', planned_daily_end_time = '17:00'
       WHERE id = ${sqlText(workOrderId)};
     `);
+    business = await createBusinessOrderSession({ browser, adminPage, orderNo, runtime });
+    const businessPage = business.page;
 
-    await test.step('engineer edits six installments', async () => {
-      await openEngineerOrder(engineerPage, orderNo, workOrderId);
-      await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
-      await engineerPage.getByLabel('Labor Fee').fill('6000');
-      await engineerPage.getByLabel('Travel Fee').fill('0');
-      await engineerPage.getByLabel('Parts Fee').fill('0');
-      await engineerPage.getByLabel('Other Fees').fill('0');
-      await engineerPage.getByLabel('Expected onsite workdays').fill('3');
-      await engineerPage.getByRole('button', { name: 'Installments', exact: true }).click();
+    await test.step('business edits six installments', async () => {
+      const dialog = await business.open();
+      for (const [label, value] of [
+        ['Customer labor fee', '6000'], ['Customer parts fee', '0'], ['Customer travel fee', '0'], ['Customer other fee', '0'],
+        ['Parts procurement cost', '0'], ['Engineer labor cost', '3000'], ['Travel cost', '0'], ['Other direct cost', '0'],
+      ]) await dialog.getByLabel(label, { exact: true }).fill(value);
+      await dialog.getByLabel('Expected onsite days', { exact: true }).fill('3');
+      await dialog.getByLabel('Payment plan', { exact: true }).selectOption('installments');
       for (let installment = 3; installment <= 6; installment += 1) {
-        await engineerPage.getByRole('button', { name: 'Add installment', exact: true }).click();
+        await dialog.getByRole('button', { name: 'Add installment', exact: true }).click();
       }
       for (let installment = 1; installment <= 6; installment += 1) {
-        await engineerPage.getByLabel(`Installment ${installment} Amount`, { exact: true }).fill('1000');
+        await dialog.getByLabel(`Amount ${installment}`, { exact: true }).fill('1000');
       }
-      await engineerPage.getByLabel('Installment 2 Payment trigger', { exact: true }).selectOption('milestone');
-      await engineerPage.getByLabel('Installment 2 Customer-visible description', { exact: true }).fill('Commissioning milestone');
-      await expect(engineerPage.getByLabel('Installment 6 Amount', { exact: true })).toBeVisible();
-      await captureBothViewports(engineerPage, '01-engineer-six-installments');
-      await engineerPage.getByTestId('submit-pricing-button').click();
-      await expect(engineerPage.getByText('Quote submitted for operations review.', { exact: false })).toBeVisible();
+      await dialog.getByLabel('Due at 2', { exact: true }).selectOption('milestone');
+      await dialog.getByLabel('Milestone / description 2', { exact: true }).fill('Commissioning milestone');
+      await expect(dialog.getByLabel('Amount 6', { exact: true })).toBeVisible();
+      await captureBothViewports(businessPage, '01-business-six-installments', { scope: dialog });
+      await dialog.getByRole('button', { name: 'Save quote draft', exact: true }).click();
+      await expect(dialog.getByText('Draft saved', { exact: true })).toBeVisible();
+      await dialog.getByRole('button', { name: 'Submit for Admin review', exact: true }).click();
+      await expect(dialog.getByText('Awaiting Admin review', { exact: true })).toBeVisible();
     });
 
     await test.step('Admin reviews complete quote', async () => {
@@ -248,7 +245,7 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
       await expect(approveQuote).toBeVisible();
       const approval = await adminApi(adminPage, runtime, `/api/admin/workorders/${workOrderId}/pricing/approve`, {
         method: 'PATCH',
-        body: JSON.stringify({ quote_version: 1, note: 'E2E complete quote approved' }),
+        body: JSON.stringify({ ...await businessScope(adminPage), quote_version: 1, note: 'E2E complete quote approved' }),
       });
       expect(approval.success).toBe(true);
       await closeAdminOrder(adminPage);
@@ -272,19 +269,23 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
       scope: activeMilestones,
     });
 
+    await verifyFirstBusinessReceipt({ business, adminPage, orderNo, amount: 1000 });
+    await dispatchWorkOrder({ page: adminPage, orderNo, engineer });
     await openEngineerOrder(engineerPage, orderNo, workOrderId);
     await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
-    await engineerPage.getByRole('button', { name: 'Payments & receipts', exact: true }).click();
-    const secondInstallment = engineerPage.locator('article').filter({ has: engineerPage.getByRole('heading', { name: 'Installment 2', exact: true }) });
-    await secondInstallment.getByLabel('Confirm the agreed milestone', { exact: true }).fill('Customer confirmed commissioning milestone.');
-    await secondInstallment.getByRole('button', { name: 'Start this installment collection', exact: true }).click();
-    await expect(secondInstallment.getByRole('heading', { name: 'Request receipt confirmation', exact: true })).toBeVisible();
-    await secondInstallment.getByLabel('Claimed amount').fill('600');
-    await secondInstallment.getByLabel('Transaction reference (optional)').fill(`E2E-PARTIAL-${workOrderId}`);
-    await secondInstallment.getByLabel('Collection note (optional)').fill('Partial receipt for visual acceptance');
-    await captureBothViewports(engineerPage, '04-engineer-partial-receipt-claim');
-    await secondInstallment.getByRole('button', { name: 'Request receipt confirmation', exact: true }).click();
-    await expect(engineerPage.getByText('Waiting for Admin confirmation', { exact: true })).toBeVisible();
+    await expect(engineerPage.getByText('Quotation is handled by the business team.', { exact: false })).toBeVisible();
+    await expect(engineerPage.getByTestId('submit-pricing-button')).toHaveCount(0);
+    await business.open();
+    const secondInstallment = businessPage.getByRole('region', { name: 'Business payments', exact: true }).locator('article').filter({ has: businessPage.getByRole('heading', { name: /^Installment 2 ·/ }) });
+    await secondInstallment.getByLabel('Milestone confirmation', { exact: true }).fill('Customer confirmed commissioning milestone.');
+    await secondInstallment.getByRole('button', { name: 'Start installment collection', exact: true }).click();
+    await expect(secondInstallment.getByLabel('Receipt amount to verify', { exact: true })).toBeVisible();
+    await secondInstallment.getByLabel('Receipt amount to verify', { exact: true }).fill('600');
+    await secondInstallment.getByLabel('Transaction reference', { exact: true }).fill(`E2E-PARTIAL-${workOrderId}`);
+    await secondInstallment.getByLabel('Internal receipt note', { exact: true }).fill('Partial receipt for visual acceptance');
+    await captureBothViewports(businessPage, '04-business-partial-receipt-claim', { scope: businessPage.getByRole('dialog') });
+    await secondInstallment.getByRole('button', { name: 'Submit receipt for review', exact: true }).click();
+    await expect(businessPage.getByText('Awaiting Admin verification', { exact: true })).toBeVisible();
 
     await openAdminOrder(adminPage, orderNo);
     const receiptDialog = adminPage.getByRole('dialog', { name: 'Service Control View' });
@@ -298,15 +299,13 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
     await partialReceiptDialog.getByLabel('Adjustment reason (required)').fill('Bank fee held back 100 USD');
     await partialReceiptDialog.getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(receiptDialog.getByText('No receipt claims are waiting for review.', { exact: true })).toBeVisible();
-    await expect(receiptPanel.getByText('500 USD', { exact: true })).toBeVisible();
+    await expect(receiptPanel.getByText('1,500 USD', { exact: true })).toBeVisible();
+    expect(localD1Rows(`SELECT received_amount FROM work_order_installments WHERE work_order_id = ${sqlText(workOrderId)} AND sequence = 2`)[0].received_amount).toBe(500);
 
-    await openEngineerOrder(engineerPage, orderNo, workOrderId);
-    await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
-    await engineerPage.getByRole('button', { name: 'Payments & receipts', exact: true }).click();
-    const partialInstallment = engineerPage.locator('article').filter({ has: engineerPage.getByRole('heading', { name: 'Installment 2', exact: true }) });
-    await partialInstallment.getByLabel('Confirm the agreed milestone', { exact: true }).fill('Partial receipt confirmed; continue collecting the milestone balance.');
-    await partialInstallment.getByRole('button', { name: 'Start this installment collection', exact: true }).click();
-    await expect(partialInstallment.getByRole('heading', { name: 'Request receipt confirmation', exact: true })).toBeVisible();
+    await business.open();
+    await secondInstallment.getByLabel('Milestone confirmation', { exact: true }).fill('Partial receipt confirmed; continue collecting the milestone balance.');
+    await secondInstallment.getByRole('button', { name: 'Start installment collection', exact: true }).click();
+    await expect(secondInstallment.getByLabel('Receipt amount to verify', { exact: true })).toBeVisible();
 
     localD1(`
       UPDATE work_orders
@@ -331,7 +330,7 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
         (SELECT COUNT(*) FROM work_order_installments WHERE work_order_id = ${sqlText(workOrderId)}) AS installment_count,
         (SELECT COUNT(*) FROM work_order_receipt_claims WHERE work_order_id = ${sqlText(workOrderId)} AND status = 'confirmed') AS confirmed_claim_count;
     `);
-    expect(rows[0]).toMatchObject({ schedule_count: 6, installment_count: 6, confirmed_claim_count: 1 });
+    expect(rows[0]).toMatchObject({ schedule_count: 6, installment_count: 6, confirmed_claim_count: 2 });
 
     localD1(`
       UPDATE work_order_service_standard_progress
@@ -366,6 +365,7 @@ test('quote execution lifecycle renders and operates correctly on desktop and mo
       adminContext?.close(),
       customerContext?.close(),
       engineerContext?.close(),
+      business?.context.close(),
     ]);
   }
 });

@@ -15,9 +15,11 @@ test('customer negotiation sends the exact displayed quote version', async () =>
   assert.match(api, /const body = \{ customer_id: customerId, reason, quote_version: quoteVersion \}/);
 });
 
-test('business-managed quotes show an engineer notice instead of the quotation editor', async () => {
+test('COM engineers and CN business quotes show the commercial ownership notice before mounting the editor', async () => {
   const source = await readFile(new URL('../src/components/WorkOrder/PricingPanels.jsx', import.meta.url), 'utf8');
-  assert.match(source, /if \(pricing\?\.quote_source === 'business'\) return/);
+  const panel = source.slice(source.indexOf('export function EngineerPricingPanel('), source.indexOf('function EngineerPricingEditor('));
+  assert.match(panel, /if \(!isCnLocale\(\) \|\| pricing\?\.quote_source === 'business'\) return/);
+  assert.doesNotMatch(panel, /useState\(|useEffect\(|readEngineerPricingDraft\(/);
   assert.match(source, /Quotation is handled by the business team/);
   assert.match(source, /报价由商务团队负责/);
 });

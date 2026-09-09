@@ -36,7 +36,9 @@ async function api(env, route = path, { id = 'a', method = 'GET', body, userType
   if (id === 'admin' && /\/pricing\/(approve|reject)$/.test(route) && !omitReviewScope) body = { ...await context(env, id), ...body };
   const market = env.testMarket || 'com';
   const token = await signJwt({ userId: id, userType, market, ...(userType === 'admin' && id !== 'admin' ? { staffId: id, staffRole: 'admin' } : {}), exp: Math.floor(Date.now() / 1000) + 3600 }, secret);
-  const response = await worker.fetch(new Request(`https://api.sagemro.com${route}`, { method, headers: { Origin: `https://admin.sagemro.${market}`, Authorization: `Bearer ${token}`, ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}) }), env, {});
+  const pending = [];
+  const response = await worker.fetch(new Request(`https://api.sagemro.com${route}`, { method, headers: { Origin: `https://admin.sagemro.${market}`, Authorization: `Bearer ${token}`, ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}) }), env, { waitUntil(task) { pending.push(task); } });
+  await Promise.all(pending);
   return { status: response.status, data: response.headers.get('Content-Type')?.includes('application/json') ? await response.json() : await response.text(), headers: response.headers };
 }
 async function context(env, id = 'a') {
@@ -367,6 +369,8 @@ function confirmDispatchReceipts(env, amount = 900) {
     if (!paid) continue;
     env.DB.sqlite.prepare("INSERT INTO work_order_receipt_claims(id,installment_id,work_order_id,engineer_id,claimed_amount,confirmed_amount,status,decided_by,decided_at,idempotency_key) VALUES (?,?,'order-a','technician',?,?,'confirmed','admin','2026-09-07',?)").run(`claim-${row.id}`, row.id, paid, paid, `claim-${row.id}`);
     env.DB.sqlite.prepare("UPDATE work_order_installments SET received_amount=?,status=? WHERE id=?").run(paid, paid === row.amount ? 'received' : 'partially_received', row.id);
+    env.DB.sqlite.prepare("INSERT INTO audit_logs(id,actor_type,actor_id,target_type,target_id,action,after_state) VALUES (?,'admin','admin','work_order_receipt_claim',?,'installment_receipt_confirmed',?)")
+      .run(`audit-claim-${row.id}`, `claim-${row.id}`, JSON.stringify({ claim_status: 'confirmed', confirmed_amount: paid }));
   }
 }
 function dispatchState(env) {
@@ -385,8 +389,9 @@ for (const route of dispatchRoutes) {
     if (stage !== 'paid') assert.deepEqual(dispatchState(env), before);
     else assert.equal(env.DB.sqlite.prepare('SELECT received_amount FROM work_order_installments WHERE sequence=3').get().received_amount, 0);
   });
-  test(`dispatch ${route} preserves legacy nonbusiness orders`, async t => {
+  test(`CN dispatch ${route} preserves legacy nonbusiness orders`, async t => {
     const env = dispatchFixture(t, route);
+    env.testMarket = 'cn';
     env.DB.sqlite.exec("DELETE FROM business_record_assignments WHERE record_id='order-a'");
     assert.equal((await dispatch(env, route)).status, 200);
   });
@@ -394,6 +399,8 @@ for (const route of dispatchRoutes) {
     "UPDATE work_orders SET status='cancelled' WHERE id='order-a'",
     "UPDATE work_order_installments SET received_amount=0",
     "UPDATE work_order_receipt_claims SET status='pending',confirmed_amount=NULL,decided_by=NULL,decided_at=NULL",
+    "DELETE FROM audit_logs WHERE action='installment_receipt_confirmed'",
+    "UPDATE audit_logs SET actor_type='engineer' WHERE action='installment_receipt_confirmed'",
     "UPDATE work_order_pricing_history SET total_amount=1600",
     "UPDATE work_orders SET active_quote_version=2 WHERE id='order-a'",
     "UPDATE work_orders SET service_mode='remote' WHERE id='order-a'",
@@ -422,6 +429,8 @@ for (const mutation of [
   'UPDATE work_order_installments SET received_amount=amount',
   "UPDATE work_order_receipt_claims SET decided_by=NULL",
   "UPDATE work_order_receipt_claims SET status='pending'",
+  "DELETE FROM audit_logs WHERE action='installment_receipt_confirmed'",
+  "UPDATE audit_logs SET actor_type='engineer' WHERE action='installment_receipt_confirmed'",
   "UPDATE work_order_pricing_history SET total_amount=1600",
   "UPDATE work_orders SET active_quote_version=2 WHERE id='order-a'",
   "DELETE FROM work_order_receipt_claims WHERE installment_id IN (SELECT id FROM work_order_installments WHERE sequence=2); DELETE FROM work_order_installments WHERE sequence=2",
@@ -468,8 +477,9 @@ for (const route of ['assign', 'regional']) test(`unpaid dispatch ${route} does 
   assert.equal((await dispatch(env, route)).status, 409);
   assert.deepEqual(dispatchState(env), before);
 });
-test('legacy order cannot acquire business ownership during its assignment write', async t => {
+test('CN legacy order cannot acquire business ownership during its assignment write', async t => {
   const env = dispatchFixture(t, 'assign');
+  env.testMarket = 'cn';
   env.DB.sqlite.exec("DELETE FROM business_record_assignments WHERE record_id='order-a'");
   const prepare = env.DB.prepare.bind(env.DB); let before;
   env.DB.prepare = sql => {
@@ -608,7 +618,7 @@ test('engineer cannot overwrite a business draft even before its first submissio
   env.DB.sqlite.exec("INSERT INTO engineers(id,user_no,name,phone,password_hash) VALUES ('engineer-a','E-FIXTURE','Fictional Engineer','000-fictional','hash'); UPDATE work_orders SET engineer_id='engineer-a' WHERE id='order-a';");
   assert.equal((await save(env, ctx)).status, 200);
   const engineer = await api(env, '/api/workorders/order-a/pricing', { method: 'POST', userType: 'engineer', id: 'engineer-a', body: draft() });
-  assert.equal(engineer.status, 409, JSON.stringify(engineer.data));
+  assert.equal(engineer.status, 403, JSON.stringify(engineer.data));
   assert.equal(env.DB.sqlite.prepare('SELECT count(*) n FROM work_order_pricing').get().n, 0);
 });
 

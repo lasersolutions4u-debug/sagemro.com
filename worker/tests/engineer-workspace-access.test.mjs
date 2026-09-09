@@ -692,8 +692,40 @@ test('regional lead can read a direct subordinate work order but cannot send mes
   assert.equal(saveReport.response.status, 403);
 });
 
+async function confirmBusinessDispatchPayment(env) {
+  const pending = [];
+  async function call(path, method = 'GET', body, userType = 'admin', userId = 'admin') {
+    const token = await signJwt({ userId, userType, market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+    const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, {
+      method, headers: { Authorization: `Bearer ${token}`, Origin: 'https://admin.sagemro.com', ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) },
+      ...(body ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),
+    }), env, { waitUntil(task) { pending.push(task); } });
+    const data = await response.json();
+    await Promise.all(pending.splice(0));
+    assert.equal(response.ok, true, `${path}: ${JSON.stringify(data)}`);
+    return data;
+  }
+  env.DB.__sqlite.exec("UPDATE work_orders SET service_mode='onsite' WHERE id='wo-member'");
+  const context = { expected_staff_id: 'admin', scope_version: (await call('/api/admin/business/organization?expected_staff_id=admin')).scope_version };
+  const base = '/api/admin/business/work-orders/wo-member';
+  await call(`${base}/quote`, 'PUT', { ...context, revision: 0, labor_fee: 1000, parts_fee: 0, travel_fee: 0, other_fee: 0, parts_detail: '', expected_service_days: 1,
+    payment_plan_mode: 'single', payment_schedule: [], costs: { parts_cost: 0, engineer_cost: 300, travel_cost: 0, other_cost: 0 } });
+  await call(`${base}/quote/submit`, 'POST', { ...context, revision: 1 });
+  await call('/api/admin/workorders/wo-member/pricing/approve', 'PATCH', { ...context, quote_version: 1 });
+  await call('/api/workorders/wo-member/pricing/confirm', 'POST', { quote_version: 1 }, 'customer', 'customer-1');
+  const installment = env.DB.__sqlite.prepare("SELECT * FROM work_order_installments WHERE work_order_id='wo-member' AND required_before_start=1").get();
+  await call(`${base}/installments/${installment.id}/collection/start`, 'POST', { ...context, quote_version: 1 });
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ ...context, quote_version: 1, claimed_amount: installment.amount, idempotency_key: 'fictional-dispatch-receipt' })) form.set(key, value);
+  const { claim } = await call(`${base}/installments/${installment.id}/receipt-claims`, 'POST', form);
+  await call(`/api/admin/workorders/wo-member/installments/${installment.id}/receipt-claims/${claim.id}/decision`, 'POST', {
+    ...context, quote_version: 1, confirmed_amount: installment.amount, decision: 'confirmed', idempotency_key: 'fictional-dispatch-decision',
+  });
+}
+
 test('regional lead can reassign a current subordinate work order without a retained lead assignment', async (t) => {
   const env = createEnv(t);
+  await confirmBusinessDispatchPayment(env);
 
   const reassigned = await api(env, '/api/engineers/assign-engineer', {
     method: 'POST',
@@ -710,6 +742,8 @@ test('regional lead can reassign a current subordinate work order without a reta
 
 test('regional lead assignment aborts without side effects when ownership changes during the update', async (t) => {
   const env = createEnv(t);
+  await confirmBusinessDispatchPayment(env);
+  const notificationCount = env.DB.__sqlite.prepare('SELECT COUNT(*) AS count FROM notifications').get().count;
   const originalPrepare = env.DB.prepare.bind(env.DB);
   let raced = false;
   env.DB.prepare = (sql) => {
@@ -748,11 +782,12 @@ test('regional lead assignment aborts without side effects when ownership change
     env.DB.__sqlite.prepare("SELECT COUNT(*) AS count FROM work_order_messages WHERE message_type = 'service_assignment'").get().count,
     0,
   );
-  assert.equal(env.DB.__sqlite.prepare('SELECT COUNT(*) AS count FROM notifications').get().count, 0);
+  assert.equal(env.DB.__sqlite.prepare('SELECT COUNT(*) AS count FROM notifications').get().count, notificationCount);
 });
 
 test('regional lead blocked conflict marks the work order and writes one audit record', async (t) => {
   const env = createEnv(t);
+  await confirmBusinessDispatchPayment(env);
   env.DB.__sqlite.prepare(
     "UPDATE engineers SET phone = '+15550000001' WHERE id = 'eng-1'"
   ).run();
@@ -779,6 +814,7 @@ test('regional lead blocked conflict marks the work order and writes one audit r
 
 test('regional lead blocked conflict aborts without side effects when ownership changes before its update', async (t) => {
   const env = createEnv(t);
+  await confirmBusinessDispatchPayment(env);
   env.DB.__sqlite.prepare(
     "UPDATE engineers SET phone = '+15550000001' WHERE id = 'eng-1'"
   ).run();

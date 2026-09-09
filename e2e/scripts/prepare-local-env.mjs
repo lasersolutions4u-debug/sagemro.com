@@ -1,58 +1,34 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { e2eRuntime, localRunPaths } from '../support/runtime.mjs';
 
-import { e2eRuntime } from '../support/runtime.mjs';
+const repoDir = fileURLToPath(new URL('../../', import.meta.url));
+export const wranglerCli = path.join(repoDir, 'worker/node_modules/wrangler/bin/wrangler.js');
 
-const e2eDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const repoDir = path.resolve(e2eDir, '..');
-const workerDir = path.join(repoDir, 'worker');
-const stateDir = path.join(e2eDir, '.state');
-const generatedDir = path.join(e2eDir, '.generated');
-const testSecret = process.env.E2E_TEST_SECRET || 'local-e2e-secret-32-characters';
-
-e2eRuntime({
-  ...process.env,
-  E2E_TEST_SECRET: testSecret,
-});
-
-rmSync(stateDir, { recursive: true, force: true });
-rmSync(generatedDir, { recursive: true, force: true });
-mkdirSync(stateDir, { recursive: true });
-mkdirSync(generatedDir, { recursive: true });
-
-const envFile = path.join(generatedDir, 'worker.env');
-writeFileSync(envFile, [
-  'ENVIRONMENT=development',
-  'E2E_TEST_MODE=true',
-  `E2E_TEST_SECRET=${testSecret}`,
-  'DEV_BYPASS_CODE=246810',
-  'JWT_SECRET=local-e2e-jwt-secret-at-least-32-characters',
-  'ADMIN_PHONE=19900000001',
-  'ADMIN_PASSWORD=LocalAdminPassword123!',
-  'ADMIN_PHONE_CN=19900000002',
-  'ADMIN_PASSWORD_CN=LocalCnAdminPassword123!',
-  'VERIFICATION_EMAIL_FROM=SAGEMRO E2E <e2e@localhost.test>',
-  '',
-].join('\n'), { mode: 0o600 });
-
-execFileSync('npx', [
-  'wrangler', 'd1', 'execute', 'sagemro-db',
-  '--local',
-  '--persist-to', stateDir,
-  '--file', path.join(workerDir, 'schema.sql'),
-  '--yes',
-], {
-  cwd: workerDir,
-  stdio: 'inherit',
-});
-
-execFileSync('npx', [
-  'wrangler', 'd1', 'execute', 'sagemro-db',
-  '--local',
-  '--persist-to', stateDir,
-  '--command', `
+export function prepareLocalEnv(env) {
+  e2eRuntime(env);
+  const { stateDir, configPath } = localRunPaths(env);
+  const config = {
+    name: 'sagemro-local-e2e', main: path.join(repoDir, 'worker/src/index.js'),
+    compatibility_date: '2024-01-01',
+    d1_databases: [{ binding: 'DB', database_name: 'sagemro-db', database_id: '00000000-0000-0000-0000-000000000001' }],
+    r2_buckets: [{ binding: 'ATTACHMENTS', bucket_name: 'e2e-attachments' }, { binding: 'FIELD_EVIDENCE', bucket_name: 'e2e-field-evidence' }],
+    kv_namespaces: [{ binding: 'KV', id: '00000000000000000000000000000001' }],
+    secrets: { required: ['ENVIRONMENT', 'E2E_TEST_MODE', 'E2E_TEST_SECRET', 'JWT_SECRET', 'ADMIN_PHONE', 'ADMIN_PASSWORD', 'ADMIN_PHONE_CN', 'ADMIN_PASSWORD_CN', 'DEV_BYPASS_CODE', 'VERIFICATION_EMAIL_FROM'] },
+  };
+  writeFileSync(configPath, JSON.stringify(config), { flag: 'wx' });
+  mkdirSync(stateDir);
+  const execute = args => {
+    const results = JSON.parse(execFileSync(process.execPath, [wranglerCli, 'd1', 'execute', 'sagemro-db',
+      '--config', configPath, '--local', '--persist-to', stateDir, '--yes', '--json', ...args],
+    { cwd: repoDir, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    if (results.some(result => !result.success)) throw new Error('Local D1 preparation failed');
+    console.log(`Local D1: ${results.length} statements verified.`);
+  };
+  execute(['--file', path.join(repoDir, 'worker/schema.sql')]);
+  execute(['--command', `
     INSERT INTO materials (
       id, market, material_code, category, name, name_en, spec, brand, unit,
       stock_quantity, reserved_quantity, safety_stock, status
@@ -61,22 +37,6 @@ execFileSync('npx', [
       'E2E Stock Nozzle', 'E2E Stock Nozzle', 'D1.5', 'SAGEMRO', 'pcs',
       20, 0, 0, 'active'
     );
-  `,
-  '--yes',
-], {
-  cwd: workerDir,
-  stdio: 'inherit',
-});
-
-execFileSync('npx', [
-  'wrangler', 'd1', 'execute', 'sagemro-db',
-  '--local',
-  '--persist-to', stateDir,
-  '--command', "SELECT COUNT(*) AS migration_count FROM _migrations; SELECT COUNT(*) AS application_count FROM engineer_applications;",
-  '--yes',
-], {
-  cwd: workerDir,
-  stdio: 'inherit',
-});
-
-console.log(`Prepared isolated E2E state at ${stateDir}`);
+  `]);
+  execute(['--command', 'SELECT COUNT(*) AS migration_count FROM _migrations; SELECT COUNT(*) AS application_count FROM engineer_applications;']);
+}

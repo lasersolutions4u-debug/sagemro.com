@@ -103,7 +103,7 @@ function createD1Database(db, hooks) {
 }
 
 function createQuoteExecutionEnv({
-  market = 'com', filename = ':memory:', initialize = true, sharedEvidenceObjects = null,
+  market = 'cn', filename = ':memory:', initialize = true, sharedEvidenceObjects = null,
 } = {}) {
   const db = new DatabaseSync(filename);
   const evidenceObjects = sharedEvidenceObjects || new Map();
@@ -321,9 +321,11 @@ async function api(ctx, path, {
 async function multipartApi(ctx, path, fields, {
   userType = 'engineer',
   userId = 'engineer-1',
+  staffId,
+  staffRole,
 } = {}) {
   const market = ctx.host.endsWith('.cn') ? 'cn' : 'com';
-  const jwt = await token(ctx.env, userType, userId, market);
+  const jwt = await token(ctx.env, userType, userId, market, { staffId, staffRole });
   const body = new FormData();
   for (const [key, value] of Object.entries(fields)) {
     if (value !== undefined && value !== null) body.set(key, value);
@@ -352,7 +354,7 @@ function quotePayload(overrides = {}) {
       {
         sequence: 1,
         amount: 6000,
-        currency: 'USD',
+        currency: 'CNY',
         trigger_type: 'before_start',
         required_before_start: true,
         description: 'Start payment',
@@ -360,7 +362,7 @@ function quotePayload(overrides = {}) {
       {
         sequence: 2,
         amount: 6000,
-        currency: 'USD',
+        currency: 'CNY',
         trigger_type: 'on_acceptance',
         required_before_start: false,
         description: 'Acceptance payment',
@@ -370,14 +372,91 @@ function quotePayload(overrides = {}) {
   };
 }
 
+async function businessScope(ctx, userId = 'business-1') {
+  const result = await api(ctx, '/api/admin/business/organization?expected_staff_id=' + userId, {
+    method: 'GET', userType: 'admin', userId,
+    ...(userId === 'admin' ? {} : { staffId: userId, staffRole: 'operations' }),
+  });
+  assert.equal(result.response.status, 200, JSON.stringify(result.json));
+  return { expected_staff_id: userId, scope_version: result.json.scope_version };
+}
+
+function createBusinessQuoteExecutionEnv(options = {}) {
+  const ctx = createQuoteExecutionEnv({ ...options, market: 'com' });
+  if (options.initialize !== false) ctx.db.exec(`
+    INSERT INTO admin_staff_accounts(id,normalized_login,password_hash,salt,role,display_name,market_scope,must_change_password,business_profile_required)
+    VALUES ('business-1','business-1@example.invalid','hash','salt','operations','Fictional Business','com',0,1);
+    INSERT INTO business_staff_profiles(staff_id,role,grade) VALUES ('business-1','business_director',1);
+    INSERT INTO business_territories(id,name,market) VALUES ('territory-1','Fictional Territory','com');
+    INSERT INTO business_director_territories(staff_id,territory_id) VALUES ('business-1','territory-1');
+    INSERT INTO business_record_assignments(kind,record_id,territory_id,owner_staff_id)
+    VALUES ('work_order','wo-quote-1','territory-1','business-1');
+  `);
+  return ctx;
+}
+
+
+async function confirmBusinessReceipt(ctx, row, amount = row.amount - row.received_amount) {
+  const scope = await businessScope(ctx);
+  const route = '/api/admin/business/work-orders/wo-quote-1/installments/' + row.id;
+  const auth = { userType: 'admin', userId: 'business-1', staffId: 'business-1', staffRole: 'operations' };
+  const opened = await api(ctx, route + '/collection/start', {
+    ...auth, body: { ...scope, quote_version: row.quote_version },
+  });
+  assert.equal(opened.response.status, 200, JSON.stringify(opened.json));
+  const claimed = await multipartApi(ctx, route + '/receipt-claims', {
+    ...scope, quote_version: row.quote_version, claimed_amount: amount,
+    idempotency_key: 'business-claim-' + crypto.randomUUID(),
+  }, auth);
+  assert.equal(claimed.response.status, 201, JSON.stringify(claimed.json));
+  const confirmed = await api(ctx, '/api/admin/workorders/wo-quote-1/installments/' + row.id + '/receipt-claims/' + claimed.json.claim.id + '/decision', {
+    userType: 'admin', userId: 'admin', body: {
+      ...await businessScope(ctx, 'admin'), quote_version: row.quote_version,
+      confirmed_amount: amount, decision: 'confirmed', idempotency_key: 'business-decision-' + claimed.json.claim.id,
+    },
+  });
+  assert.equal(confirmed.response.status, 200, JSON.stringify(confirmed.json));
+}
+
+async function confirmBusinessStartReceipts(ctx) {
+  for (const row of installments(ctx).filter(row => row.required_before_start)) await confirmBusinessReceipt(ctx, row);
+}
+
+async function confirmBusinessAcceptanceReceipts(ctx) {
+  ctx.db.exec("UPDATE work_orders SET status = 'resolved' WHERE id = 'wo-quote-1'");
+  if (!ctx.db.prepare("SELECT id FROM work_order_repair_records WHERE work_order_id = 'wo-quote-1'").get()) {
+    seedSubmittedRepairRecord(ctx.db);
+  }
+  const accepted = await api(ctx, '/api/workorders/rating', {
+    userType: 'customer', userId: 'customer-1', body: {
+      work_order_id: 'wo-quote-1', rating_timeliness: 5, rating_technical: 5,
+      rating_communication: 5, rating_professional: 5, comment: 'Fictional service accepted.',
+    },
+  });
+  assert.equal(accepted.response.status, 200, JSON.stringify(accepted.json));
+  for (const row of installments(ctx).filter(row => !row.required_before_start)) await confirmBusinessReceipt(ctx, row);
+}
+
 async function submitQuote(ctx, body = quotePayload()) {
-  return api(ctx, '/api/workorders/wo-quote-1/pricing', { body });
+  if (ctx.host.endsWith('.cn')) return api(ctx, '/api/workorders/wo-quote-1/pricing', { body });
+  const scope = await businessScope(ctx);
+  const revision = ctx.db.prepare('SELECT revision FROM business_quote_drafts WHERE work_order_id=?').get('wo-quote-1')?.revision || 0;
+  const saved = await api(ctx, '/api/admin/business/work-orders/wo-quote-1/quote', {
+    method: 'PUT', userType: 'admin', userId: 'business-1', staffId: 'business-1', staffRole: 'operations',
+    body: { ...scope, revision, parts_detail: '', costs: { parts_cost: 100, engineer_cost: 100, travel_cost: 0, other_cost: 0 }, ...body,
+      payment_schedule: body.payment_schedule?.map(row => ({ ...row, currency: 'USD' })) },
+  });
+  if (saved.response.status !== 200) return saved;
+  return api(ctx, '/api/admin/business/work-orders/wo-quote-1/quote/submit', {
+    userType: 'admin', userId: 'business-1', staffId: 'business-1', staffRole: 'operations',
+    body: { ...scope, revision: saved.json.revision },
+  });
 }
 
 async function reviewQuote(ctx, action, quoteVersion, note = '') {
   return api(ctx, `/api/admin/workorders/wo-quote-1/pricing/${action}`, {
     method: 'PATCH',
-    body: { quote_version: quoteVersion, note },
+    body: { quote_version: quoteVersion, note, ...(ctx.host.endsWith('.cn') ? {} : await businessScope(ctx, 'admin')) },
     userType: 'admin',
     userId: 'admin',
   });
@@ -392,15 +471,17 @@ async function confirmQuote(ctx, quoteVersion, options = {}) {
 }
 
 async function activateBaseline(ctx, body = quotePayload()) {
-  await submitQuote(ctx, body);
-  await reviewQuote(ctx, 'approve', 1);
+  const submitted = await submitQuote(ctx, body);
+  assert.equal(submitted.response.status, 200, JSON.stringify(submitted.json));
+  const reviewed = await reviewQuote(ctx, 'approve', 1);
+  assert.equal(reviewed.response.status, 200, JSON.stringify(reviewed.json));
   const confirmed = await confirmQuote(ctx, 1);
   assert.equal(confirmed.response.status, 200, JSON.stringify(confirmed.json));
 }
 
 async function confirmBaselineForReceiptTests(ctx) {
   // Test fixture only: Task 4 owns customer activation and installment creation.
-  const currency = ctx.host.endsWith('.cn') ? 'CNY' : 'USD';
+  const currency = ctx.host.endsWith('.cn') ? 'CNY' : 'CNY';
   await submitQuote(ctx, quotePayload({
     payment_schedule: quotePayload().payment_schedule.map((row) => ({ ...row, currency })),
   }));
@@ -484,7 +565,7 @@ async function decideReceiptClaim(ctx, claimId, fields = {}, options = {}) {
   });
 }
 
-test('quote submission persists one pending immutable version and its complete schedule atomically', async () => {
+test('CN legacy: quote submission persists one pending immutable version and its complete schedule atomically', async () => {
   const ctx = createQuoteExecutionEnv();
 
   const { response, json } = await submitQuote(ctx);
@@ -514,7 +595,7 @@ test('quote submission persists one pending immutable version and its complete s
       quote_version: 1,
       sequence: 1,
       amount: 6000,
-      currency: 'USD',
+      currency: 'CNY',
       trigger_type: 'before_start',
       description: 'Start payment',
       required_before_start: 1,
@@ -523,7 +604,7 @@ test('quote submission persists one pending immutable version and its complete s
       quote_version: 1,
       sequence: 2,
       amount: 6000,
-      currency: 'USD',
+      currency: 'CNY',
       trigger_type: 'on_acceptance',
       description: 'Acceptance payment',
       required_before_start: 0,
@@ -558,11 +639,11 @@ test('quote submission persists one pending immutable version and its complete s
   });
 });
 
-test('quote submission validates service days, fees, and payment schedule through the domain', async () => {
+test('CN legacy: quote submission validates service days, fees, and payment schedule through the domain', async () => {
   const cases = [
-    [quotePayload({ expected_service_days: 0 }), 'Expected onsite service days must be a positive integer.'],
-    [quotePayload({ labor_fee: -9000 }), 'Quote total must be a positive whole amount.'],
-    [quotePayload({ payment_schedule: quotePayload().payment_schedule.map((row) => ({ ...row, amount: 5000 })) }), 'Payment schedule must total the quote amount.'],
+    [quotePayload({ expected_service_days: 0 }), '预计上门服务天数必须为正整数。'],
+    [quotePayload({ labor_fee: -9000 }), '报价总额必须为正整数。'],
+    [quotePayload({ payment_schedule: quotePayload().payment_schedule.map((row) => ({ ...row, amount: 5000 })) }), '付款计划总额必须等于报价总额。'],
   ];
 
   for (const [body, message] of cases) {
@@ -575,7 +656,7 @@ test('quote submission validates service days, fees, and payment schedule throug
   }
 });
 
-test('supplemental submission and review preserve operational work-order status', async () => {
+test('CN legacy: supplemental submission and review preserve operational work-order status', async () => {
   for (const status of ['in_service', 'resolved', 'completed']) {
     const ctx = createQuoteExecutionEnv();
     await submitQuote(ctx);
@@ -603,7 +684,7 @@ test('supplemental submission and review preserve operational work-order status'
   }
 });
 
-test('safe retry clears only the new unprotected schedule version', async () => {
+test('CN legacy: safe retry clears only the new unprotected schedule version', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
@@ -612,7 +693,7 @@ test('safe retry clears only the new unprotected schedule version', async () => 
     INSERT INTO work_order_payment_schedule (
       id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
       trigger_type, description, required_before_start
-    ) VALUES (?, ?, 'wo-quote-1', 2, 1, 12000, 'USD', 'before_start', 'Orphan retry row', 1)
+    ) VALUES (?, ?, 'wo-quote-1', 2, 1, 12000, 'CNY', 'before_start', 'Orphan retry row', 1)
   `).run('schedule-orphan-v2', pricingId);
   const approvedSchedule = ctx.db.prepare(`
     SELECT * FROM work_order_payment_schedule WHERE quote_version = 1 ORDER BY sequence
@@ -636,7 +717,7 @@ test('safe retry clears only the new unprotected schedule version', async () => 
   assert.equal(schedule.some((row) => row.description === 'Orphan retry row'), false);
 });
 
-test('safe retry does not clear a rejected history version schedule', async () => {
+test('CN legacy: safe retry does not clear a rejected history version schedule', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
@@ -655,7 +736,7 @@ test('safe retry does not clear a rejected history version schedule', async () =
         trigger_type, description, required_before_start
       ) VALUES (
         'schedule-rejected-v2', '${pricingId}', 'wo-quote-1', 2, 1, 12000,
-        'USD', 'before_start', 'Rejected version schedule', 1
+        'CNY', 'before_start', 'Rejected version schedule', 1
       );
     `);
   });
@@ -670,8 +751,8 @@ test('safe retry does not clear a rejected history version schedule', async () =
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing_history').get().count, 2);
 });
 
-test('Admin approval targets the exact version and returns all reviewed terms', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: Admin approval targets the exact version and returns all reviewed terms', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await submitQuote(ctx);
 
   const { response, json } = await reviewQuote(ctx, 'approve', 1);
@@ -699,8 +780,8 @@ test('Admin approval targets the exact version and returns all reviewed terms', 
   assert.equal(JSON.parse(audit.after_state).payment_schedule.length, 2);
 });
 
-test('Admin rejection requires a reason and returns the exact version for correction', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: Admin rejection requires a reason and returns the exact version for correction', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await submitQuote(ctx);
 
   const missingReason = await reviewQuote(ctx, 'reject', 1);
@@ -716,8 +797,8 @@ test('Admin rejection requires a reason and returns the exact version for correc
   assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing').get().status, 'draft');
 });
 
-test('Admin stale version action returns 409', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: Admin stale version action returns 409', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await submitQuote(ctx);
 
   const { response } = await reviewQuote(ctx, 'approve', 2);
@@ -726,8 +807,8 @@ test('Admin stale version action returns 409', async () => {
   assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing_history WHERE version = 1').get().status, 'pending_review');
 });
 
-test('customer activates the exact approved baseline and its immutable schedule atomically', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: customer activates the exact approved baseline and its immutable schedule atomically', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
 
@@ -765,8 +846,8 @@ test('customer activates the exact approved baseline and its immutable schedule 
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 2);
 });
 
-test('customer activation guard rolls back projection and installment writes on a stale approval race', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: customer activation guard rolls back projection and installment writes on a stale approval race', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
   ctx.beforeNextBatch(() => {
@@ -781,8 +862,8 @@ test('customer activation guard rolls back projection and installment writes on 
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 0);
 });
 
-test('customer activation guard rolls back when work-order ownership changes before the batch', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: customer activation guard rolls back when work-order ownership changes before the batch', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
   ctx.db.exec(`
@@ -802,8 +883,8 @@ test('customer activation guard rolls back when work-order ownership changes bef
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 0);
 });
 
-test('customer activation remains successful when post-commit notification preparation fails', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: customer activation remains successful when post-commit notification preparation fails', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
   const originalPrepare = ctx.env.DB.prepare;
@@ -822,8 +903,8 @@ test('customer activation remains successful when post-commit notification prepa
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 2);
 });
 
-test('hybrid activation stores the reviewed allowance but keeps field execution dormant', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: hybrid activation stores the reviewed allowance but keeps field execution dormant', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   ctx.db.exec("UPDATE work_orders SET service_mode = 'hybrid' WHERE id = 'wo-quote-1'");
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
@@ -842,8 +923,8 @@ test('hybrid activation stores the reviewed allowance but keeps field execution 
   assert.equal(detail.json.quote_execution.permitted_workdays, 0);
 });
 
-test('confirmed onsite conversion activates the exact stored hybrid quote allowance', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: confirmed onsite conversion activates the exact stored hybrid quote allowance', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   ctx.db.exec("UPDATE work_orders SET service_mode = 'hybrid' WHERE id = 'wo-quote-1'");
   await submitQuote(ctx, quotePayload({ expected_service_days: 4 }));
   await reviewQuote(ctx, 'approve', 1);
@@ -884,8 +965,8 @@ test('confirmed onsite conversion activates the exact stored hybrid quote allowa
   assert.equal(detail.json.quote_execution.permitted_workdays, 4);
 });
 
-test('onsite conversion copies and audits the allowance persisted when its batch begins', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: onsite conversion copies and audits the allowance persisted when its batch begins', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   ctx.db.exec("UPDATE work_orders SET service_mode = 'hybrid' WHERE id = 'wo-quote-1'");
   await submitQuote(ctx, quotePayload({ expected_service_days: 4 }));
   await reviewQuote(ctx, 'approve', 1);
@@ -919,7 +1000,7 @@ test('onsite conversion copies and audits the allowance persisted when its batch
   assert.equal(JSON.parse(audit.after_state).expected_service_days, 6);
 });
 
-test('onsite conversion rolls back its update and log when the audit insert fails', async () => {
+test('CN legacy: onsite conversion rolls back its update and log when the audit insert fails', async () => {
   const ctx = createQuoteExecutionEnv();
   ctx.db.exec(`
     UPDATE work_orders
@@ -955,7 +1036,7 @@ test('onsite conversion rolls back its update and log when the audit insert fail
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM work_order_logs WHERE action = 'onsite_conversion_confirmed'").get().count, 0);
 });
 
-test('onsite conversion remains successful when its post-commit notification fails', async () => {
+test('CN legacy: onsite conversion remains successful when its post-commit notification fails', async () => {
   const ctx = createQuoteExecutionEnv();
   ctx.db.exec(`
     UPDATE work_orders
@@ -991,7 +1072,7 @@ test('onsite conversion remains successful when its post-commit notification fai
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'onsite_conversion_confirmed'").get().count, 1);
 });
 
-test('supplemental activation preserves the baseline and prior supplementals while adding installments', async () => {
+test('CN legacy: supplemental activation preserves the baseline and prior supplementals while adding installments', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
@@ -1039,7 +1120,7 @@ test('supplemental activation preserves the baseline and prior supplementals whi
   );
 });
 
-test('active execution keeps receipt-claim query binds fixed across many supplementals', async () => {
+test('CN legacy: active execution keeps receipt-claim query binds fixed across many supplementals', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
@@ -1081,7 +1162,7 @@ test('active execution keeps receipt-claim query binds fixed across many supplem
   assert.equal(claimBinds[0].count, 1);
 });
 
-test('receipt claims use role-facing allowlists without idempotency or Admin identity leaks', async () => {
+test('CN legacy: receipt claims use role-facing allowlists without idempotency or Admin identity leaks', async () => {
   const ctx = createQuoteExecutionEnv();
   ctx.db.exec(`
     INSERT INTO engineers (id, user_no, name, phone, password_hash, engineer_role)
@@ -1190,7 +1271,7 @@ test('receipt claims use role-facing allowlists without idempotency or Admin ide
   assert.equal(JSON.stringify(unassignedLeadDetail.json).includes('evidence-detail-1'), false);
 });
 
-test('quote execution detail shares valid consumed field days across customer, engineer, and Admin views', async () => {
+test('CN legacy: quote execution detail shares valid consumed field days across customer, engineer, and Admin views', async () => {
   const ctx = createQuoteExecutionEnv();
   await activateBaseline(ctx, quotePayload({ expected_service_days: 2 }));
   ctx.db.exec(`
@@ -1226,7 +1307,7 @@ test('quote execution detail shares valid consumed field days across customer, e
   }
 });
 
-test('assigned engineer opens trigger-ready installments and owning customer controls payment method', async () => {
+test('CN legacy: assigned engineer opens trigger-ready installments and owning customer controls payment method', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   const row = installment(ctx);
@@ -1273,7 +1354,7 @@ test('assigned engineer opens trigger-ready installments and owning customer con
   assert.ok(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type = 'installment_collection_started'").get().count >= 1);
 });
 
-test('scheduled collection enforces system triggers and audits milestone confirmation', async () => {
+test('CN legacy: scheduled collection enforces system triggers and audits milestone confirmation', async () => {
   const cases = [
     ['fixed_date', '2999-01-01', {}, 409],
     ['fixed_date', '2020-01-01', {}, 200],
@@ -1365,7 +1446,7 @@ test('scheduled collection enforces system triggers and audits milestone confirm
   assert.equal((await startCollectionFor(acceptance, acceptanceRow.id)).response.status, 200);
 });
 
-test('fixed-date collection uses the service-site calendar day', async () => {
+test('CN legacy: fixed-date collection uses the service-site calendar day', async () => {
   for (const [siteTimezone, expectedStatus] of [
     ['America/Los_Angeles', 409],
     ['Asia/Shanghai', 200],
@@ -1397,7 +1478,7 @@ test('fixed-date collection uses the service-site calendar day', async () => {
   }
 });
 
-test('fixed-date collection fails closed when the service-site timezone is missing or invalid', async () => {
+test('CN legacy: fixed-date collection fails closed when the service-site timezone is missing or invalid', async () => {
   for (const siteTimezone of [null, 'Not/A_Timezone']) {
     const ctx = createQuoteExecutionEnv();
     ctx.env.QUOTE_EXECUTION_NOW = '2026-07-24T00:30:00Z';
@@ -1430,7 +1511,7 @@ test('fixed-date collection fails closed when the service-site timezone is missi
   }
 });
 
-test('collection start loses a race with baseline replacement activation', async () => {
+test('CN legacy: collection start loses a race with baseline replacement activation', async () => {
   const ctx = createQuoteExecutionEnv();
   await activateBaseline(ctx);
   await submitQuote(ctx, quotePayload({ expected_service_days: 4 }));
@@ -1457,7 +1538,7 @@ test('collection start loses a race with baseline replacement activation', async
   );
 });
 
-test('customer selects payment method only after collection opens and outside Admin review', async () => {
+test('CN legacy: customer selects payment method only after collection opens and outside Admin review', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   const row = installment(ctx);
@@ -1484,7 +1565,7 @@ test('customer selects payment method only after collection opens and outside Ad
   }
 });
 
-test('receipt claim validates input, stores private PDF evidence, streams by work-order access, and retries idempotently', async () => {
+test('CN legacy: receipt claim validates input, stores private PDF evidence, streams by work-order access, and retries idempotently', async () => {
   const ctx = createQuoteExecutionEnv();
   ctx.db.exec(`
     INSERT INTO engineers (id, user_no, name, phone, password_hash, engineer_role)
@@ -1518,7 +1599,7 @@ test('receipt claim validates input, stores private PDF evidence, streams by wor
   assert.equal(Object.hasOwn(submitted.json.evidence, 'object_key'), false);
   assert.match(submitted.json.evidence.url, /^\/api\/workorders\/wo-quote-1\/receipt-evidence\//);
   assert.equal(ctx.evidenceKeys().length, 1);
-  assert.match(ctx.evidenceKeys()[0], /^field-evidence\/com\/wo-quote-1\/receipt-claims\//);
+  assert.match(ctx.evidenceKeys()[0], /^field-evidence\/cn\/wo-quote-1\/receipt-claims\//);
   assert.equal(installment(ctx).status, 'pending_confirmation');
 
   const repeated = await submitReceiptClaim(ctx, { evidence });
@@ -1568,7 +1649,7 @@ test('receipt claim validates input, stores private PDF evidence, streams by wor
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action = 'installment_receipt_claim_submitted'").get().count, 1);
 });
 
-test('receipt claim recovers an ambiguous committed batch without deleting evidence or notifications', async () => {
+test('CN legacy: receipt claim recovers an ambiguous committed batch without deleting evidence or notifications', async () => {
   const ctx = createQuoteExecutionEnv();
   ctx.db.exec(`
     INSERT INTO admin_staff_accounts (
@@ -1599,7 +1680,7 @@ test('receipt claim recovers an ambiguous committed batch without deleting evide
   assert.equal(streamed.response.status, 200);
 });
 
-test('receipt claim idempotency matches the full canonical payload across shared D1 and R2', async () => {
+test('CN legacy: receipt claim idempotency matches the full canonical payload across shared D1 and R2', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'sagemro-receipt-idempotency-'));
   const filename = join(directory, 'quote-execution.sqlite');
   const sharedEvidenceObjects = new Map();
@@ -1667,7 +1748,7 @@ test('receipt claim idempotency matches the full canonical payload across shared
   }
 });
 
-test('receipt evidence Content-Disposition safely represents quotes controls and Unicode', async () => {
+test('CN legacy: receipt evidence Content-Disposition safely represents quotes controls and Unicode', async () => {
   for (const [name, expected] of [
     ['bank "receipt".pdf', /filename="bank \\"receipt\\"\.pdf"/],
     ['bank\r\nX-Injected: yes.pdf', /filename="bankX-Injected: yes\.pdf"/],
@@ -1691,7 +1772,7 @@ test('receipt evidence Content-Disposition safely represents quotes controls and
   }
 });
 
-test('receipt evidence Content-Disposition replaces malformed legacy surrogates', async () => {
+test('CN legacy: receipt evidence Content-Disposition replaces malformed legacy surrogates', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   await startCollection(ctx);
@@ -1710,7 +1791,7 @@ test('receipt evidence Content-Disposition replaces malformed legacy surrogates'
   assert.equal(/[\r\n]/.test(disposition), false);
 });
 
-test('receipt evidence failures leave no new claim and enqueue cleanup when rollback deletion fails', async () => {
+test('CN legacy: receipt evidence failures leave no new claim and enqueue cleanup when rollback deletion fails', async () => {
   {
     const ctx = createQuoteExecutionEnv();
     await confirmBaselineForReceiptTests(ctx);
@@ -1761,7 +1842,7 @@ test('receipt evidence failures leave no new claim and enqueue cleanup when roll
   }
 });
 
-test('uncertain R2 put outcomes are deleted or queued without persisting receipt rows', async () => {
+test('CN legacy: uncertain R2 put outcomes are deleted or queued without persisting receipt rows', async () => {
   for (const deleteFails of [false, true]) {
     const ctx = createQuoteExecutionEnv();
     await confirmBaselineForReceiptTests(ctx);
@@ -1785,7 +1866,7 @@ test('uncertain R2 put outcomes are deleted or queued without persisting receipt
   }
 });
 
-test('receipt claims notify active Admin staff in the request market after commit', async () => {
+test('CN legacy: receipt claims notify active Admin staff in the request market after commit', async () => {
   const ctx = createQuoteExecutionEnv({ market: 'cn' });
   ctx.db.exec(`
     INSERT INTO admin_staff_accounts (
@@ -1814,7 +1895,7 @@ test('receipt claims notify active Admin staff in the request market after commi
   assert.ok(alerts.every((row) => JSON.parse(row.data).claim_id === submitted.json.claim.id));
 });
 
-test('Admin receipt decisions are atomic, partial-aware, idempotent, and cannot over-confirm', async () => {
+test('CN legacy: Admin receipt decisions are atomic, partial-aware, idempotent, and cannot over-confirm', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   await startCollection(ctx);
@@ -1892,7 +1973,7 @@ test('Admin receipt decisions are atomic, partial-aware, idempotent, and cannot 
   assert.ok(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type IN ('installment_receipt_confirmed', 'installment_receipt_rejected')").get().count >= 4);
 });
 
-test('Admin decision key retries require an exact normalized decision payload', async () => {
+test('CN legacy: Admin decision key retries require an exact normalized decision payload', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   await startCollection(ctx);
@@ -1935,7 +2016,7 @@ test('Admin decision key retries require an exact normalized decision payload', 
   assert.equal(stored.decision_idempotency_key, 'decision-exact-1');
 });
 
-test('Admin decision recovers an ambiguous committed batch with deterministic notifications', async () => {
+test('CN legacy: Admin decision recovers an ambiguous committed batch with deterministic notifications', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   await startCollection(ctx);
@@ -1970,7 +2051,7 @@ test('Admin decision recovers an ambiguous committed batch with deterministic no
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE type = 'installment_receipt_confirmed'").get().count, 2);
 });
 
-test('collection workflow errors and notifications follow the CN request market', async () => {
+test('CN legacy: collection workflow errors and notifications follow the CN request market', async () => {
   const ctx = createQuoteExecutionEnv({ market: 'cn' });
   await confirmBaselineForReceiptTests(ctx);
 
@@ -1985,7 +2066,7 @@ test('collection workflow errors and notifications follow the CN request market'
   assert.doesNotMatch(`${notification.title}${notification.body}`, /collection|payment|work order/i);
 });
 
-test('historical quotes project a read-only legacy installment without creating execution rows', async () => {
+test('CN legacy: historical quotes project a read-only legacy installment without creating execution rows', async () => {
   const ctx = createQuoteExecutionEnv();
   ctx.db.exec(`
     INSERT INTO work_order_pricing (
@@ -2008,14 +2089,14 @@ test('historical quotes project a read-only legacy installment without creating 
   assert.equal(detail.json.quote_execution.outstanding_amount, 1900);
   assert.equal(detail.json.quote_execution.installments.length, 1);
   assert.equal(detail.json.quote_execution.installments[0].source, 'legacy');
-  assert.equal(detail.json.quote_execution.installments[0].currency, 'USD');
+  assert.equal(detail.json.quote_execution.installments[0].currency, 'CNY');
   assert.equal(Object.hasOwn(detail.json.quote_execution.installments[0], 'decided_by'), false);
   assert.equal(Object.hasOwn(detail.json.quote_execution.installments[0], 'decided_at'), false);
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 0);
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule').get().count, 0);
 });
 
-test('legacy projection sums unique completed transactions and records across the same stage', async () => {
+test('CN legacy: legacy projection sums unique completed transactions and records across the same stage', async () => {
   const ctx = createQuoteExecutionEnv({ market: 'cn' });
   ctx.db.exec(`
     INSERT INTO work_order_pricing (
@@ -2044,7 +2125,7 @@ test('legacy projection sums unique completed transactions and records across th
   assert.equal(detail.json.quote_execution.installments[0].currency, 'CNY');
 });
 
-test('legacy projection fails closed on inconsistent overpayment', async () => {
+test('CN legacy: legacy projection fails closed on inconsistent overpayment', async () => {
   const ctx = createQuoteExecutionEnv();
   ctx.db.exec(`
     INSERT INTO work_order_pricing (
@@ -2066,7 +2147,7 @@ test('legacy projection fails closed on inconsistent overpayment', async () => {
   assert.match(detail.json.error, /inconsistent/i);
 });
 
-test('confirmed receipts block baseline replacement but allow a linked supplemental quote', async () => {
+test('CN legacy: confirmed receipts block baseline replacement but allow a linked supplemental quote', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   ctx.db.exec(`
@@ -2158,7 +2239,7 @@ test('confirmed receipts block baseline replacement but allow a linked supplemen
   assert.equal(ctx.db.prepare('SELECT status FROM work_order_pricing_history WHERE version = 1').get().status, 'confirmed');
 });
 
-test('pending receipt claims block baseline replacement until Admin decides them', async () => {
+test('CN legacy: pending receipt claims block baseline replacement until Admin decides them', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   ctx.db.exec(`
@@ -2179,7 +2260,7 @@ test('pending receipt claims block baseline replacement until Admin decides them
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule WHERE quote_version = 2').get().count, 0);
 });
 
-test('pending baseline replacement preserves the active execution projection', async () => {
+test('CN legacy: pending baseline replacement preserves the active execution projection', async () => {
   const ctx = createQuoteExecutionEnv();
   await activateBaseline(ctx);
 
@@ -2192,7 +2273,7 @@ test('pending baseline replacement preserves the active execution projection', a
       {
         sequence: 1,
         amount: 7000,
-        currency: 'USD',
+        currency: 'CNY',
         trigger_type: 'before_start',
         required_before_start: true,
         description: 'Replacement start payment',
@@ -2200,7 +2281,7 @@ test('pending baseline replacement preserves the active execution projection', a
       {
         sequence: 2,
         amount: 6000,
-        currency: 'USD',
+        currency: 'CNY',
         trigger_type: 'on_acceptance',
         required_before_start: false,
         description: 'Replacement acceptance payment',
@@ -2224,7 +2305,7 @@ test('pending baseline replacement preserves the active execution projection', a
   );
 });
 
-test('baseline activation rolls back when an active-version receipt claim appears after replacement submission', async () => {
+test('CN legacy: baseline activation rolls back when an active-version receipt claim appears after replacement submission', async () => {
   const ctx = createQuoteExecutionEnv();
   await activateBaseline(ctx);
   const replacement = await submitQuote(ctx, quotePayload({ expected_service_days: 4 }));
@@ -2249,7 +2330,7 @@ test('baseline activation rolls back when an active-version receipt claim appear
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments WHERE quote_version = 2').get().count, 0);
 });
 
-test('active-version receipt claim loses a race with baseline replacement activation', async () => {
+test('CN legacy: active-version receipt claim loses a race with baseline replacement activation', async () => {
   const ctx = createQuoteExecutionEnv();
   await activateBaseline(ctx);
   await submitQuote(ctx, quotePayload({ expected_service_days: 4 }));
@@ -2277,7 +2358,7 @@ test('active-version receipt claim loses a race with baseline replacement activa
   assert.equal(ctx.db.prepare("SELECT COUNT(*) AS count FROM work_order_receipt_claims WHERE idempotency_key = 'claim-after-activation-race'").get().count, 0);
 });
 
-test('supplemental projection keeps the confirmed baseline visible to customers while staff sees review terms', async () => {
+test('CN legacy: supplemental projection keeps the confirmed baseline visible to customers while staff sees review terms', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   await submitQuote(ctx, quotePayload({
@@ -2315,7 +2396,7 @@ test('supplemental projection keeps the confirmed baseline visible to customers 
   assert.equal(engineer.json.pricing.payment_schedule.reduce((sum, row) => sum + row.amount, 0), 13500);
 });
 
-test('pending supplemental review terms do not change active quote execution for staff or Admin', async () => {
+test('CN legacy: pending supplemental review terms do not change active quote execution for staff or Admin', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
   await reviewQuote(ctx, 'approve', 1);
@@ -2346,7 +2427,7 @@ test('pending supplemental review terms do not change active quote execution for
   }
 });
 
-test('supplemental projection includes prior confirmed supplements but hides the pending schedule from customers', async () => {
+test('CN legacy: supplemental projection includes prior confirmed supplements but hides the pending schedule from customers', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   const pricingId = ctx.db.prepare('SELECT id FROM work_order_pricing').get().id;
@@ -2363,7 +2444,7 @@ test('supplemental projection includes prior confirmed supplements but hides the
       id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
       trigger_type, description, required_before_start
     ) VALUES (
-      'schedule-supplemental-v2', '${pricingId}', 'wo-quote-1', 2, 1, 600, 'USD',
+      'schedule-supplemental-v2', '${pricingId}', 'wo-quote-1', 2, 1, 600, 'CNY',
       'on_acceptance', 'Confirmed supplemental', 0
     );
   `);
@@ -2396,9 +2477,9 @@ test('supplemental projection includes prior confirmed supplements but hides the
       id, pricing_id, work_order_id, quote_version, sequence, amount, currency,
       trigger_type, description, required_before_start
     ) VALUES
-      ('schedule-rejected-v4', '${pricingId}', 'wo-quote-1', 4, 1, 900, 'USD',
+      ('schedule-rejected-v4', '${pricingId}', 'wo-quote-1', 4, 1, 900, 'CNY',
        'on_acceptance', 'Rejected supplemental', 0),
-      ('schedule-draft-v5', '${pricingId}', 'wo-quote-1', 5, 1, 800, 'USD',
+      ('schedule-draft-v5', '${pricingId}', 'wo-quote-1', 5, 1, 800, 'CNY',
        'on_acceptance', 'Draft supplemental', 0);
   `);
 
@@ -2424,7 +2505,7 @@ test('supplemental projection includes prior confirmed supplements but hides the
   assert.equal(engineer.json.pricing.payment_schedule.reduce((sum, row) => sum + row.amount, 0), 13100);
 });
 
-test('generic detail hides pending and rejected review schedules from customers', async () => {
+test('CN legacy: generic detail hides pending and rejected review schedules from customers', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
 
@@ -2447,7 +2528,7 @@ test('generic detail hides pending and rejected review schedules from customers'
   assert.equal(rejectedCustomer.json.pricing, null);
 });
 
-test('first-quote race maps SQLite uniqueness to 409 and rolls back the losing batch', async () => {
+test('CN legacy: first-quote race maps SQLite uniqueness to 409 and rolls back the losing batch', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'sagemro-quote-race-'));
   const filename = join(directory, 'quote-execution.sqlite');
   const first = createQuoteExecutionEnv({ filename });
@@ -2464,7 +2545,7 @@ test('first-quote race maps SQLite uniqueness to 409 and rolls back the losing b
     const results = await Promise.all([firstRequest, secondRequest]);
     const statuses = results.map(({ response }) => response.status).sort();
     assert.deepEqual(statuses, [200, 409]);
-    assert.equal(results.find(({ response }) => response.status === 409).json.error, 'The quote changed. Refresh and try again.');
+    assert.equal(results.find(({ response }) => response.status === 409).json.error, '报价已被更新，请刷新后重试');
     assert.equal(first.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing').get().count, 1);
     assert.equal(first.db.prepare('SELECT COUNT(*) AS count FROM work_order_pricing_history').get().count, 1);
     assert.equal(first.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule').get().count, 2);
@@ -2481,7 +2562,7 @@ test('first-quote race maps SQLite uniqueness to 409 and rolls back the losing b
   }
 });
 
-test('baseline replacement fails when a receipt is confirmed between eligibility read and batch write', async () => {
+test('CN legacy: baseline replacement fails when a receipt is confirmed between eligibility read and batch write', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   ctx.beforeNextBatch(() => {
@@ -2504,7 +2585,7 @@ test('baseline replacement fails when a receipt is confirmed between eligibility
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule WHERE quote_version = 2').get().count, 0);
 });
 
-test('baseline replacement fails when a receipt claim becomes pending between eligibility read and batch write', async () => {
+test('CN legacy: baseline replacement fails when a receipt claim becomes pending between eligibility read and batch write', async () => {
   const ctx = createQuoteExecutionEnv();
   await confirmBaselineForReceiptTests(ctx);
   ctx.beforeNextBatch(() => {
@@ -2527,7 +2608,7 @@ test('baseline replacement fails when a receipt claim becomes pending between el
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_payment_schedule WHERE quote_version = 2').get().count, 0);
 });
 
-test('supplemental submission requires the active parent history to be a confirmed baseline', async () => {
+test('CN legacy: supplemental submission requires the active parent history to be a confirmed baseline', async () => {
   for (const parentMutation of [
     "UPDATE work_order_pricing_history SET quote_kind = 'supplemental' WHERE version = 1",
     "UPDATE work_order_pricing_history SET status = 'approved', confirmed_at = NULL WHERE version = 1",
@@ -2553,7 +2634,7 @@ test('supplemental submission requires the active parent history to be a confirm
   }
 });
 
-test('Admin detail includes the complete immutable schedule', async () => {
+test('CN legacy: Admin detail includes the complete immutable schedule', async () => {
   const ctx = createQuoteExecutionEnv();
   await submitQuote(ctx);
 
@@ -2570,7 +2651,7 @@ test('Admin detail includes the complete immutable schedule', async () => {
   assert.equal(json.pricing.payment_schedule.length, 2);
 });
 
-test('Admin review messages follow the request market', async () => {
+test('CN legacy: Admin review messages follow the request market', async () => {
   const ctx = createQuoteExecutionEnv({ market: 'cn' });
   const payload = quotePayload({
     payment_schedule: quotePayload().payment_schedule.map((row) => ({ ...row, currency: 'CNY' })),
@@ -2584,15 +2665,11 @@ test('Admin review messages follow the request market', async () => {
   assert.doesNotMatch(json.message, /Quote/);
 });
 
-test('versioned start request waits for every required installment and keeps final Admin approval', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: versioned start request waits for every required installment and keeps final Admin approval', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await activateBaseline(ctx);
   const [startInstallment, laterInstallment] = installments(ctx);
-  ctx.db.prepare(`
-    UPDATE work_order_installments
-    SET received_amount = ?, status = 'partially_received'
-    WHERE id = ?
-  `).run(startInstallment.amount - 1, startInstallment.id);
+  await confirmBusinessReceipt(ctx, startInstallment, startInstallment.amount - 1);
 
   const blocked = await api(ctx, '/api/workorders/wo-quote-1/payment/start-request', {
     body: { note: 'Ready to mobilize.' },
@@ -2601,11 +2678,7 @@ test('versioned start request waits for every required installment and keeps fin
   assert.equal(blocked.response.status, 409);
   assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'pending_payment');
 
-  ctx.db.prepare(`
-    UPDATE work_order_installments
-    SET received_amount = amount, status = 'received'
-    WHERE id = ?
-  `).run(startInstallment.id);
+  await confirmBusinessReceipt(ctx, installment(ctx), 1);
   const prematureApproval = await api(ctx, '/api/admin/workorders/wo-quote-1/payment/approve-start', {
     body: { note: 'Tried to skip engineer request.' }, userType: 'admin', userId: 'admin',
   });
@@ -2653,8 +2726,9 @@ test('versioned start request waits for every required installment and keeps fin
   );
 });
 
-test('active quote gates fail closed when the authoritative execution graph is incomplete', async () => {
+test('COM business: active quote gates fail closed when the authoritative execution graph is incomplete', async () => {
   const corruptions = [
+    ['valid graph control', () => {}],
     ['missing pricing', (ctx) => ctx.db.exec(`
       PRAGMA foreign_keys = OFF;
       DELETE FROM work_order_pricing WHERE work_order_id = 'wo-quote-1';
@@ -2667,21 +2741,21 @@ test('active quote gates fail closed when the authoritative execution graph is i
       DELETE FROM work_order_pricing_history WHERE version = 1;
     `)],
     ['missing active schedule', (ctx) => ctx.db.exec(`
+      PRAGMA foreign_keys = OFF;
       DELETE FROM work_order_installments WHERE quote_version = 1;
       DROP TRIGGER quote_execution_schedule_delete_guard;
       DELETE FROM work_order_payment_schedule WHERE quote_version = 1;
+      PRAGMA foreign_keys = ON;
     `)],
   ];
 
   for (const [label, corrupt] of corruptions) {
     for (const gate of ['start', 'archive']) {
-      const ctx = createQuoteExecutionEnv();
+      const ctx = createBusinessQuoteExecutionEnv();
       await activateBaseline(ctx);
-      ctx.db.exec(`
-        UPDATE work_order_installments SET received_amount = amount, status = 'received';
-        UPDATE work_orders SET status = '${gate === 'archive' ? 'resolved' : 'pending_payment'}'
-        WHERE id = 'wo-quote-1';
-      `);
+      await confirmBusinessStartReceipts(ctx);
+      if (gate === 'archive') await confirmBusinessAcceptanceReceipts(ctx);
+      else assert.equal(installments(ctx).find(row => !row.required_before_start).received_amount, 0);
       corrupt(ctx);
 
       const result = gate === 'start'
@@ -2692,11 +2766,12 @@ test('active quote gates fail closed when the authoritative execution graph is i
           method: 'PATCH', body: {}, userType: 'admin', userId: 'admin',
         });
 
-      assert.equal(result.response.status, 409, `${label} ${gate}`);
-      assert.equal(result.json.code, 'quote_execution_inconsistent', `${label} ${gate}`);
+      const validControl = label === 'valid graph control';
+      assert.equal(result.response.status, validControl ? 200 : 409, `${label} ${gate}: ${JSON.stringify(result.json)}`);
+      if (!validControl) assert.equal(result.json.code, gate === 'start' ? 'business_dispatch_not_ready' : 'quote_execution_inconsistent', `${label} ${gate}`);
       assert.equal(
         ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status,
-        gate === 'archive' ? 'resolved' : 'pending_payment',
+        validControl ? (gate === 'archive' ? 'completed' : 'payment_review') : (gate === 'archive' ? 'resolved' : 'pending_payment'),
         `${label} ${gate}`,
       );
       await ctx.close();
@@ -2704,7 +2779,7 @@ test('active quote gates fail closed when the authoritative execution graph is i
   }
 });
 
-test('versioned start and archive transitions roll back when any mandatory lifecycle write fails', async () => {
+test('COM business: versioned start and archive transitions roll back when any mandatory lifecycle write fails', async () => {
   const transitions = [
     {
       name: 'engineer start request',
@@ -2741,10 +2816,11 @@ test('versioned start and archive transitions roll back when any mandatory lifec
       ['work_order_logs', 'fail_mandatory_log'],
       ['audit_logs', 'fail_mandatory_audit'],
     ]) {
-      const ctx = createQuoteExecutionEnv();
+      const ctx = createBusinessQuoteExecutionEnv();
       await activateBaseline(ctx);
+      await confirmBusinessStartReceipts(ctx);
+      if (transition.priorStatus === 'resolved') await confirmBusinessAcceptanceReceipts(ctx);
       ctx.db.exec(`
-        UPDATE work_order_installments SET received_amount = amount, status = 'received';
         UPDATE work_orders SET status = '${transition.priorStatus}' WHERE id = 'wo-quote-1';
         CREATE TRIGGER ${triggerName} BEFORE INSERT ON ${table}
         BEGIN SELECT RAISE(ABORT, 'forced mandatory lifecycle failure'); END;
@@ -2775,7 +2851,7 @@ test('versioned start and archive transitions roll back when any mandatory lifec
   }
 });
 
-test('concurrent versioned lifecycle transitions persist mandatory writes exactly once', async () => {
+test('COM business: concurrent versioned lifecycle transitions persist mandatory writes exactly once', async () => {
   const transitions = [
     {
       name: 'engineer start request',
@@ -2812,16 +2888,17 @@ test('concurrent versioned lifecycle transitions persist mandatory writes exactl
   for (const transition of transitions) {
     const directory = mkdtempSync(join(tmpdir(), 'sagemro-lifecycle-race-'));
     const filename = join(directory, 'quote-execution.sqlite');
-    const first = createQuoteExecutionEnv({ filename });
-    const second = createQuoteExecutionEnv({ filename, initialize: false });
+    const first = createBusinessQuoteExecutionEnv({ filename });
+    const second = createBusinessQuoteExecutionEnv({ filename, initialize: false });
     let releaseFirst;
     let firstPaused;
     const paused = new Promise((resolve) => { firstPaused = resolve; });
     const release = new Promise((resolve) => { releaseFirst = resolve; });
     try {
       await activateBaseline(first);
+      await confirmBusinessStartReceipts(first);
+      if (transition.priorStatus === 'resolved') await confirmBusinessAcceptanceReceipts(first);
       first.db.exec(`
-        UPDATE work_order_installments SET received_amount = amount, status = 'received';
         UPDATE work_orders SET status = '${transition.priorStatus}' WHERE id = 'wo-quote-1';
       `);
       first.beforeNextBatch(async () => {
@@ -2829,7 +2906,7 @@ test('concurrent versioned lifecycle transitions persist mandatory writes exactl
         await release;
       });
       const firstRequest = transition.request(first);
-      await paused;
+      await Promise.race([paused, firstRequest.then(result => { throw new Error('Request ended before its concurrency barrier: ' + JSON.stringify(result.json)); })]);
       const secondResult = await transition.request(second);
       releaseFirst();
       const firstResult = await firstRequest;
@@ -2863,20 +2940,20 @@ test('concurrent versioned lifecycle transitions persist mandatory writes exactl
   }
 });
 
-test('concurrent quote-driven check-ins reserve the final workday allowance atomically', async () => {
+test('COM business: concurrent quote-driven check-ins reserve the final workday allowance atomically', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'sagemro-workday-race-'));
   const filename = join(directory, 'quote-execution.sqlite');
   const sharedEvidenceObjects = new Map();
-  const first = createQuoteExecutionEnv({ filename, sharedEvidenceObjects });
-  const second = createQuoteExecutionEnv({ filename, initialize: false, sharedEvidenceObjects });
+  const first = createBusinessQuoteExecutionEnv({ filename, sharedEvidenceObjects });
+  const second = createBusinessQuoteExecutionEnv({ filename, initialize: false, sharedEvidenceObjects });
   let releaseFirst;
   let firstPaused;
   const paused = new Promise((resolve) => { firstPaused = resolve; });
   const release = new Promise((resolve) => { releaseFirst = resolve; });
   try {
     await activateBaseline(first);
+    await confirmBusinessStartReceipts(first);
     first.db.exec(`
-      UPDATE work_order_installments SET received_amount = amount, status = 'received';
       UPDATE work_orders SET
         status = 'in_service', site_timezone = 'UTC', expected_service_days = 3,
         expected_completion_date = '2026-07-31', planned_daily_end_time = '17:30'
@@ -2930,14 +3007,11 @@ test('concurrent quote-driven check-ins reserve the final workday allowance atom
   }
 });
 
-test('versioned service completion allows a later unpaid installment but archive waits for settlement', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: versioned service completion allows a later unpaid installment but archive waits for settlement', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   ctx.db.exec("UPDATE work_orders SET service_mode = 'remote' WHERE id = 'wo-quote-1'");
   await activateBaseline(ctx, quotePayload({ expected_service_days: null }));
-  const [startInstallment, laterInstallment] = installments(ctx);
-  ctx.db.prepare(`
-    UPDATE work_order_installments SET received_amount = amount, status = 'received' WHERE id = ?
-  `).run(startInstallment.id);
+  await confirmBusinessStartReceipts(ctx);
   ctx.db.exec(`
     UPDATE work_orders SET status = 'in_service' WHERE id = 'wo-quote-1';
     INSERT INTO work_order_repair_records (
@@ -2963,9 +3037,7 @@ test('versioned service completion allows a later unpaid installment but archive
   assert.equal(blockedArchive.response.status, 409);
   assert.equal(ctx.db.prepare("SELECT status FROM work_orders WHERE id = 'wo-quote-1'").get().status, 'resolved');
 
-  ctx.db.prepare(`
-    UPDATE work_order_installments SET received_amount = amount, status = 'received' WHERE id = ?
-  `).run(laterInstallment.id);
+  await confirmBusinessAcceptanceReceipts(ctx);
   const archived = await api(ctx, '/api/admin/workorders/wo-quote-1/archive', {
     method: 'PATCH', body: {}, userType: 'admin', userId: 'admin',
   });
@@ -2973,14 +3045,11 @@ test('versioned service completion allows a later unpaid installment but archive
   assert.equal(archived.json.status, 'completed');
 });
 
-test('customer acceptance does not financially archive a versioned order with unpaid installments', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: customer acceptance does not financially archive a versioned order with unpaid installments', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   ctx.db.exec("UPDATE work_orders SET service_mode = 'remote' WHERE id = 'wo-quote-1'");
   await activateBaseline(ctx, quotePayload({ expected_service_days: null }));
-  const [startInstallment] = installments(ctx);
-  ctx.db.prepare(`
-    UPDATE work_order_installments SET received_amount = amount, status = 'received' WHERE id = ?
-  `).run(startInstallment.id);
+  await confirmBusinessStartReceipts(ctx);
   ctx.db.exec(`
     UPDATE work_orders SET status = 'resolved' WHERE id = 'wo-quote-1';
     UPDATE work_order_service_standard_progress
@@ -3059,8 +3128,8 @@ for (const race of [
     mutate: "UPDATE work_orders SET active_quote_version = active_quote_version + 1 WHERE id = 'wo-quote-1'",
   },
 ]) {
-  test(`versioned customer acceptance rolls back when ${race.name} changes before its batch`, async () => {
-    const ctx = createQuoteExecutionEnv();
+  test(`COM business: versioned customer acceptance rolls back when ${race.name} changes before its batch`, async () => {
+    const ctx = createBusinessQuoteExecutionEnv();
     ctx.db.exec("UPDATE work_orders SET service_mode = 'remote' WHERE id = 'wo-quote-1'");
     await activateBaseline(ctx, quotePayload({ expected_service_days: null }));
     ctx.db.exec(`
@@ -3116,8 +3185,8 @@ for (const race of [
   });
 }
 
-test('Admin archive rechecks settlement for previously completed versioned orders', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: Admin archive rechecks settlement for previously completed versioned orders', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await activateBaseline(ctx);
   ctx.db.exec("UPDATE work_orders SET status = 'completed', completed_at = datetime('now') WHERE id = 'wo-quote-1'");
 
@@ -3128,13 +3197,11 @@ test('Admin archive rechecks settlement for previously completed versioned order
   assert.equal(archived.response.status, 409);
 });
 
-test('detail and work-order lists expose payment state independently from service status', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: detail and work-order lists expose payment state independently from service status', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await activateBaseline(ctx);
   const [startInstallment] = installments(ctx);
-  ctx.db.prepare(`
-    UPDATE work_order_installments SET received_amount = 1000, status = 'partially_received' WHERE id = ?
-  `).run(startInstallment.id);
+  await confirmBusinessReceipt(ctx, startInstallment, 1000);
 
   const detail = await api(ctx, '/api/workorders/wo-quote-1', {
     method: 'GET', userType: 'customer', userId: 'customer-1',
@@ -3172,7 +3239,7 @@ test('detail and work-order lists expose payment state independently from servic
   assert.equal(adminList.json.list[0].pending_receipt_claim_count, 0);
 });
 
-test('Admin list projects active receipt-review counts and currency across CN supplements without N+1 claim reads', async () => {
+test('CN legacy: Admin list projects active receipt-review counts and currency across CN supplements without N+1 claim reads', async () => {
   const ctx = createQuoteExecutionEnv({ market: 'cn' });
   await activateBaseline(ctx, quotePayload({
     payment_schedule: quotePayload().payment_schedule.map((row) => ({ ...row, currency: 'CNY' })),
@@ -3227,13 +3294,11 @@ test('Admin list projects active receipt-review counts and currency across CN su
   assert.equal(ctx.queries().filter((sql) => /work_order_receipt_claims/i.test(sql)).length, 1);
 });
 
-test('all work-order lists fail closed on a malformed active installment schedule', async () => {
-  const ctx = createQuoteExecutionEnv();
+test('COM business: all work-order lists fail closed on a malformed active installment schedule', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
   await activateBaseline(ctx);
   const [firstInstallment, secondInstallment] = installments(ctx);
-  ctx.db.prepare(`
-    UPDATE work_order_installments SET received_amount = amount, status = 'received' WHERE id = ?
-  `).run(firstInstallment.id);
+  await confirmBusinessReceipt(ctx, firstInstallment);
   ctx.db.prepare('DELETE FROM work_order_installments WHERE id = ?').run(secondInstallment.id);
 
   const customerList = await api(ctx, '/api/workorders', {
@@ -3262,7 +3327,7 @@ test('all work-order lists fail closed on a malformed active installment schedul
   }
 });
 
-test('all work-order lists fail closed when an active execution mixes currencies', async () => {
+test('CN legacy: all work-order lists fail closed when an active execution mixes currencies', async () => {
   const ctx = createQuoteExecutionEnv({ market: 'cn' });
   await activateBaseline(ctx, quotePayload({
     payment_schedule: quotePayload().payment_schedule.map((row) => ({ ...row, currency: 'CNY' })),
@@ -3316,5 +3381,68 @@ test('all work-order lists fail closed when an active execution mixes currencies
     assert.equal(row.payment_state, 'exception');
     assert.equal(row.payment_currency, null);
     assert.equal(row.pending_receipt_claim_count, null);
+  }
+});
+
+test('COM business: submission records one immutable business baseline with complete schedule and cost audit', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
+  try {
+    const denied = await api(ctx, '/api/workorders/wo-quote-1/pricing', { body: quotePayload() });
+    assert.equal(denied.response.status, 403);
+    assert.equal(ctx.db.prepare('SELECT COUNT(*) count FROM work_order_pricing').get().count, 0);
+    const submitted = await submitQuote(ctx);
+    assert.equal(submitted.response.status, 200, JSON.stringify(submitted.json));
+    assert.deepEqual(submitted.json.latest_quote, { quote_version: 1, status: 'pending_review', source: 'business' });
+    const pricing = ctx.db.prepare('SELECT * FROM work_order_pricing').get();
+    assert.equal(pricing.quote_source, 'business');
+    assert.equal(pricing.total_amount, 12000);
+    assert.equal(pricing.engineer_id, null);
+    const history = ctx.db.prepare('SELECT * FROM work_order_pricing_history').all();
+    assert.equal(history.length, 1);
+    assert.equal(history[0].quote_source, 'business');
+    assert.equal(history[0].version, 1);
+    assert.equal(history[0].status, 'pending_review');
+    const rows = ctx.db.prepare('SELECT sequence,amount,currency,required_before_start FROM work_order_payment_schedule ORDER BY sequence').all().map(row => ({ ...row }));
+    assert.deepEqual(rows, [
+      { sequence: 1, amount: 6000, currency: 'USD', required_before_start: 1 },
+      { sequence: 2, amount: 6000, currency: 'USD', required_before_start: 0 },
+    ]);
+    const cost = ctx.db.prepare('SELECT * FROM business_quote_cost_snapshots').get();
+    assert.equal(cost.quoted_amount, 12000);
+    assert.equal(cost.author_staff_id, 'business-1');
+    const audit = ctx.db.prepare("SELECT * FROM audit_logs WHERE action='business_quote_submitted'").all();
+    assert.equal(audit.length, 1);
+    assert.equal(audit[0].actor_id, 'business-1');
+    assert.deepEqual(JSON.parse(audit[0].after_state), { revision: 1, quote_version: 1, quote_source: 'business' });
+  } finally {
+    await ctx.close();
+  }
+});
+
+test('COM business: engineers cannot replace supplement collect or submit receipt claims for a business quote', async () => {
+  const ctx = createBusinessQuoteExecutionEnv();
+  try {
+    await activateBaseline(ctx);
+    const row = installment(ctx);
+    const snapshot = () => JSON.stringify([
+      'work_order_pricing', 'work_order_pricing_history', 'work_order_payment_schedule',
+      'work_order_installments', 'work_order_receipt_claims', 'audit_logs',
+    ].map(table => ctx.db.prepare('SELECT * FROM ' + table).all()));
+    const before = snapshot();
+    for (const kind of ['baseline', 'supplemental']) {
+      const result = await api(ctx, '/api/workorders/wo-quote-1/pricing', {
+        body: quotePayload({ quote_kind: kind, ...(kind === 'supplemental' ? { parent_quote_version: 1 } : {}) }),
+      });
+      assert.equal(result.response.status, 403, kind);
+      assert.equal(snapshot(), before, kind);
+    }
+    const collect = await api(ctx, '/api/workorders/wo-quote-1/installments/' + row.id + '/collect', { body: {} });
+    assert.equal(collect.response.status, 403);
+    assert.equal(snapshot(), before);
+    const claimed = await submitReceiptClaim(ctx);
+    assert.equal(claimed.response.status, 403);
+    assert.equal(snapshot(), before);
+  } finally {
+    await ctx.close();
   }
 });

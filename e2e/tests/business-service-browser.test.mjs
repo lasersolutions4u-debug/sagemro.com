@@ -11,7 +11,7 @@ import { createServer as createFrontendServer } from '../../frontend/node_module
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 
-for (const market of ['com', 'cn']) test(`real business onsite service from Admin approval through camera, daily and final reports: ${market}`, { timeout: 90_000 }, async t => {
+for (const market of ['com', 'cn']) test(`real business onsite service ${market === 'com' ? 'from customer request' : 'from existing order'} through payment, reports and acceptance: ${market}`, { timeout: 90_000 }, async t => {
   const zh = market === 'cn', sqlite = new DatabaseSync(':memory:', { enableDoubleQuotedStringLiterals: true }); t.after(() => sqlite.close());
   sqlite.exec(readFileSync(new URL('../../worker/schema.sql', import.meta.url), 'utf8'));
   const DB = { prepare(sql) { let args = []; return { bind(...values) { args = values; return this; }, async first() { return sqlite.prepare(sql).get(...args) || null; },
@@ -21,19 +21,42 @@ for (const market of ['com', 'cn']) test(`real business onsite service from Admi
     INSERT INTO business_staff_profiles(staff_id,role,grade) VALUES ('biz-fixture','business_director',1);
     INSERT INTO business_territories(id,name,market) VALUES ('territory-fixture','Fictional territory','${market}');
     INSERT INTO business_director_territories(staff_id,territory_id) VALUES ('biz-fixture','territory-fixture');
-    INSERT INTO customers(id,user_no,name,password_hash) VALUES ('customer-fixture','CUSTOMER-FIXTURE','Fictional Customer','fictional');
+    INSERT INTO customers(id,user_no,name,password_hash) VALUES ('customer-fixture','CUSTOMER-FIXTURE','Fictional Customer','fictional');`);
+  if (zh) sqlite.exec(`
     INSERT INTO work_orders(id,order_no,customer_id,type,description,status,service_mode,site_timezone,planned_daily_end_time) VALUES ('order-fixture','ORDER-FIXTURE','customer-fixture','fault','Fictional request','pending','onsite','UTC','23:59');
     INSERT INTO business_record_assignments(kind,record_id,territory_id,owner_staff_id) VALUES ('work_order','order-fixture','territory-fixture','biz-fixture');`);
   const objects = new Map();
   const env = { DB, JWT_SECRET: 'fictional-local-service-browser-secret', ENVIRONMENT: 'development', KV: { async get() { return null; }, async put() {}, async delete() {} },
     FIELD_EVIDENCE: { async put(key, bytes) { objects.set(key, bytes); }, async get(key) { const bytes = objects.get(key); return bytes ? { body: bytes } : null; }, async delete(key) { objects.delete(key); } } };
   const token = id => signJwt({ userId: id, userType: id === 'customer-fixture' ? 'customer' : 'admin', ...(id === 'biz-fixture' ? { staffId: id } : {}), market, exp: Math.floor(Date.now() / 1000) + 3600 }, env.JWT_SECRET);
+  let workOrderId = 'order-fixture';
   async function api(path, id = 'biz-fixture', method = 'GET', body) {
+    path = path.replace('order-fixture', workOrderId);
     const multipart = body instanceof FormData;
-    const response = await worker.fetch(new Request(`https://api.sagemro.${market}${path}`, { method, headers: { Origin: `https://admin.sagemro.${market}`, Authorization: `Bearer ${await token(id)}`, ...(multipart ? {} : { 'Content-Type': 'application/json' }) }, ...(body ? { body: multipart ? body : JSON.stringify(body) } : {}) }), env, {});
+    const pending = [];
+    const response = await worker.fetch(new Request(`https://api.sagemro.${market}${path}`, { method, headers: { Origin: `https://admin.sagemro.${market}`, Authorization: `Bearer ${await token(id)}`, ...(multipart ? {} : { 'Content-Type': 'application/json' }) }, ...(body ? { body: multipart ? body : JSON.stringify(body) } : {}) }), env, { waitUntil(task) { pending.push(task); } });
+    await Promise.all(pending);
     const data = await response.json(); assert.ok(response.ok, `${path}: ${response.status} ${JSON.stringify(data)}`); return data;
   }
   async function scope(id) { return { expected_staff_id: id, scope_version: (await api(`/api/admin/business/organization?expected_staff_id=${id}`, id)).scope_version }; }
+  if (!zh) {
+    const created = await api('/api/workorders', 'customer-fixture', 'POST', {
+      idempotency_key: 'fictional-overseas-service-request', type: 'fault', description: 'Fictional laser equipment stops during operation.', urgency: 'normal', service_mode: 'onsite',
+      service_address: 'Fictional test site, Chicago', service_latitude: 41.88, service_longitude: -87.63,
+      service_coordinate_system: 'wgs84', service_location_source: 'manual',
+      intake: { service_request_kind: 'repair', device_types: ['fiber_laser_cutting_machine'], device_brands: ['Fictional Brand'], device_model: 'Fictional Model',
+        region: ['United States', 'Illinois', 'Chicago'], alarm_code: 'FICTIONAL-01', production_impact: 'Fictional line stopped.',
+        contact: { name: 'Fictional Customer', email: 'customer@example.invalid', phone: '', whatsapp: '', preference: 'email' } },
+    });
+    workOrderId = created.work_order.id;
+    const storedOrder = sqlite.prepare('SELECT customer_id,engineer_id FROM work_orders WHERE id=?').get(workOrderId);
+    assert.equal(storedOrder.customer_id, 'customer-fixture');
+    assert.equal(storedOrder.engineer_id, null);
+    await api(`/api/admin/business/records/work_order/${workOrderId}/assignment`, 'admin', 'PUT', {
+      ...await scope('admin'), revision: 0, territory_id: 'territory-fixture', owner_staff_id: 'biz-fixture',
+    });
+    sqlite.prepare("UPDATE work_orders SET site_timezone='UTC',planned_daily_end_time='23:59' WHERE id=?").run(workOrderId);
+  }
   const businessContext = await scope('biz-fixture'), adminContext = await scope('admin'), base = '/api/admin/business/work-orders/order-fixture';
   await api(`${base}/quote`, 'biz-fixture', 'PUT', { ...businessContext, revision: 0, labor_fee: 900, parts_fee: 0, parts_detail: '', travel_fee: 0, other_fee: 0, expected_service_days: 1,
     payment_plan_mode: 'installments', payment_schedule: [{ sequence: 1, amount: 600, currency: zh ? 'CNY' : 'USD', trigger_type: 'before_start', required_before_start: true }, { sequence: 2, amount: 300, currency: zh ? 'CNY' : 'USD', trigger_type: 'on_acceptance', required_before_start: false }], costs: { parts_cost: 0, engineer_cost: 300, travel_cost: 0, other_cost: 0 } });
@@ -50,7 +73,7 @@ for (const market of ['com', 'cn']) test(`real business onsite service from Admi
   const moduleId = '\0real-service-browser';
   const server = await createServer({ root: fileURLToPath(new URL('../../admin', import.meta.url)), logLevel: 'error', define: { 'import.meta.env.VITE_API_BASE': 'window.location.origin' }, server: { host: '127.0.0.1', port: 0, hmr: false },
     plugins: [{ name: 'real-service-browser', resolveId: id => id === '/real-service.jsx' ? moduleId : null,
-      load: id => id === moduleId ? `import React from 'react'; import {createRoot} from 'react-dom/client'; import {BusinessServicePanel} from '/src/components/BusinessServicePanel.jsx'; import '/src/index.css'; createRoot(document.getElementById('root')).render(React.createElement(BusinessServicePanel,{workOrderId:'order-fixture'}));` : null }] });
+      load: id => id === moduleId ? `import React from 'react'; import {createRoot} from 'react-dom/client'; import {BusinessServicePanel} from '/src/components/BusinessServicePanel.jsx'; import '/src/index.css'; createRoot(document.getElementById('root')).render(React.createElement(BusinessServicePanel,{workOrderId:${JSON.stringify(workOrderId)}}));` : null }] });
   await server.listen(); t.after(() => server.close());
   const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'chrome' : 'chromium', headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] }); t.after(() => browser.close());
   const errors = [], responses = [];
@@ -95,14 +118,14 @@ for (const market of ['com', 'cn']) test(`real business onsite service from Admi
   await daily.locator('input[type=number]').first().fill('2');
   await daily.locator('input[type=file]').first().setInputFiles({ name: 'fictional.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jfL0AAAAASUVORK5CYII=', 'base64') });
   await daily.getByRole('button', { name: zh ? '提交现场日报' : 'Submit daily report', exact: true }).click(); await daily.waitFor({ state: 'detached' });
-  for (const field of ['symptom', 'inspection_process', 'diagnosis', 'solution', 'verification_result']) await business.locator(`#service-report-order-fixture-${field}`).fill(`Fictional ${field} evidence sufficiently detailed for quality review.`);
+  for (const field of ['symptom', 'inspection_process', 'diagnosis', 'solution', 'verification_result']) await business.locator(`#service-report-${workOrderId}-${field}`).fill(`Fictional ${field} evidence sufficiently detailed for quality review.`);
   await business.getByRole('button', { name: zh ? '提交最终报告给客户' : 'Submit Final Report to Customer', exact: true }).click();
   await business.getByText(zh ? '等待客户验收' : 'Awaiting customer acceptance', { exact: true }).waitFor();
   const record = sqlite.prepare('SELECT * FROM work_order_repair_records').get(); assert.ok(record.submitted_at);
   const day = sqlite.prepare('SELECT * FROM work_order_field_days').get(); assert.equal(day.staff_id, 'biz-fixture'); assert.equal(day.engineer_id, null); assert.equal(day.status, 'report_submitted');
   assert.equal(sqlite.prepare('SELECT engineer_id FROM work_orders').get().engineer_id, null);
   assert.doesNotMatch(await business.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage })), /Fictional daily|quality review/);
-  await api('/api/workorders/rating', 'customer-fixture', 'POST', { work_order_id: 'order-fixture' });
+  await api('/api/workorders/rating', 'customer-fixture', 'POST', { work_order_id: workOrderId });
   assert.ok(sqlite.prepare('SELECT customer_confirmed_at FROM work_order_repair_records').get().customer_confirmed_at);
   assert.equal(sqlite.prepare('SELECT status FROM work_orders').get().status, 'resolved'); assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM ratings').get().n, 0);
   assert.equal(await business.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);

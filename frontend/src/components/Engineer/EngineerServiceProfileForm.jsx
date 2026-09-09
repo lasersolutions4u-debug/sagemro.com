@@ -190,29 +190,29 @@ export function EngineerServiceProfileForm({ engineerId }) {
       if (generation.current === current) setLoading(false);
     }
   };
-  const inputClass = 'mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]';
+  const inputClass = 'mt-2 min-h-11 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-base text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]';
   const buttonClass = 'rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm disabled:opacity-50';
 
   return (
-    <form onSubmit={save} className="space-y-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 text-[var(--color-text-primary)]" aria-label={text('工程师内部服务资料', 'Internal engineer service profile')}>
+    <form onSubmit={save} className="space-y-5 text-[var(--color-text-primary)]" aria-label={text('工程师内部服务资料', 'Internal engineer service profile')}>
       <div className="border-l-4 border-[var(--color-primary)] pl-3">
         <h3 className="font-semibold">{text('内部费用、差旅与能力调查', 'Internal rates, travel & capability survey')}</h3>
-        <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-secondary)]">{text('仅供内部成本参考，不是客户报价，也不代表派单。资料为工程师自报、待核实，能力选择不代表平台认证。可留空保存草稿；留空表示未知，不表示免费。', 'For internal cost reference only. This is not a customer quotation or a service assignment. Self-reported and unverified; capabilities are not platform certifications. Save a partial draft; blank means unknown, not free.')}</p>
+        <p className="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">{text('仅供内部成本参考，不是客户报价，也不代表派单。资料为工程师自报、待核实，能力选择不代表平台认证。可留空保存草稿；留空表示未知，不表示免费。', 'For internal cost reference only. This is not a customer quotation or a service assignment. Self-reported and unverified; capabilities are not platform certifications. Save a partial draft; blank means unknown, not free.')}</p>
       </div>
       {loading && <p role="status" className="text-sm">{text('正在读取资料…', 'Loading profile…')}</p>}
       {error && <p role="alert" className="text-sm text-[var(--color-text-primary)]">{error}</p>}
       {identityChanged && <div className="space-y-3"><p role="alert">{text('账号已切换，请重新加载页面', 'Account changed. Please reload the page')}</p><button type="button" onClick={() => window.location.reload()} className={buttonClass}>{text('重新加载页面', 'Reload page')}</button></div>}
       {!loaded && !loading && !identityChanged && <button type="button" onClick={() => setRetry(value => value + 1)} className={buttonClass}>{text('重试加载', 'Retry loading')}</button>}
       {loaded && <>
-        <p className="text-xs text-[var(--color-text-secondary)]">{text('金额按所选币种的主币单位填写，最多两位小数；不自动换汇。', 'Enter amounts in the selected currency’s major units, with up to 2 decimals. No currency conversion.')}</p>
+        <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">{text('金额按所选币种的主币单位填写，最多两位小数；不自动换汇。', 'Enter amounts in the selected currency’s major units, with up to 2 decimals. No currency conversion.')}</p>
         <fieldset disabled={saving || loading} className="min-w-0 space-y-3">
-          {GROUPS.map((group, index) => <details key={group.title[1]} open={index === 0} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-            <summary className="cursor-pointer text-sm font-medium">{group.title[cn ? 0 : 1]}</summary>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {GROUPS.map((group, index) => <details key={group.title[1]} open={index === 0} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:p-5">
+            <summary className="cursor-pointer text-base font-semibold focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]">{group.title[cn ? 0 : 1]}</summary>
+            <div className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">
               {group.fields.map(([name, zh, en, type]) => {
                 const label = `${cn ? zh : en}${MONEY.includes(name) ? ` (${draft.currency || text('请填写币种', 'set currency')})` : ''}`;
                 if (type === 'capabilities') return <fieldset key={name} className="space-y-2 sm:col-span-2">
-                  <legend className="text-xs text-[var(--color-text-secondary)]">{label}</legend>
+                  <legend className="text-sm font-medium">{label}</legend>
                   <div className="flex flex-wrap gap-3">{CAPABILITIES.map(value => <label key={value} className="flex items-center gap-2 text-sm" htmlFor={`${id}-${name}-${value}`}>
                     <input id={`${id}-${name}-${value}`} name={`${name}-${value}`} type="checkbox" checked={(draft[name] || []).includes(value)} onChange={event => {
                       const values = draft[name] || [];
@@ -221,7 +221,7 @@ export function EngineerServiceProfileForm({ engineerId }) {
                   </label>)}</div>
                 </fieldset>;
                 return <div key={name} className={!type ? 'sm:col-span-2' : ''}>
-                  <label htmlFor={`${id}-${name}`} className="text-xs text-[var(--color-text-secondary)]">{label}</label>
+                  <label htmlFor={`${id}-${name}`} className="text-sm font-medium">{label}</label>
                   {type === 'boolean' ? <select id={`${id}-${name}`} name={name} value={draft[name] === '' ? '' : String(draft[name])} onChange={event => change(name, event.target.value === '' ? '' : event.target.value === 'true')} className={inputClass}>
                     <option value="">{text('尚未说明', 'Not specified')}</option><option value="true">{text('可以', 'Available')}</option><option value="false">{text('不可以', 'Not available')}</option>
                   </select> : !type ? <textarea id={`${id}-${name}`} name={name} value={draft[name]} onChange={event => change(name, event.target.value)} rows={2} maxLength={2000} className={inputClass} /> : <input id={`${id}-${name}`} name={name} value={draft[name]} onChange={event => change(name, event.target.value)} type={type === 'date' ? 'date' : 'text'} inputMode={['money', 'hours'].includes(type) ? 'decimal' : undefined} pattern={type === 'currency' ? '[A-Z]{3}' : ['money', 'hours'].includes(type) ? '(0|[1-9][0-9]{0,8})([.][0-9]{1,2})?' : undefined} maxLength={type === 'currency' ? 3 : 12} className={inputClass} />}
@@ -241,9 +241,9 @@ export function EngineerServiceProfileForm({ engineerId }) {
             </div>
           </>}
         </div>}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-[var(--color-text-secondary)]">{dirty ? text('有未保存的修改；关闭将丢弃。', 'Unsaved changes; closing discards them.') : text('可随时补充资料，保存不代表资料已完整或核实。', 'You can add details later. Saving does not mean complete or verified.')} {updatedAt && `${text('更新于', 'Updated')} ${updatedAt}`}</p>
-          <button type="submit" disabled={saving || loading || conflict} className="rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{saving ? text('正在保存…', 'Saving…') : text('保存草稿', 'Save draft')}</button>
+        <div className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm leading-relaxed text-[var(--color-text-secondary)]">{dirty ? text('有未保存的修改；关闭将丢弃。', 'Unsaved changes; closing discards them.') : text('可随时补充资料，保存不代表资料已完整或核实。', 'You can add details later. Saving does not mean complete or verified.')} {updatedAt && `${text('更新于', 'Updated')} ${updatedAt}`}</p>
+          <button type="submit" disabled={saving || loading || conflict} className="shrink-0 whitespace-nowrap rounded-lg bg-[var(--color-primary)] px-4 py-3 text-sm font-medium text-white disabled:opacity-50">{saving ? text('正在保存…', 'Saving…') : text('保存草稿', 'Save draft')}</button>
         </div>
         {message && <p role="status" className="text-sm">{message}</p>}
       </>}

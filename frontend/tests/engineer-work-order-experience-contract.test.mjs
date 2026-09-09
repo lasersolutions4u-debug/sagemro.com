@@ -207,7 +207,24 @@ test('engineer detail exposes only one of six high-level sections at a time', ()
   assert.match(detail, /refreshAfter\(onAssignEngineer\)/);
   assert.match(detail, /refreshAfter\(onConfirmAssignment\)/);
   assert.match(detail, /isExecutingEngineer && detail\.status === 'assigned'/);
-  assert.match(detail, /const canReassignTeamWork = isRegionalLead && isCurrentTeamWork && \['pending', 'pending_dispatch', 'assigned'\]\.includes\(detail\.status\)/);
+  const reassignExpression = detail.match(/const canReassignTeamWork = ([\s\S]*?);/);
+  assert.ok(reassignExpression);
+  const canReassign = new Function('isRegionalLead', 'isCurrentTeamWork', 'detail', `return ${reassignExpression[1]}`);
+  const confirmedBusiness = { quote_source: 'business', status: 'confirmed' };
+  for (const status of ['pending', 'pending_dispatch', 'assigned']) {
+    assert.equal(canReassign(true, true, { status }), true);
+  }
+  assert.equal(canReassign(true, true, { status: 'pending_payment', pricing: confirmedBusiness }), true);
+  for (const pricing of [null, { quote_source: 'engineer', status: 'confirmed' }, { quote_source: 'business', status: 'pending_review' }]) {
+    assert.equal(canReassign(true, true, { status: 'pending_payment', pricing }), false);
+  }
+  for (const status of ['pending', 'pending_dispatch', 'assigned', 'pending_payment']) {
+    assert.equal(canReassign(false, true, { status, pricing: confirmedBusiness }), false);
+    assert.equal(canReassign(true, false, { status, pricing: confirmedBusiness }), false);
+  }
+  for (const status of ['payment_review', 'in_service', 'completed', 'cancelled']) {
+    assert.equal(canReassign(true, true, { status, pricing: confirmedBusiness }), false);
+  }
   assert.match(detail, /canReassignTeamWork \? \(/);
   assert.match(detail, /Unavailable for this work-order stage/);
 });

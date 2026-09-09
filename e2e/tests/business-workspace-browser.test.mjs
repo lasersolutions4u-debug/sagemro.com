@@ -80,6 +80,14 @@ test('business workspace and staff organization browser journeys use only local 
             { id: 'manager-fixture', display_name: 'Example Manager', normalized_login: 'manager@example.invalid', role: 'business_manager', grade: 1, is_active: 1, market_scope: market, supervisor_staff_id: 'director-fixture', territory_ids: [], effective_territory_ids: ['territory-fixture'], revision: 1 },
           ];
           const territories = [{ id: 'territory-fixture', name: 'Example territory', market }];
+          if (bootstrap) {
+            const otherMarket = market === 'cn' ? 'com' : 'cn';
+            territories.push({ id: 'other-market-territory', name: 'Other market territory', market: otherMarket });
+            staff.push(...['business_director', 'business_manager'].map(role => ({
+              id: `other-market-${role}`, display_name: `Other market ${role}`, role, grade: 1,
+              is_active: 1, market_scope: otherMarket, effective_territory_ids: ['other-market-territory'],
+            })));
+          }
           const customer = { id: 'customer-fixture', name: 'Example Customer', company: 'Example Industrial Co.', email: 'sample@example.invalid', phone: '+15550000000', territory_id: 'territory-fixture', owner_staff_id: 'director-fixture', assignment_revision: 1 };
           const leads = [
             { id: 'lead-a', name: '=1+1', source: 'service_request', message: 'Example maintenance request', email: 'sample@example.invalid' },
@@ -96,7 +104,7 @@ test('business workspace and staff organization browser journeys use only local 
               if (url.pathname === '/api/admin/staff' && request.method() === 'GET') return route.fulfill({ json: { staff } });
               if (url.pathname === '/api/admin/staff' && request.method() === 'POST') {
                 const body = request.postDataJSON(); writes.push({ path: url.pathname, body });
-                assert.equal(body.expected_staff_id, 'admin');
+                if (body.role.startsWith('business_')) assert.equal(body.expected_staff_id, 'admin');
                 return route.fulfill({ json: { staff: { ...body, id: 'created-fixture', is_active: 1 }, temporary_password: 'Local-test-only-123!' } });
               }
               if (url.pathname.startsWith('/api/admin/business/')) {
@@ -171,14 +179,40 @@ test('business workspace and staff organization browser journeys use only local 
             await page.locator('#staff-display-name').fill('Example new manager');
             await page.locator('#staff-login').fill('new-manager@example.invalid');
             await page.locator('#staff-role').selectOption('business_manager');
-            await page.locator('#staff-market').selectOption(market);
+            assert.equal(await page.locator('select#staff-market').count(), 0);
+            assert.equal(await page.locator('#staff-market').getAttribute('readonly'), '');
+            assert.equal(await page.locator('#staff-market').inputValue(), market === 'cn' ? '中国版' : 'International');
+            assert.equal(await page.getByLabel(market === 'cn' ? '直属上级' : 'Direct supervisor', { exact: true }).locator('option[value="other-market-business_director"]').count(), 0);
             await page.getByLabel(market === 'cn' ? '直属上级' : 'Direct supervisor', { exact: true }).selectOption('director-fixture');
             await page.getByLabel(market === 'cn' ? '档位' : 'Grade', { exact: true }).selectOption('3');
             await page.getByRole('button', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).click();
             await page.getByRole('dialog').waitFor();
             const body = writes.find(write => write.path === '/api/admin/staff').body;
+            assert.equal(body.market_scope, market);
             assert.equal(body.role, 'business_manager'); assert.equal(body.grade, 3); assert.equal(body.supervisor_staff_id, 'director-fixture'); assert.deepEqual(body.territory_ids, []);
             await page.getByRole('dialog').getByRole('button', { name: market === 'cn' ? '关闭' : 'Close', exact: true }).click();
+            for (const role of ['operations', 'warehouse', 'procurement', 'admin', 'business_director', 'business_specialist']) {
+              await page.locator('#staff-display-name').fill(`Example ${role}`);
+              await page.locator('#staff-login').fill(`${role}@example.invalid`);
+              await page.locator('#staff-role').selectOption(role);
+              if (role === 'business_director') {
+                assert.equal(await page.getByRole('checkbox').count(), 2);
+                assert.equal(await page.getByRole('checkbox', { name: /Other market territory/ }).count(), 0);
+                await page.getByRole('checkbox').first().check();
+              }
+              if (role === 'business_specialist') {
+                assert.equal(await page.getByLabel(market === 'cn' ? '直属上级' : 'Direct supervisor', { exact: true }).locator('option[value="other-market-business_manager"]').count(), 0);
+                await page.getByLabel(market === 'cn' ? '直属上级' : 'Direct supervisor', { exact: true }).selectOption('manager-fixture');
+              }
+              await page.getByRole('button', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).click();
+              await page.getByRole('dialog').waitFor();
+              const created = writes.filter(write => write.path === '/api/admin/staff').at(-1).body;
+              assert.equal(created.role, role);
+              assert.equal(created.market_scope, market);
+              if (role === 'business_director') assert.deepEqual(created.territory_ids, ['territory-fixture']);
+              if (role === 'business_specialist') assert.equal(created.supervisor_staff_id, 'manager-fixture');
+              await page.getByRole('dialog').getByRole('button', { name: market === 'cn' ? '关闭' : 'Close', exact: true }).click();
+            }
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
             if (process.env.SAGEMRO_BUSINESS_SCREENSHOTS) await page.screenshot({ path: `${process.env.SAGEMRO_BUSINESS_SCREENSHOTS}/${market}-organization.png`, fullPage: true });
           }

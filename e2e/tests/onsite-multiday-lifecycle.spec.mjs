@@ -1,7 +1,3 @@
-import { execFileSync } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { expect, test } from '@playwright/test';
 
 import {
@@ -10,13 +6,12 @@ import {
   dispatchWorkOrder,
   loginAdmin,
   onboardEngineer,
+  preparePaidBusinessOrder,
 } from '../support/journeys.mjs';
 import { e2eRuntime } from '../support/runtime.mjs';
+import { localD1 as updateLocalD1, sqlText } from '../support/visual.mjs';
 
 const runtime = e2eRuntime();
-const e2eDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const workerDir = path.resolve(e2eDir, '../worker');
-const stateDir = path.join(e2eDir, '.state');
 
 const PRE_START_ENGINEER_STANDARD_ITEMS = [
   'task.device_identity',
@@ -52,20 +47,6 @@ function addDays(isoDate, days) {
   const date = new Date(`${isoDate}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
-}
-
-function sqlText(value) {
-  return `'${String(value).replaceAll("'", "''")}'`;
-}
-
-function updateLocalD1(command) {
-  execFileSync('npx', [
-    'wrangler', 'd1', 'execute', 'sagemro-db',
-    '--local',
-    '--persist-to', stateDir,
-    '--command', command,
-    '--yes',
-  ], { cwd: workerDir, stdio: 'pipe' });
 }
 
 async function browserJsonApi(page, pathName, options = {}) {
@@ -156,19 +137,25 @@ test('multi-day onsite work preserves protected evidence and closes only after d
 
   try {
     await loginAdmin(adminPage, runtime);
+    const customerOrders = await browserJsonApi(customerPage, '/api/workorders');
+    expect(customerOrders.ok).toBe(true);
+    const workOrder = customerOrders.data.work_orders.find((item) => item.order_no === orderNo);
+    expect(workOrder).toBeTruthy();
+    const workOrderId = workOrder.id;
+    updateLocalD1(`UPDATE work_orders SET service_mode = 'onsite' WHERE order_no = ${sqlText(orderNo)}`);
+    const plan = await adminApi(adminPage, runtime, `/api/admin/workorders/${workOrderId}/field-plan`, {
+      method: 'PATCH', body: JSON.stringify({ site_timezone: dayOneTimezone, expected_service_days: 2,
+        expected_completion_date: dayTwo, planned_daily_start_time: '08:00', planned_daily_end_time: '17:00' }),
+    });
+    expect(plan.field_plan).toMatchObject({ site_timezone: dayOneTimezone, expected_service_days: 2 });
+    await preparePaidBusinessOrder({ browser, adminPage, customerPage, orderNo, runtime });
     await dispatchWorkOrder({ page: adminPage, orderNo, engineer });
 
     await engineerPage.reload();
     const assignedTask = engineerPage.getByRole('button').filter({ hasText: orderNo });
     await expect(assignedTask).toBeVisible();
     await assignedTask.click();
-    await engineerPage.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
-
-    const customerOrders = await browserJsonApi(customerPage, '/api/workorders');
-    expect(customerOrders.ok).toBe(true);
-    const workOrder = customerOrders.data.work_orders.find((item) => item.order_no === orderNo);
-    expect(workOrder).toBeTruthy();
-    const workOrderId = workOrder.id;
+    await expect(engineerPage.getByRole('button', { name: 'Request Start Approval', exact: true })).toBeVisible();
 
     updateLocalD1(`
       UPDATE work_orders
@@ -195,7 +182,7 @@ test('multi-day onsite work preserves protected evidence and closes only after d
       state: 'confirmed',
     });
 
-    const plan = await adminApi(adminPage, runtime, `/api/admin/workorders/${workOrderId}/field-plan`, {
+    await expect(adminApi(adminPage, runtime, `/api/admin/workorders/${workOrderId}/field-plan`, {
       method: 'PATCH',
       body: JSON.stringify({
         site_timezone: dayOneTimezone,
@@ -204,8 +191,7 @@ test('multi-day onsite work preserves protected evidence and closes only after d
         planned_daily_start_time: '08:00',
         planned_daily_end_time: '17:00',
       }),
-    });
-    expect(plan.field_plan).toMatchObject({ site_timezone: dayOneTimezone, expected_service_days: 2 });
+    })).rejects.toThrow('quote_driven_field_plan');
 
     const dayOneCheckIn = await submitFieldMultipart(
       engineerPage,
@@ -218,17 +204,8 @@ test('multi-day onsite work preserves protected evidence and closes only after d
     expect(dayOneCheckIn.data.field_day.site_local_date).toBe(dayOne);
     const dayOneId = dayOneCheckIn.data.field_day.id;
 
-    await adminApi(adminPage, runtime, `/api/admin/workorders/${workOrderId}/field-plan`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        site_timezone: dayTwoTimezone,
-        expected_service_days: 2,
-        expected_completion_date: dayTwo,
-        planned_daily_start_time: '08:00',
-        planned_daily_end_time: '17:00',
-      }),
-    });
     updateLocalD1(`
+      UPDATE work_orders SET site_timezone = ${sqlText(dayTwoTimezone)} WHERE id = ${sqlText(workOrderId)};
       UPDATE work_order_field_days
       SET site_timezone = ${sqlText(dayTwoTimezone)},
           expected_check_out_at = ${sqlText(`${dayOne}T17:00:00`)},
@@ -320,7 +297,8 @@ test('multi-day onsite work preserves protected evidence and closes only after d
 
     const customerDetail = await browserJsonApi(customerPage, `/api/workorders/${workOrderId}`);
     expect(customerDetail.ok).toBe(true);
-    expect(customerDetail.data.expected_completion_date).toBe(extendedCompletion);
+    expect(customerDetail.data.expected_completion_date).toBe(dayTwo);
+    expect(customerDetail.data.approved_extension_days).toBe(1);
     expect(customerDetail.data.field_days).toHaveLength(2);
     expect(customerDetail.data.field_extension_requests).toHaveLength(1);
     expect(customerDetail.data.field_extension_requests[0]).toMatchObject({
@@ -413,6 +391,12 @@ test('multi-day onsite work preserves protected evidence and closes only after d
       }),
     });
     expect(completed.ok).toBe(true);
+    const acceptedDetail = await browserJsonApi(customerPage, `/api/workorders/${workOrderId}`);
+    expect(acceptedDetail.data.status).toBe('resolved');
+    await adminPage.reload();
+    await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
+    await adminPage.locator('tr').filter({ hasText: orderNo }).getByRole('button', { name: 'Archive', exact: true }).click();
+    await expect(adminPage.getByText(`Archived: ${orderNo}`, { exact: true })).toBeVisible();
     const finalDetail = await browserJsonApi(customerPage, `/api/workorders/${workOrderId}`);
     expect(finalDetail.data.status).toBe('completed');
   } finally {

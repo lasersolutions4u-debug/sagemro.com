@@ -241,10 +241,24 @@ test('engineer follows service standards and AI guidance without automatic custo
       () => performance.getEntriesByType('navigation').length,
     )).toBe(navigationCount);
 
-    await guidanceCard.getByRole('button', { name: 'Insert as message draft', exact: true }).first().click();
-    await expect(engineerPage.getByRole('tab', { name: 'Messages', exact: true })).toHaveAttribute('aria-selected', 'true');
+    let releaseReview;
+    const reviewGate = new Promise((resolve) => { releaseReview = resolve; });
+    let reviewRequested = false;
+    await engineerPage.route(new RegExp(`/api/workorders/${workOrderId}/engineer-review$`), async (route) => {
+      const response = await route.fetch();
+      reviewRequested = true;
+      await reviewGate;
+      await route.fulfill({ response });
+    });
     const composer = engineerPage.getByPlaceholder('Type a message...');
-    await expect(composer).toHaveValue(guidance.customer_questions[0].draft);
+    try {
+      await guidanceCard.getByRole('button', { name: 'Insert as message draft', exact: true }).first().click();
+      await expect(engineerPage.getByRole('tab', { name: 'Messages', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await expect.poll(() => reviewRequested).toBe(true);
+      await expect(composer).toHaveValue(guidance.customer_questions[0].draft);
+    } finally {
+      releaseReview();
+    }
 
     const beforeAction = localD1Rows(`
       SELECT

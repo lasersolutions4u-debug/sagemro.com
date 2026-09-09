@@ -27,8 +27,9 @@ function serviceStandardRows(state = 'legacy_not_recorded') {
   }));
 }
 
-function createPaymentFlowEnv() {
+function createPaymentFlowEnv({ market = 'com' } = {}) {
   const env = {
+    __market: market,
     JWT_SECRET: 'test-secret-with-enough-length',
     ADMIN_PHONE: '13800000000',
     ADMIN_PASSWORD: 'admin-pass',
@@ -762,7 +763,7 @@ async function token(env, userType, userId) {
   return signJwt({
     userId,
     userType,
-    market: 'com',
+    market: env.__market,
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
@@ -776,7 +777,7 @@ async function api(env, path, { method = 'POST', body, userType = 'customer', us
     headers: {
       Authorization: `Bearer ${jwt}`,
       'Content-Type': 'application/json',
-      Origin: 'https://sagemro.com',
+      Origin: `https://sagemro.${env.__market}`,
     },
     body: body ? JSON.stringify(body) : undefined,
   }), env, { waitUntil() {} });
@@ -975,8 +976,8 @@ test('pure service quote still requires a service advance payment', async () => 
   assert.equal(json.payment.balance_amount, 1000);
 });
 
-test('engineer requests service start after following up payment', async () => {
-  const env = createPaymentFlowEnv();
+test('CN legacy: engineer requests service start after following up payment', async () => {
+  const env = createPaymentFlowEnv({ market: 'cn' });
   await api(env, '/api/workorders/wo-pay-1/pay', {
     body: { payment_method: 'bank_transfer' },
   });
@@ -993,8 +994,8 @@ test('engineer requests service start after following up payment', async () => {
   assert.equal(env.__workOrders[0].status, 'payment_review');
 });
 
-test('admin confirms payment before work order enters service', async () => {
-  const env = createPaymentFlowEnv();
+test('CN legacy: admin confirms payment before work order enters service', async () => {
+  const env = createPaymentFlowEnv({ market: 'cn' });
   await api(env, '/api/workorders/wo-pay-1/pay', {
     body: { payment_method: 'bank_transfer' },
   });
@@ -1024,8 +1025,8 @@ test('admin confirms payment before work order enters service', async () => {
   );
 });
 
-test('admin start approval is blocked by deterministic service-standard items', async () => {
-  const env = createPaymentFlowEnv();
+test('CN legacy: admin start approval is blocked by deterministic service-standard items', async () => {
+  const env = createPaymentFlowEnv({ market: 'cn' });
   env.__workOrders[0].status = 'payment_review';
   env.__payments.push({
     id: 'payment-start-blocked',
@@ -1063,8 +1064,8 @@ test('admin start approval is blocked by deterministic service-standard items', 
   );
 });
 
-test('admin start approval atomically confirms and audits its pending event item', async () => {
-  const env = createPaymentFlowEnv();
+test('CN legacy: admin start approval atomically confirms and audits its pending event item', async () => {
+  const env = createPaymentFlowEnv({ market: 'cn' });
   env.__workOrders[0].status = 'payment_review';
   env.__payments.push({
     id: 'payment-start-ready',
@@ -1095,7 +1096,7 @@ test('admin start approval atomically confirms and audits its pending event item
     && JSON.parse(entry.args[7]).item_key === 'ready.start_conditions');
   assert.ok(eventAudit);
 
-  const rollbackEnv = createPaymentFlowEnv();
+  const rollbackEnv = createPaymentFlowEnv({ market: 'cn' });
   rollbackEnv.__workOrders[0].status = 'payment_review';
   rollbackEnv.__payments.push({
     id: 'payment-start-rollback',
@@ -1121,8 +1122,8 @@ test('admin start approval atomically confirms and audits its pending event item
   );
 });
 
-test('admin start approval creates and confirms only its missing immutable event row', async () => {
-  const env = createPaymentFlowEnv();
+test('CN legacy: admin start approval creates and confirms only its missing immutable event row', async () => {
+  const env = createPaymentFlowEnv({ market: 'cn' });
   env.__workOrders[0].status = 'payment_review';
   env.__payments.push({
     id: 'payment-start-missing-row',
@@ -1164,7 +1165,7 @@ test('admin start approval creates and confirms only its missing immutable event
   assert.ok(env.__auditLogs.some((entry) =>
     entry.args[5] === 'service_standard_item_confirmed'));
 
-  const rollbackEnv = createPaymentFlowEnv();
+  const rollbackEnv = createPaymentFlowEnv({ market: 'cn' });
   rollbackEnv.__workOrders[0].status = 'payment_review';
   rollbackEnv.__payments.push({
     id: 'payment-start-missing-row-rollback',
@@ -1192,8 +1193,8 @@ test('admin start approval creates and confirms only its missing immutable event
   assert.equal(rollbackEnv.__payments[0].status, 'pending_admin_confirmation');
 });
 
-test('admin start approval does not re-audit an already-confirmed matching event item', async () => {
-  const env = createPaymentFlowEnv();
+test('CN legacy: admin start approval does not re-audit an already-confirmed matching event item', async () => {
+  const env = createPaymentFlowEnv({ market: 'cn' });
   env.__workOrders[0].status = 'payment_review';
   env.__payments.push({
     id: 'payment-start-replay',

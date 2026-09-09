@@ -5,12 +5,13 @@ import { fileURLToPath } from 'node:url';
 
 import { expect } from '@playwright/test';
 import { PNG } from 'playwright-core/lib/utilsBundle';
+import { e2eRuntime, localRunPaths } from './runtime.mjs';
 
 const e2eDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const workerDir = path.resolve(e2eDir, '../worker');
-const stateDir = path.join(e2eDir, '.state');
 
-export const quoteExecutionOutputDir = path.resolve(e2eDir, '../output/playwright/quote-execution');
+export const quoteExecutionOutputDir = process.env.E2E_RUN_DIR
+  ? path.join(localRunPaths().runDir, 'screenshots') : null;
 
 export function sqlText(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
@@ -43,15 +44,18 @@ export function runWithSqliteBusyRetry(
 }
 
 export function localD1(command, { json = false } = {}) {
+  const { stateDir, configPath, runDir } = localRunPaths();
+  e2eRuntime();
   const args = [
-    'wrangler', 'd1', 'execute', 'sagemro-db',
+    path.join(workerDir, 'node_modules/wrangler/bin/wrangler.js'), 'd1', 'execute', 'sagemro-db',
+    '--config', configPath,
     '--local', '--persist-to', stateDir,
     '--command', command,
     '--yes',
   ];
   if (json) args.push('--json');
-  const output = runWithSqliteBusyRetry(() => execFileSync('npx', args, {
-    cwd: workerDir,
+  const output = runWithSqliteBusyRetry(() => execFileSync(process.execPath, args, {
+    cwd: runDir,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }));
@@ -155,6 +159,7 @@ export async function assertVisualIntegrity(page, { scope = 'body' } = {}) {
 }
 
 export async function captureVisual(page, name, { scope = 'body', fullPage = true } = {}) {
+  localRunPaths();
   mkdirSync(quoteExecutionOutputDir, { recursive: true });
   const filePath = path.join(quoteExecutionOutputDir, `${name}.png`);
   const rootLocator = typeof scope === 'string' ? page.locator(scope) : scope;

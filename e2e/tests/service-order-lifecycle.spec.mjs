@@ -11,6 +11,10 @@ import { e2eRuntime } from '../support/runtime.mjs';
 import { captureBothViewports, localD1Rows, sqlText } from '../support/visual.mjs';
 
 const runtime = e2eRuntime();
+test.use({ actionTimeout: 15_000, launchOptions: { args: [
+  '--no-proxy-server', '--host-resolver-rules=MAP *.127.0.0.1.nip.io 127.0.0.1',
+  `--unsafely-treat-insecure-origin-as-secure=${[runtime.apiBase, runtime.customerBase, runtime.engineerBase, runtime.adminBase].join(',')}`,
+] } });
 
 const START_GATE_BLOCKING_ITEMS = [
   'risk.hazards_reviewed',
@@ -148,6 +152,27 @@ async function closeCustomerWorkOrder(page) {
   await modal.getByRole('button', { name: 'Close', exact: true }).click();
 }
 
+async function reloadAdminPage(page) {
+  const pendingSessions = new Set();
+  const trackSession = (request) => {
+    if (new URL(request.url()).pathname === '/api/auth/session') pendingSessions.add(request);
+  };
+  const finishSession = (request) => pendingSessions.delete(request);
+  page.on('request', trackSession);
+  page.on('requestfinished', finishSession);
+  page.on('requestfailed', finishSession);
+  try {
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'SAGEMRO Operations Console', exact: true })).toBeVisible();
+    // The local React StrictMode mount restores the session twice before navigation is stable.
+    await expect.poll(() => pendingSessions.size).toBe(0);
+  } finally {
+    page.off('request', trackSession);
+    page.off('requestfinished', finishSession);
+    page.off('requestfailed', finishSession);
+  }
+}
+
 async function confirmFeedback(page) {
   const confirm = page.getByRole('button', { name: /^(Confirm|OK)$/ });
   if (await confirm.isVisible().catch(() => false)) await confirm.click();
@@ -168,13 +193,38 @@ async function confirmEngineerStandardItems(page, stageName) {
   }
 }
 
-test('customer, Admin, and engineer complete a service order lifecycle', async ({ browser }) => {
+
+async function portalApi(page, requestPath, method = 'GET', body) {
+  return page.evaluate(async ({ apiBase, requestPath, method, body }) => {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = localStorage.getItem('sagemro_token');
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const csrf = localStorage.getItem('admin_csrf_token');
+    if (csrf && method !== 'GET') headers['X-CSRF-Token'] = csrf;
+    const response = await fetch(`${apiBase}${requestPath}`, {
+      method, credentials: 'include', headers, ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    return { status: response.status, data: await response.json() };
+  }, { apiBase: runtime.apiBase, requestPath, method, body });
+}
+
+test('local database helper refuses missing isolation and reads this run database', () => {
+  const runDir = process.env.E2E_RUN_DIR;
+  try {
+    delete process.env.E2E_RUN_DIR;
+    expect(() => localD1Rows('SELECT 1')).toThrow(/E2E_RUN_DIR/);
+  } finally { process.env.E2E_RUN_DIR = runDir; }
+  expect(localD1Rows("SELECT material_code FROM materials WHERE id = 'e2e-stock-material'"))
+    .toEqual([{ material_code: 'E2E-STOCK-001' }]);
+});
+
+test('business quote, verified payment, dispatch and engineer service complete a COM order', async ({ browser }) => {
   test.setTimeout(300_000);
   const { engineer, context: engineerContext, page: engineerPage } = await onboardEngineer({ browser, runtime });
 
   const customer = {
     ...uniqueIdentity('Customer'),
-    password: 'LocalCustomerPassword123!',
+    password: runtime.customerPassword,
   };
   const customerContext = await browser.newContext();
   const customerPage = await customerContext.newPage();
@@ -206,105 +256,117 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   }, { apiBase: runtime.apiBase, targetOrderNo: orderNo });
   expect(workOrderId).not.toBe('');
 
+
   const adminContext = await browser.newContext();
   const adminPage = await adminContext.newPage();
   await loginAdmin(adminPage, runtime);
-  await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
-  const adminRow = adminPage.locator('tr').filter({ hasText: orderNo });
-  await expect(adminRow).toBeVisible();
-  await adminRow.getByRole('button', { name: 'View', exact: true }).click();
-  const dispatchDialog = adminPage.getByRole('dialog', { name: 'Service Control View' });
-  const engineerOption = dispatchDialog.locator('select').last().locator('option').filter({ hasText: engineer.name });
-  await dispatchDialog.getByLabel('Select engineer').selectOption(await engineerOption.getAttribute('value'));
-  await dispatchDialog.getByRole('button', { name: 'Direct dispatch', exact: true }).click();
-  await expect(adminPage.getByText(`Dispatched: ${orderNo}`, { exact: true })).toBeVisible();
-  await dispatchDialog.getByRole('button', { name: 'Close', exact: true }).click();
+  const scope = async (page, staffId = 'admin') => ({
+    expected_staff_id: staffId,
+    scope_version: (await adminApi(page, runtime, `/api/admin/business/organization?expected_staff_id=${staffId}`)).scope_version,
+  });
+  const engineerId = localD1Rows(`SELECT id FROM engineers WHERE email = ${sqlText(engineer.email)}`)[0].id;
+  const assertEngineerBlocked = async () => {
+    await engineerPage.reload();
+    await expect(engineerPage.getByRole('button').filter({ hasText: orderNo })).toHaveCount(0);
+    for (const [requestPath, method] of [
+      [`/api/workorders/${workOrderId}`, 'GET'],
+      [`/api/workorders/${workOrderId}/messages`, 'GET'],
+      [`/api/workorders/${workOrderId}/messages`, 'POST'],
+    ]) {
+      const response = await portalApi(engineerPage, requestPath, method, method === 'POST' ? { content: 'Fictional premature contact attempt' } : undefined);
+      expect([403, 404]).toContain(response.status);
+      expect(JSON.stringify(response.data)).not.toContain(customer.email);
+    }
+    expect(localD1Rows(`SELECT engineer_id FROM work_orders WHERE id = ${sqlText(workOrderId)}`)[0].engineer_id).toBeNull();
+    expect(localD1Rows(`SELECT COUNT(*) AS count FROM work_order_messages WHERE work_order_id = ${sqlText(workOrderId)} AND sender_type = 'engineer'`)[0].count).toBe(0);
+  };
+  const assertDispatchBlocked = async () => {
+    const response = await portalApi(adminPage, `/api/admin/workorders/${workOrderId}/assign`, 'PATCH', { engineer_id: engineerId });
+    expect(response.status).toBe(409);
+    expect(response.data.code).toBe('business_dispatch_not_ready');
+    await assertEngineerBlocked();
+  };
+  await assertDispatchBlocked();
 
-  await engineerPage.reload();
-  const engineerTask = engineerPage.getByRole('button').filter({ hasText: orderNo });
-  await expect(engineerTask).toBeVisible();
-  await engineerTask.click();
-  await expect(engineerPage).toHaveURL(new RegExp(`/work-orders/${workOrderId}$`));
-  await engineerPage.getByRole('button', { name: 'Confirm Assignment', exact: true }).click();
-  await engineerPage.reload();
-  await expect(engineerPage.getByText(`Work order · ${orderNo}`, { exact: true })).toBeVisible();
-  await confirmEngineerStandardItems(engineerPage, 'Task alignment');
-  let customerMilestones = await openCustomerMilestonesFromD1(
-    customerPage,
-    orderNo,
-    workOrderId,
-  );
-  expect(customerMilestones.expectedMilestones.map(({ state }) => state)).toEqual([
-    'completed',
-    'current',
-    'upcoming',
-    'upcoming',
-    'upcoming',
-    'upcoming',
-  ]);
-  await closeCustomerWorkOrder(customerPage);
+  const business = uniqueIdentity('Business');
+  console.info('Lifecycle: unpaid dispatch and engineer access denied.');
+  const territoryName = `E2E territory ${business.runId}`;
+  await adminApi(adminPage, runtime, '/api/admin/business/territories', {
+    method: 'POST', body: JSON.stringify({ ...await scope(adminPage), name: territoryName, market: 'com' }),
+  });
+  const org = await adminApi(adminPage, runtime, '/api/admin/business/organization?expected_staff_id=admin');
+  const territory = org.territories.find(item => item.name === territoryName);
+  expect(territory).toBeTruthy();
+  const account = await adminApi(adminPage, runtime, '/api/admin/staff', {
+    method: 'POST', body: JSON.stringify({ expected_staff_id: 'admin', scope_version: org.scope_version,
+      login: business.email, display_name: business.name, role: 'business_director', market_scope: 'com',
+      grade: 1, territory_ids: [territory.id] }),
+  });
+  await adminApi(adminPage, runtime, `/api/admin/business/records/work_order/${workOrderId}/assignment`, {
+    method: 'PUT', body: JSON.stringify({ ...await scope(adminPage), revision: 0, territory_id: territory.id, owner_staff_id: account.staff.id }),
+  });
 
-  await engineerPage.getByRole('tab', { name: 'Messages', exact: true }).click();
-  const manualMessage = `E2E manual update ${customer.runId.slice(-6)}`;
-  const messageCountBefore = localD1Rows(`SELECT COUNT(*) AS count FROM work_order_messages WHERE work_order_id = ${sqlText(workOrderId)}`)[0].count;
-  await engineerPage.getByPlaceholder('Type a message...').fill(manualMessage);
-  await engineerPage.getByPlaceholder('Type a message...').press('Enter');
-  await expect(engineerPage.getByText(manualMessage, { exact: true })).toBeVisible();
-  expect(localD1Rows(`SELECT COUNT(*) AS count FROM work_order_messages WHERE work_order_id = ${sqlText(workOrderId)}`)[0].count).toBe(messageCountBefore + 1);
-  await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
-  await engineerPage.getByLabel('Labor Fee').fill('800');
-  await engineerPage.getByLabel('Travel Fee').fill('100');
-  const pricingResponsePromise = engineerPage.waitForResponse(response => (
-    response.request().method() === 'POST'
-    && new URL(response.url()).pathname === `/api/workorders/${workOrderId}/pricing`
-  ));
-  await engineerPage.getByTestId('submit-pricing-button').click();
-  const pricingResponse = await pricingResponsePromise;
-  const submittedPricing = await pricingResponse.json();
-  expect(pricingResponse.status(), JSON.stringify(submittedPricing)).toBe(200);
-  expect(submittedPricing).toMatchObject({ success: true, status: 'pending_review', quote_version: 1 });
-
-  await adminPage.reload();
-  const listResponsePromise = adminPage.waitForResponse(response => (
-    response.request().method() === 'GET'
-    && new URL(response.url()).pathname === '/api/admin/workorders'
-  ));
-  await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
-  const listResponse = await listResponsePromise;
-  const orderList = await listResponse.json();
-  expect(listResponse.status(), JSON.stringify(orderList)).toBe(200);
-  expect(orderList.list).toEqual(expect.arrayContaining([
-    expect.objectContaining({ id: workOrderId, pricing_status: 'pending_review' }),
-  ]));
-  const quoteRow = adminPage.locator('tr').filter({ hasText: orderNo });
-  await expect(quoteRow, await adminPage.locator('body').innerText()).toBeVisible();
-  await quoteRow.getByRole('button', { name: 'View', exact: true }).click();
+  const businessContext = await browser.newContext();
+  const businessPage = await businessContext.newPage();
+  await businessPage.goto(runtime.adminBase);
+  expect(await businessPage.evaluate(() => window.isSecureContext && typeof crypto.randomUUID === 'function')).toBe(true);
+  await businessPage.getByPlaceholder('Phone number or login name').fill(business.email);
+  await businessPage.getByPlaceholder('Password').fill(account.temporary_password);
+  await businessPage.getByRole('button', { name: 'Sign In', exact: true }).click();
+  await businessPage.getByLabel('Current temporary password').fill(account.temporary_password);
+  await businessPage.getByLabel('New password (10+ characters)', { exact: true }).fill(runtime.customerPassword);
+  await businessPage.getByLabel('Confirm new password', { exact: true }).fill(runtime.customerPassword);
+  await businessPage.getByRole('button', { name: 'Change password and continue', exact: true }).click();
+  await expect(businessPage.getByRole('heading', { name: 'Business workspace', exact: true })).toBeVisible();
+  const businessTitle = localD1Rows(`SELECT short_title FROM work_orders WHERE id = ${sqlText(workOrderId)}`)[0].short_title || orderNo;
+  const openBusinessOrder = async () => {
+    await businessPage.reload();
+    await businessPage.getByRole('button', { name: 'Service orders', exact: true }).click();
+    await businessPage.locator('tr').filter({ hasText: businessTitle }).getByRole('button', { name: 'View details', exact: true }).click();
+    const dialog = businessPage.getByRole('dialog');
+    await expect(dialog).toContainText(orderNo);
+    return dialog;
+  };
+  let businessDialog = await openBusinessOrder();
+  console.info('Lifecycle: business account signed in and assigned order opened.');
+  for (const [label, value] of [
+    ['Customer labor fee', '800'], ['Customer parts fee', '0'], ['Customer travel fee', '100'], ['Customer other fee', '0'],
+    ['Parts procurement cost', '0'], ['Engineer labor cost', '400'], ['Travel cost', '100'], ['Other direct cost', '0'],
+  ]) await businessDialog.getByLabel(label, { exact: true }).fill(value);
+  const onsiteDays = businessDialog.getByLabel('Expected onsite days', { exact: true });
+  if (await onsiteDays.count()) await onsiteDays.fill('1');
+  await expect(businessDialog.getByTestId('business-gross-profit')).toContainText('400 USD');
+  await businessDialog.getByRole('button', { name: 'Save quote draft', exact: true }).click();
+  await expect(businessDialog.getByText('Draft saved', { exact: true })).toBeVisible();
+  await businessDialog.getByRole('button', { name: 'Submit for Admin review', exact: true }).click();
+  await expect(businessDialog.getByText('Awaiting Admin review', { exact: true })).toBeVisible();
+  expect(localD1Rows(`SELECT quote_source, status, total_amount FROM work_order_pricing WHERE work_order_id = ${sqlText(workOrderId)}`)[0])
+    .toMatchObject({ quote_source: 'business', status: 'pending_review', total_amount: 900 });
+  await assertDispatchBlocked();
   const approval = await adminApi(adminPage, runtime, `/api/admin/workorders/${workOrderId}/pricing/approve`, {
-    method: 'PATCH',
-    body: JSON.stringify({ quote_version: 1, note: 'E2E lifecycle quote approved' }),
+    method: 'PATCH', body: JSON.stringify({ ...await scope(adminPage), quote_version: 1, note: 'Fictional lifecycle quote approval' }),
   });
   expect(approval.success).toBe(true);
-  await adminPage.getByRole('button', { name: 'Close', exact: true }).click();
+  console.info('Lifecycle: business quote submitted and approved by Admin.');
+  await assertDispatchBlocked();
 
-  await expect(customerPage.getByText(orderNo, { exact: true })).toBeVisible();
+  await customerPage.reload();
+  await customerPage.getByRole('button', { name: 'My Services', exact: true }).click();
   await customerPage.getByText(orderNo, { exact: true }).click();
   await customerPage.getByRole('tab', { name: 'Confirm Quote', exact: true }).click();
-  await expect(customerPage.getByTestId('open-confirm-pricing-button')).toBeVisible();
   await customerPage.getByTestId('open-confirm-pricing-button').click();
-  await expect(customerPage.getByTestId('confirm-pricing-button')).toBeVisible();
   await customerPage.getByTestId('confirm-pricing-button').click();
   await expect(customerPage.getByRole('heading', { name: 'Collection workspace', exact: true })).toBeVisible();
+  const customerDetail = await portalApi(customerPage, `/api/workorders/${workOrderId}`);
+  expect(customerDetail.status).toBe(200);
+  for (const key of ['engineer_cost', 'parts_cost', 'estimated_gross_profit', 'cost_snapshot', 'costs_json']) {
+    expect(JSON.stringify(customerDetail.data)).not.toContain(`"${key}"`);
+  }
+  await assertDispatchBlocked();
 
-  await engineerPage.reload();
-  await expect(engineerPage).toHaveURL(new RegExp(`/work-orders/${workOrderId}$`));
-  await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
-  await engineerPage.getByRole('button', { name: 'Payments & receipts', exact: true }).click();
-  const engineerInstallment = engineerPage.locator('article').filter({
-    has: engineerPage.getByRole('heading', { name: 'Installment 1', exact: true }),
-  });
-  await engineerInstallment.getByRole('button', { name: 'Start this installment collection', exact: true }).click();
-  await expect(engineerInstallment.getByRole('heading', { name: 'Request receipt confirmation', exact: true })).toBeVisible();
-
+  businessDialog = await openBusinessOrder();
+  await businessDialog.getByRole('button', { name: 'Start installment collection', exact: true }).click();
+  await expect(businessDialog.getByText('Collection opened', { exact: true })).toBeVisible();
   await customerPage.reload();
   await customerPage.getByRole('button', { name: 'My Services', exact: true }).click();
   await customerPage.getByText(orderNo, { exact: true }).click();
@@ -313,33 +375,57 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
     has: customerPage.getByRole('heading', { name: 'Installment 1', exact: true }),
   });
   await customerInstallment.getByRole('button', { name: 'Choose payment method', exact: true }).click();
-  await expect(customerPage.getByRole('heading', { name: 'Confirm Installment Payment Method', exact: true })).toBeVisible();
   await customerPage.getByRole('button', { name: 'Request Installment TT Instructions', exact: true }).click();
   await expect(customerPage.getByRole('heading', { name: 'Payment method received', exact: true })).toBeVisible();
-  await customerPage.getByRole('button', { name: 'Go to Messages', exact: true }).click();
 
-  await engineerPage.reload();
-  await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
-  await engineerPage.getByRole('button', { name: 'Payments & receipts', exact: true }).click();
-  const receiptInstallment = engineerPage.locator('article').filter({
-    has: engineerPage.getByRole('heading', { name: 'Installment 1', exact: true }),
-  });
-  await receiptInstallment.getByLabel('Claimed amount').fill('900');
-  await receiptInstallment.getByLabel('Transaction reference (optional)').fill(`E2E-ADV-${customer.runId}`);
-  await receiptInstallment.getByRole('button', { name: 'Request receipt confirmation', exact: true }).click();
-  await expect(receiptInstallment.getByText('Waiting for Admin confirmation', { exact: true })).toBeVisible();
+  await businessDialog.getByLabel('Receipt amount to verify', { exact: true }).fill('900');
+  await businessDialog.getByLabel('Transaction reference', { exact: true }).fill(`E2E-${customer.runId}`);
+  await businessDialog.getByLabel('Internal receipt note', { exact: true }).fill('Fictional bank receipt for local testing');
+  await businessDialog.getByRole('button', { name: 'Submit receipt for review', exact: true }).click();
+  await expect(businessDialog.getByText('Receipt submitted; the amount is not counted as received until Admin verifies it.', { exact: true })).toBeVisible();
+  await assertDispatchBlocked();
 
-  await adminPage.reload();
+  await reloadAdminPage(adminPage);
   await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
   await adminPage.locator('tr').filter({ hasText: orderNo }).getByRole('button', { name: 'View', exact: true }).click();
   const receiptDialog = adminPage.getByRole('dialog', { name: 'Service Control View' });
-  await expect(receiptDialog.getByRole('heading', { name: 'Pending receipt review', exact: true })).toBeVisible();
   await receiptDialog.getByRole('button', { name: 'Confirm full receipt', exact: true }).click();
   const fullReceiptDialog = adminPage.getByRole('dialog', { name: 'Confirm full receipt' });
-  await fullReceiptDialog.getByLabel('Decision note (optional)').fill('E2E advance receipt confirmed');
+  await fullReceiptDialog.getByLabel('Decision note (optional)').fill('Fictional receipt verified');
   await fullReceiptDialog.getByRole('button', { name: 'Confirm', exact: true }).click();
   await expect(receiptDialog.getByText('No receipt claims are waiting for review.', { exact: true })).toBeVisible();
+  console.info('Lifecycle: customer accepted quote and Admin verified receipt.');
+  await assertEngineerBlocked();
+  const dispatchToggle = receiptDialog.locator('button[aria-controls="work-order-section-dispatch-content"]');
+  if (await dispatchToggle.getAttribute('aria-expanded') !== 'true') await dispatchToggle.click();
+  await receiptDialog.getByLabel('Select engineer').selectOption(engineerId);
+  await receiptDialog.getByRole('button', { name: 'Direct dispatch', exact: true }).click();
+  await expect(adminPage.getByText(`Dispatched: ${orderNo}`, { exact: true })).toBeVisible();
   await receiptDialog.getByRole('button', { name: 'Close', exact: true }).click();
+  console.info('Lifecycle: paid order dispatched to engineer.');
+
+  await engineerPage.reload();
+  await engineerPage.getByRole('button').filter({ hasText: orderNo }).click();
+  await expect(engineerPage).toHaveURL(new RegExp(`/work-orders/${workOrderId}$`));
+  expect(localD1Rows(`SELECT engineer_id FROM work_orders WHERE id = ${sqlText(workOrderId)}`)[0].engineer_id).toBe(engineerId);
+  await expect(engineerPage.getByRole('button', { name: 'Request Start Approval', exact: true })).toBeVisible();
+  await confirmEngineerStandardItems(engineerPage, 'Task alignment');
+  let customerMilestones = await openCustomerMilestonesFromD1(customerPage, orderNo, workOrderId);
+  expect(customerMilestones.expectedMilestones.map(({ state }) => state)).toEqual([
+    'completed', 'current', 'upcoming', 'upcoming', 'upcoming', 'upcoming',
+  ]);
+  await closeCustomerWorkOrder(customerPage);
+  await engineerPage.getByRole('tab', { name: 'Messages', exact: true }).click();
+  const manualMessage = `Fictional service update ${customer.runId.slice(-6)}`;
+  await engineerPage.getByPlaceholder('Type a message...').fill(manualMessage);
+  await engineerPage.getByPlaceholder('Type a message...').press('Enter');
+  await expect(engineerPage.getByText(manualMessage, { exact: true })).toBeVisible();
+  expect(localD1Rows(`SELECT COUNT(*) AS count FROM work_order_messages WHERE work_order_id = ${sqlText(workOrderId)} AND content = ${sqlText(manualMessage)}`)[0].count).toBe(1);
+  await engineerPage.getByRole('tab', { name: 'Quote', exact: true }).click();
+  await expect(engineerPage.getByText('Quotation is handled by the business team.', { exact: false })).toBeVisible();
+  await expect(engineerPage.getByTestId('submit-pricing-button')).toHaveCount(0);
+  const forbiddenQuote = await portalApi(engineerPage, `/api/workorders/${workOrderId}/pricing`, 'POST', { labor_fee: 1 });
+  expect(forbiddenQuote.status).toBe(403);
 
   await engineerPage.reload();
   const requestStartApproval = engineerPage.getByRole('button', { name: 'Request Start Approval', exact: true });
@@ -351,8 +437,9 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await requestStartApproval.click();
   await confirmFeedback(engineerPage);
 
-  await adminPage.reload();
+  await reloadAdminPage(adminPage);
   await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
+  await expect(adminPage.getByRole('heading', { name: 'Service Orders', exact: true })).toBeVisible();
   await adminPage.locator('tr').filter({ hasText: orderNo }).getByRole('button', { name: 'View', exact: true }).click();
   const paymentDialog = adminPage.getByRole('dialog', { name: 'Service Control View' });
   await paymentDialog.getByRole('button', { name: 'Confirm payment & start', exact: true }).click();
@@ -478,12 +565,12 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
     'completed',
   ]);
 
-  await adminPage.reload();
+  await reloadAdminPage(adminPage);
   await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
   const archiveRow = adminPage.locator('tr').filter({ hasText: orderNo });
   await archiveRow.getByRole('button', { name: 'Archive', exact: true }).click();
   await expect(adminPage.getByText(`Archived: ${orderNo}`, { exact: true })).toBeVisible();
-  await adminPage.reload();
+  await reloadAdminPage(adminPage);
   await adminPage.getByRole('button', { name: 'Service Orders', exact: true }).click();
   await adminPage.locator('tr').filter({ hasText: orderNo }).getByRole('button', { name: 'View', exact: true }).click();
   await adminPage.getByRole('button', { name: 'Mark payout completed', exact: true }).click();
@@ -498,6 +585,7 @@ test('customer, Admin, and engineer complete a service order lifecycle', async (
   await engineerPage.goBack();
   await expect(engineerPage.getByText('My work orders', { exact: true })).toBeVisible();
 
+  await businessContext.close();
   await adminContext.close();
   await customerContext.close();
   await engineerContext.close();
