@@ -8,7 +8,7 @@ import {
   reviewAdminMaterialRequest,
   updateAdminMaterial,
 } from '../services/api';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 
 const CATEGORY_KEYS = [
   'laser_cutting',
@@ -361,7 +361,8 @@ function statusClass(status) {
 }
 
 export function MaterialsPage({ readOnly = false }) {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);

@@ -43,7 +43,7 @@ import {
   updateAdminWorkOrderTitle,
   updateAdminWorkOrderPayout,
 } from '../services/api';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 import { FieldWorkAdminPanel } from '../components/FieldWorkAdminPanel';
 import { QuoteExecutionAdminPanel } from '../components/QuoteExecutionAdminPanel';
 import { BusinessExecutionPanel } from '../components/BusinessExecutionPanel';
@@ -795,7 +795,8 @@ function WorkOrderDetailSummary({ detail, t }) {
 }
 
 export function WorkOrdersPage({ readOnly = false }) {
-  const t = { ...TEXT.en, ...(TEXT[runtimeConfig.locale] || {}) };
+  const locale = useAdminLocale();
+  const t = { ...TEXT.en, ...(TEXT[locale] || {}) };
   const [status, setStatus] = useState('all');
   const [data, setData] = useState({ total: 0, list: [] });
   const [engineers, setEngineers] = useState([]);
@@ -2279,7 +2280,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                           <div>{t.methodLabel}: {detail.payout?.method === 'bank_swift' ? t.bankSwift : t.paypalAccount}</div>
                           <div>{t.amountLabel}: {detail.payout?.amount ? `${money(detail.payout.amount)} ${detail.payout.currency || 'USD'}` : '-'}</div>
                           <div>{t.referenceLabel}: {detail.payout?.transaction_reference || '-'}</div>
-                          <div>{t.paidAtLabel}: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString(runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</div>
+                          <div>{t.paidAtLabel}: {detail.payout?.paid_at ? new Date(detail.payout.paid_at).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</div>
                           <div>{t.noteLabel}: {detail.payout?.internal_note || '-'}</div>
                         </div>
                       </div>
@@ -2371,7 +2372,7 @@ export function WorkOrdersPage({ readOnly = false }) {
                       {detail.arrival_checks?.length > 0 ? detail.arrival_checks.map((check) => {
                         const arrivalOutcome = arrivalCheckOutcome(check, t);
                         return <div key={check.id} className="grid min-w-0 gap-1 rounded-lg bg-[var(--color-surface-elevated)] px-3 py-2 text-xs text-[var(--color-text-secondary)] [overflow-wrap:anywhere] sm:grid-cols-4">
-                          <span>{formatApiDateTime(check.created_at, runtimeConfig.locale)}</span>
+                          <span>{formatApiDateTime(check.created_at, locale)}</span>
                           <span>{t.distanceLabel}: {check.distance_m ?? '-'} m</span>
                           <span>{t.allowedRadiusLabel}: {check.radius_m ?? '-'} m</span>
                           <span className={arrivalOutcome.tone}>{arrivalOutcome.label}</span>

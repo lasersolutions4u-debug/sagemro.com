@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, RefreshCw, X } from 'lucide-react';
 import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 import { assignBusinessRecord, getBusinessOrganization, getBusinessRecord, getBusinessRecords } from '../services/api';
 import { businessRecordsCsv, collectBusinessRecords } from './businessWorkspaceExport';
 import { BusinessQuotePanel } from '../components/BusinessQuotePanel';
@@ -22,6 +23,7 @@ const TEXT = {
     changed: 'Your identity or access scope changed. Reload the page before continuing.', conflict: 'Ownership changed. Refresh and review before saving again.',
     exportChanged: 'Export stopped because data or permissions changed. Refresh and try again; no partial file was downloaded.',
     note: 'Business ownership is not an engineer dispatch. Unassigned records are available to administrators only.',
+    invalidKind: 'This record type is unavailable.',
   },
   'zh-CN': {
     title: '商务工作台', subtitle: '统一处理授权范围内的客户、线索和服务工单。',
@@ -36,6 +38,7 @@ const TEXT = {
     changed: '账号或权限范围已变化，请重新加载页面后继续。', conflict: '归属已被更新，请刷新并核对后再保存。',
     exportChanged: '资料或权限发生变化，已中止导出。请刷新后重试；未下载不完整文件。',
     note: '商务负责人分配不是工程师派单。未分配资料仅管理员可见。',
+    invalidKind: '此记录类型不可用。',
   },
 };
 const FIELDS = {
@@ -46,10 +49,13 @@ const FIELDS = {
 const buttonClass = 'inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm disabled:opacity-40';
 const selectClass = 'mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm';
 
-export function BusinessWorkspacePage({ user }) {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+export function BusinessWorkspacePage({ user, recordKind }) {
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const expectedStaffId = user.staffId || 'admin';
-  const [kind, setKind] = useState('customer');
+  const [selectedKind, setKind] = useState('customer');
+  const fixedKind = recordKind !== undefined;
+  const kind = fixedKind ? (typeof recordKind === 'string' && Object.hasOwn(FIELDS, recordKind) ? recordKind : null) : selectedKind;
   const [organization, setOrganization] = useState(null);
   const [data, setData] = useState({ records: [], total: 0 });
   const [detail, setDetail] = useState(null);
@@ -108,7 +114,7 @@ export function BusinessWorkspacePage({ user }) {
         window.removeEventListener('focus', check);
       }
     };
-  }, [cancel, clearPrivateData, isCurrent, t.changed]);
+  }, [cancel, clearPrivateData, isCurrent]);
   const fail = (error, operation) => {
     if (error.name === 'AbortError') return;
     if ([401, 403].includes(error.status) || error.code === 'business_identity_changed') {
@@ -118,6 +124,7 @@ export function BusinessWorkspacePage({ user }) {
     } else setError(error.message);
   };
   const load = useCallback(async () => {
+    if (!kind) { clearPrivateData(); return; }
     cancel();
     const current = generation.current;
     const controller = new AbortController(); controllers.current.add(controller);
@@ -135,7 +142,7 @@ export function BusinessWorkspacePage({ user }) {
       controllers.current.delete(controller);
       if (current === generation.current) setLoading(false);
     }
-  }, [cancel, expectedStaffId, kind, isCurrent]);
+  }, [cancel, clearPrivateData, expectedStaffId, kind, isCurrent]);
   useEffect(() => { load(); }, [load]);
   const perform = async (key, action) => {
     if (pending || blocked) return;
@@ -182,10 +189,11 @@ export function BusinessWorkspacePage({ user }) {
     if (result) await load();
   };
   const ownerLabel = id => organization?.staff.find(staff => staff.id === id)?.display_name || id || t.unassigned;
+  if (!kind) return <div role="alert">{t.invalidKind}</div>;
   return (
     <section className="space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <div><h1 className="text-xl font-semibold">{t.title}</h1><p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.subtitle}</p></div>
+        <div><h1 className="text-xl font-semibold">{fixedKind ? t[kind] : t.title}</h1><p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.subtitle}</p></div>
         <button className={buttonClass} disabled={loading || !!pending || blocked} onClick={load}><RefreshCw size={15} />{t.refresh}</button>
       </header>
       {error && <div role="alert" className="border-l-2 border-amber-400 bg-amber-500/10 p-3 text-sm">{error}</div>}
@@ -196,7 +204,7 @@ export function BusinessWorkspacePage({ user }) {
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">{t.gradeHelp}</p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-1" role="group" aria-label={t.title}>{Object.keys(FIELDS).map(value => <button key={value} disabled={!!pending} aria-pressed={kind === value} onClick={() => setKind(value)} className={`${buttonClass} ${kind === value ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : ''}`}>{t[value]}</button>)}</div>
+          {!fixedKind && <div className="flex flex-wrap gap-1" role="group" aria-label={t.title}>{Object.keys(FIELDS).map(value => <button key={value} disabled={!!pending} aria-pressed={kind === value} onClick={() => setKind(value)} className={`${buttonClass} ${kind === value ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : ''}`}>{t[value]}</button>)}</div>}
           <button className={buttonClass} disabled={loading || !!pending || !organization} onClick={exportAll}><Download size={15} />{pending === 'export' ? `${t.exporting} ${progress}` : t.export}</button>
         </div>
         <p className="text-xs text-[var(--color-text-muted)]">{t.note}</p>

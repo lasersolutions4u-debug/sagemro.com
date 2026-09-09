@@ -19,7 +19,7 @@ import {
   submitAdminKnowledgeCandidateReview,
   updateAdminKnowledgeCandidateEditorial,
 } from '../services/api';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale, getAdminLocale } from '../config/locale';
 
 // TESTABLE_HELPERS_START
 const STATUS_LABELS = {
@@ -305,7 +305,7 @@ function Field({ id, label, error, children }) {
 }
 
 export function KnowledgeCandidatesPage() {
-  const locale = runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en';
+  const locale = useAdminLocale();
   const t = COPY[locale];
   const [queue, setQueue] = useState({ total: 0, list: [] });
   const [status, setStatus] = useState('all');
@@ -349,11 +349,11 @@ export function KnowledgeCandidatesPage() {
       }
     } catch (error) {
       if (controller.signal.aborted || error?.name === 'AbortError' || !latestQueueRef.current.isLatest(requestToken)) return;
-      setMessage(mapCandidateError(error, locale).message);
+      setMessage(mapCandidateError(error, getAdminLocale()).message);
     } finally {
       if (latestQueueRef.current.isLatest(requestToken)) setLoading(false);
     }
-  }, [locale, page, status]);
+  }, [page, status]);
 
   useEffect(() => { loadQueue(); }, [loadQueue]);
 
@@ -372,11 +372,11 @@ export function KnowledgeCandidatesPage() {
       setDetail(result); setForm(candidateToForm(result.candidate));
     } catch (error) {
       if (controller.signal.aborted || error?.name === 'AbortError' || !latestDetailRef.current.isLatest(requestToken)) return;
-      setMessage(mapCandidateError(error, locale).message);
+      setMessage(mapCandidateError(error, getAdminLocale()).message);
     } finally {
       if (latestDetailRef.current.isLatest(requestToken) && selectedIdRef.current === id) setDetailLoading(false);
     }
-  }, [locale]);
+  }, []);
 
   useEffect(() => () => {
     queueAbortRef.current?.abort();

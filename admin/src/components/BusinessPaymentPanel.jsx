@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale, getAdminLocale } from '../config/locale';
 import { getBusinessPayments, startBusinessCollection, submitBusinessReceipt } from '../services/api';
 
 const TEXT = {
@@ -42,12 +42,13 @@ const inputClass = 'mt-1 w-full min-w-0 rounded-lg border border-[var(--color-bo
 const buttonClass = 'rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm disabled:opacity-40';
 const emptyForm = () => ({ amount: '', reference: '', note: '', evidence: null, milestone: '' });
 const integer = value => /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : null;
-const money = (value, currency) => Number.isFinite(value) ? `${value.toLocaleString(runtimeConfig.locale)} ${currency}` : '—';
+const money = (value, currency) => Number.isFinite(value) ? `${value.toLocaleString(getAdminLocale())} ${currency}` : '—';
 const blockedStatuses = [401, 403, 404, 409];
 const fileTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 
 export function BusinessPaymentPanel({ workOrderId, expectedStaffId, scopeVersion, isCurrent, onAccessError }) {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [state, setState] = useState(null), [form, setForm] = useState(emptyForm);
   const [selected, setSelected] = useState(''), [pending, setPending] = useState('load'), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [blocked, setBlocked] = useState(false), [fileKey, setFileKey] = useState(0);

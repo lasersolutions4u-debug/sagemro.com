@@ -18,6 +18,7 @@ test('authenticated admin pages are lazy loaded behind one suspense boundary', (
     'MaterialRequisitionsPage',
     'StaffAccountsPage',
     'PromotionAnalyticsPage',
+    'BusinessRecordsPage',
   ];
 
   assert.match(app, /import \{ lazy, Suspense,/);

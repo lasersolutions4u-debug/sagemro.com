@@ -3,7 +3,7 @@ import {
   Check, CircleX, ClipboardCheck, PackageCheck, PackageOpen, RefreshCw,
   RotateCcw, ShoppingCart, Truck, X,
 } from 'lucide-react';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale, getAdminLocale } from '../config/locale';
 import {
   decideMaterialRequisition,
   cancelMaterialRequisitionItem,
@@ -63,7 +63,7 @@ const TERMINAL = new Set(['closed', 'rejected', 'cancelled']);
 function formatDate(value) {
   if (!value) return '-';
   const date = new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(runtimeConfig.locale, { dateStyle: 'medium', timeStyle: 'short' });
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(getAdminLocale(), { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function statusTone(status) {
@@ -114,7 +114,8 @@ function actionAvailable(requisition, item, action) {
 }
 
 export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [requisitions, setRequisitions] = useState([]);
   const [selectedRequisition, setSelectedRequisition] = useState(null);
   const [status, setStatus] = useState('all');
@@ -290,7 +291,7 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
         <div className="flex items-center gap-2">
           <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm">
             <option value="all">{t.allStatuses}</option>
-            {STATUS_KEYS.map((key) => <option key={key} value={key}>{requisitionLabel(runtimeConfig.locale, 'status', key)}</option>)}
+            {STATUS_KEYS.map((key) => <option key={key} value={key}>{requisitionLabel(locale, 'status', key)}</option>)}
           </select>
           <button type="button" onClick={load} className="inline-flex items-center gap-2 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm hover:border-[var(--color-primary)]">
             <RefreshCw size={15} />{t.refresh}
@@ -316,9 +317,9 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
               <tr key={requisition.id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-surface-elevated)]/70">
                 <td className="px-3 py-2.5 font-medium"><button type="button" onClick={(event) => openDetail(requisition, event.currentTarget)} className="text-[var(--color-primary)] hover:underline">{requisition.requisition_no}</button></td>
                 <td className="px-3 py-2.5">{requisition.work_order_id}</td>
-                <td className="px-3 py-2.5">{requisitionLabel(runtimeConfig.locale, 'urgency', requisition.urgency)}</td>
+                <td className="px-3 py-2.5">{requisitionLabel(locale, 'urgency', requisition.urgency)}</td>
                 <td className="px-3 py-2.5">{requisition.required_date || '-'}</td>
-                <td className="px-3 py-2.5"><span className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs ${statusTone(requisition.status)}`}>{requisitionLabel(runtimeConfig.locale, 'status', requisition.status)}</span></td>
+                <td className="px-3 py-2.5"><span className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs ${statusTone(requisition.status)}`}>{requisitionLabel(locale, 'status', requisition.status)}</span></td>
                 <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{formatDate(requisition.updated_at)}</td>
               </tr>
             ))}
@@ -333,7 +334,7 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-semibold">{selectedRequisition.requisition_no}</h3>
-                  <span className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs ${statusTone(selectedRequisition.status)}`}>{requisitionLabel(runtimeConfig.locale, 'status', selectedRequisition.status)}</span>
+                  <span className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs ${statusTone(selectedRequisition.status)}`}>{requisitionLabel(locale, 'status', selectedRequisition.status)}</span>
                 </div>
                 <div className="mt-1 text-xs text-[var(--color-text-muted)]">{t.workOrder}: {selectedRequisition.work_order_id} · {t.required}: {selectedRequisition.required_date || '-'}</div>
               </div>
@@ -343,7 +344,7 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
             <div className="flex-1 overflow-y-auto px-4 py-4">
               <dl className="mb-5 grid gap-x-6 gap-y-2 border-b border-[var(--color-border)] pb-4 text-sm sm:grid-cols-2">
                 <div><dt className="text-xs text-[var(--color-text-muted)]">{t.purpose}</dt><dd className="mt-1">{selectedRequisition.purpose || '-'}</dd></div>
-                <div><dt className="text-xs text-[var(--color-text-muted)]">{t.current}</dt><dd className="mt-1">{requisitionLabel(runtimeConfig.locale, 'status', selectedRequisition.status)}</dd></div>
+                <div><dt className="text-xs text-[var(--color-text-muted)]">{t.current}</dt><dd className="mt-1">{requisitionLabel(locale, 'status', selectedRequisition.status)}</dd></div>
               </dl>
 
               <div className="mb-4 flex flex-col gap-2 border-b border-[var(--color-border)] pb-4 sm:flex-row sm:items-center">
@@ -367,10 +368,10 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
                     <div key={item.id} className="py-3">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
-                          <div className="font-medium">{item.name_en && runtimeConfig.locale === 'en' ? item.name_en : item.name}</div>
+                          <div className="font-medium">{item.name_en && locale === 'en' ? item.name_en : item.name}</div>
                           <div className="mt-1 text-xs text-[var(--color-text-muted)]">{item.material_code || t.freeForm} · {[item.spec, item.brand, item.unit].filter(Boolean).join(' · ')}</div>
                         </div>
-                        <span className={`self-start whitespace-nowrap rounded border px-2 py-1 text-xs ${statusTone(item.status)}`}>{requisitionLabel(runtimeConfig.locale, 'status', item.status)}</span>
+                        <span className={`self-start whitespace-nowrap rounded border px-2 py-1 text-xs ${statusTone(item.status)}`}>{requisitionLabel(locale, 'status', item.status)}</span>
                       </div>
                       <div className="mt-2 grid grid-cols-3 gap-2 text-xs sm:grid-cols-6">
                         {[
@@ -399,8 +400,8 @@ export function MaterialRequisitionsPage({ staffRole = 'admin' }) {
               <h4 className="mb-2 mt-5 text-sm font-semibold">{t.history}</h4>
               <div className="border-l border-[var(--color-border)] pl-4">
                 {selectedRequisition.history?.length ? selectedRequisition.history.map((entry, index) => {
-                  const actor = requisitionLabel(runtimeConfig.locale, 'actor', entry.actor_type);
-                  return <div key={`${entry.action}-${entry.created_at}-${index}`} className="relative pb-4 text-sm before:absolute before:-left-[19px] before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-[var(--color-primary)]"><div className="font-medium">{requisitionLabel(runtimeConfig.locale, 'action', entry.action)}</div><div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{actor} · {formatDate(entry.created_at)}{entry.status ? ` · ${requisitionLabel(runtimeConfig.locale, 'status', entry.status)}` : ''}</div></div>;
+                  const actor = requisitionLabel(locale, 'actor', entry.actor_type);
+                  return <div key={`${entry.action}-${entry.created_at}-${index}`} className="relative pb-4 text-sm before:absolute before:-left-[19px] before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-[var(--color-primary)]"><div className="font-medium">{requisitionLabel(locale, 'action', entry.action)}</div><div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{actor} · {formatDate(entry.created_at)}{entry.status ? ` · ${requisitionLabel(locale, 'status', entry.status)}` : ''}</div></div>;
                 }) : <div className="pb-2 text-sm text-[var(--color-text-muted)]">{t.noHistory}</div>}
               </div>
             </div>

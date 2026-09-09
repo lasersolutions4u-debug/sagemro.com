@@ -45,6 +45,12 @@ test('admin navigation resets and guards privileged pages across identity change
   assert.match(app, /visibleNavItems\.some\(\(item\) => item\.key === activePage\)/);
   assert.match(app, /const currentPage = visibleNavItems\.some\(\(item\) => item\.key === activePage\) \? activePage : visibleNavItems\[0\]\?\.key \|\| 'dashboard'/);
   assert.match(app, /if \(isBusinessStaff\) return item\.key === 'businessWorkspace'/);
+  assert.match(app, /if \(runtimeConfig\.market === 'com'\) \{\s*if \(item\.key === 'businessWorkspace'\) return false;\s*if \(isBusinessStaff\) return BUSINESS_RECORD_NAV_KEYS\.has\(item\.key\)/);
+  assert.match(app, /BUSINESS_RECORD_NAV_KEYS = new Set\(\['users', 'leads', 'workorders'\]\)/);
+  for (const kind of ['customer', 'lead', 'work_order']) {
+    assert.ok(app.includes(`key={\x60\x24{user.staffId}:\x24{user.staffRole}:${kind}\x60}`));
+    assert.ok(app.includes(`user={user} kind="${kind}"`));
+  }
   assert.match(app, /switch \(currentPage\)/);
   assert.match(app, /useEffect\(\(\) => \{[\s\S]*setActivePage\(visibleNavItems\[0\]\?\.key \|\| 'dashboard'\)[\s\S]*\}, \[activePage, user, visibleNavItems\]\)/);
 });

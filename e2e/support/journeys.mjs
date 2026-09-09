@@ -181,10 +181,11 @@ export async function createBusinessOrderSession({ browser, adminPage, orderNo, 
   await page.getByLabel('New password (10+ characters)', { exact: true }).fill(runtime.customerPassword);
   await page.getByLabel('Confirm new password', { exact: true }).fill(runtime.customerPassword);
   await page.getByRole('button', { name: 'Change password and continue', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Business workspace', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'All leads', exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation').getByRole('button', { name: 'Business workspace', exact: true })).toHaveCount(0);
   const open = async () => {
     await page.reload();
-    await page.getByRole('button', { name: 'Service orders', exact: true }).click();
+    await page.getByRole('navigation').getByRole('button', { name: 'Service Orders', exact: true }).click();
     await page.locator('tr').filter({ hasText: order.short_title || orderNo }).getByRole('button', { name: 'View details', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText(orderNo);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Download, Filter, Plus, Search, Trash2, X } from 'lucide-react';
 import { createAdminUser, deleteAdminUser, getAdminUsers } from '../services/api';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 import { isTimeoutError, withTimeout } from '../utils/asyncTimeout';
 
 const DELETE_TIMEOUT_MS = 12000;
@@ -114,7 +114,8 @@ function downloadCsv(filename, rows) {
 }
 
 export function UsersPage() {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);

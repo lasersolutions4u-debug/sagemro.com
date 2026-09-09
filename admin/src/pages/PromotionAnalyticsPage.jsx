@@ -4,6 +4,7 @@ import { ChannelAnalysis, ChannelFilterAffordance } from '../components/promotio
 import { OrganicAcquisition } from '../components/promotion/OrganicAcquisition.jsx';
 import { PromotionOverview } from '../components/promotion/PromotionOverview.jsx';
 import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 import { getOrganicAcquisition, getPromotionChannels, getPromotionOverview } from '../services/api.js';
 import { DIRECT_ATTRIBUTION_FILTER } from './promotionAnalyticsView.js';
 
@@ -15,7 +16,8 @@ const TAB_DEFINITIONS = [
 ];
 
 export function PromotionAnalyticsPage({ loadOverview = getPromotionOverview, loadChannels = getPromotionChannels, loadOrganicAcquisition = getOrganicAcquisition }) {
-  const isCn = runtimeConfig.locale === 'zh-CN';
+  const locale = useAdminLocale();
+  const isCn = locale === 'zh-CN';
   const [activeTab, setActiveTab] = useState('overview');
   const [draftFilters, setDraftFilters] = useState(() => createPromotionFilters(runtimeConfig.market));
   const [activeFilters, setActiveFilters] = useState(() => createPromotionFilters(runtimeConfig.market));

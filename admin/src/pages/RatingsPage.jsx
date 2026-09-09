@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getAdminRatings, replyToRating, getAdminPlatformRatings, getAdminCustomerRatings } from '../services/api';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 
 const TEXT = {
   en: {
@@ -432,7 +432,8 @@ function CustomerRatings({ t }) {
 
 // ===== 主页面 =====
 export function RatingsPage() {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [tab, setTab] = useState('workorder');
 
   const tabs = [

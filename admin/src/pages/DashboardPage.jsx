@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Archive, ClipboardCheck, FileText, Package, ShieldAlert, Timer, TrendingUp, UserCheck, Wrench } from 'lucide-react';
 import { getAdminStats, getMaterialRequisitionMetrics } from '../services/api';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 
 const TEXT = {
   en: {
@@ -69,7 +69,8 @@ const TEXT = {
 };
 
 export function DashboardPage({ staffRole = 'admin', staffId = null }) {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const isOperationalStaff = staffId != null && staffRole !== 'admin';
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);

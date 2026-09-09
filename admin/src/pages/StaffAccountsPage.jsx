@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Copy, KeyRound, RefreshCw, UserMinus, UserPlus, X } from 'lucide-react';
 import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 import { BusinessOrganizationPanel, BusinessStaffFields, BUSINESS_ROLES } from '../components/BusinessOrganizationPanel';
 import {
   createAdminStaffAccount,
@@ -38,7 +39,8 @@ const TEXT = {
 const EMPTY_FORM = { display_name: '', login: '', phone: '', role: 'operations', market_scope: runtimeConfig.market };
 
 export function StaffAccountsPage() {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [staff, setStaff] = useState([]);
   const [organization, setOrganization] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);

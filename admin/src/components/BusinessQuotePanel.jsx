@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale, getAdminLocale } from '../config/locale';
 import { getBusinessQuote, saveBusinessQuote, submitBusinessQuote } from '../services/api';
 import { calculateBusinessQuoteEstimate } from '../../../worker/src/lib/businessQuoteEstimate';
 import { validateQuoteExecution } from '../../../worker/src/lib/quoteExecution';
@@ -52,7 +52,7 @@ const TEXT = {
 const inputClass = 'mt-1 w-full min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm disabled:opacity-60';
 const buttonClass = 'rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm disabled:opacity-40';
 const integer = value => /^(0|[1-9]\d*)$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : null;
-const money = (value, currency) => value == null ? '—' : `${value.toLocaleString(runtimeConfig.locale)} ${currency}`;
+const money = (value, currency) => value == null ? '—' : `${value.toLocaleString(getAdminLocale())} ${currency}`;
 const installment = sequence => ({ sequence, amount: '', trigger_type: sequence === 1 ? 'before_start' : 'on_completion', description: '', due_date: '', required_before_start: sequence === 1 });
 
 function formFromDraft(draft) {
@@ -80,7 +80,8 @@ function normalizeForm(form, state) {
 }
 
 export function BusinessQuotePanel({ workOrderId, expectedStaffId, scopeVersion, isCurrent, onAccessError }) {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [state, setState] = useState(null), [form, setForm] = useState(() => formFromDraft(null));
   const [pending, setPending] = useState('load'), [dirty, setDirty] = useState(false), [notice, setNotice] = useState(''), [error, setError] = useState('');
   const [blocked, setBlocked] = useState(false);
@@ -106,7 +107,7 @@ export function BusinessQuotePanel({ workOrderId, expectedStaffId, scopeVersion,
       } finally { if (generation.current === id) setPending(''); }
     })();
     return () => { generation.current++; abort.abort(); controller.current?.abort(); window.removeEventListener('storage', check); window.removeEventListener('focus', check); };
-  }, [workOrderId, expectedStaffId, scopeVersion, isCurrent, t.changed]);
+  }, [workOrderId, expectedStaffId, scopeVersion, isCurrent]);
   const parsed = state ? normalizeForm(form, state) : null;
   const status = state?.latest_quote?.status;
   const feedback = state?.latest_quote?.feedback;

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useAdminLocale, getAdminLocale } from '../config/locale';
 import { runtimeConfig } from '../config/runtime';
 import { getBusinessOrganization, getBusinessService, getBusinessServiceMedia, mutateBusinessService, searchBusinessServiceMaterials } from '../services/api';
 import { RepairRecordPanel } from '../../../frontend/src/components/WorkOrder/RepairRecordPanel';
@@ -25,14 +26,16 @@ function savedIdentity() {
 }
 
 export function BusinessServicePanel({ collapsed = false, ...props }) {
+  const locale = useAdminLocale();
   const [open, setOpen] = useState(!collapsed);
-  return open ? <BusinessServiceContent {...props} /> : <button type="button" className={`${button} mt-4`} onClick={() => setOpen(true)}>{runtimeConfig.locale === 'zh-CN' ? '打开商务服务执行' : 'Open business service execution'}</button>;
+  return open ? <BusinessServiceContent {...props} /> : <button type="button" className={`${button} mt-4`} onClick={() => setOpen(true)}>{locale === 'zh-CN' ? '打开商务服务执行' : 'Open business service execution'}</button>;
 }
 
 function BusinessServiceContent({ workOrderId, expectedStaffId, scopeVersion, isCurrent, onAccessError, readOnly = false }) {
-  const zh = runtimeConfig.locale === 'zh-CN';
-  const text = useCallback((cn, en) => zh ? cn : en, [zh]);
-  const changed = text('账号或权限范围已变化，请关闭并重新打开工单。', 'Your account or access scope changed. Close and reopen this order.');
+  const locale = useAdminLocale();
+  const zh = locale === 'zh-CN';
+  const text = useCallback((cn, en) => getAdminLocale() === 'zh-CN' ? cn : en, []);
+  const changed = useCallback(() => text('账号或权限范围已变化，请关闭并重新打开工单。', 'Your account or access scope changed. Close and reopen this order.'), [text]);
   const [identity] = useState(savedIdentity);
   const [state, setState] = useState(null), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true), [pending, setPending] = useState(false), [blocked, setBlocked] = useState(false);
@@ -53,10 +56,10 @@ function BusinessServiceContent({ workOrderId, expectedStaffId, scopeVersion, is
   const invalidate = useCallback(err => {
     cancelRequests();
     blockedRef.current = true; snapshot.current = null; retries.current.clear();
-    setState(null); setMessage(''); setInternal(false); setNotice(''); setBlocked(true); setError(changed); setLoading(false); setPending(false);
+    setState(null); setMessage(''); setInternal(false); setNotice(''); setBlocked(true); setError(changed()); setLoading(false); setPending(false);
     props.current.onAccessError?.(err, 'detail');
   }, [cancelRequests, changed]);
-  const guard = useCallback(() => { if (!current()) throw Object.assign(new Error(changed), { status: 403 }); }, [current, changed]);
+  const guard = useCallback(() => { if (!current()) throw Object.assign(new Error(changed()), { status: 403 }); }, [current, changed]);
   const fail = useCallback(err => {
     if ([401, 403, 404, 409].includes(err.status)) invalidate(err);
     else if (err.name !== 'AbortError') setError(err.message);
@@ -70,7 +73,7 @@ function BusinessServiceContent({ workOrderId, expectedStaffId, scopeVersion, is
       const data = await getBusinessService(workOrderId, identity.id, scope, controller.signal);
       if (generation !== epoch.current || controller.signal.aborted) throw new DOMException('View changed', 'AbortError');
       guard();
-      if (data.scope_version !== scope) throw Object.assign(new Error(changed), { status: 409 });
+      if (data.scope_version !== scope) throw Object.assign(new Error(changed()), { status: 409 });
       if (!Number.isInteger(data.revision) || !Number.isInteger(data.quote_version) || !data.capabilities) throw new Error(text('服务状态数据不完整。', 'Incomplete service state.'));
       snapshot.current = data; setState(data); setRefreshRequired(false); return data;
     } catch (err) { if (generation === epoch.current) fail(err); throw err; }
@@ -79,7 +82,7 @@ function BusinessServiceContent({ workOrderId, expectedStaffId, scopeVersion, is
 
   useEffect(() => {
     blockedRef.current = false; snapshot.current = null; setState(null); setBlocked(false); setError(''); setNotice(''); setLoading(true); retries.current.clear();
-    const check = () => { if (!current()) invalidate(Object.assign(new Error(changed), { status: 403 })); };
+    const check = () => { if (!current()) invalidate(Object.assign(new Error(changed()), { status: 403 })); };
     const toast = event => { if (current()) setNotice(event.detail.message); };
     window.addEventListener('focus', check); window.addEventListener('storage', check); window.addEventListener('sagemro:toast', toast);
     refresh().catch(() => {}).finally(() => setLoading(false));
@@ -92,7 +95,7 @@ function BusinessServiceContent({ workOrderId, expectedStaffId, scopeVersion, is
     busy.current = true; setPending(true); setError(''); setNotice('');
     try {
       guard();
-      if (props.current.readOnly || !snapshot.current) throw Object.assign(new Error(changed), { status: 403 });
+      if (props.current.readOnly || !snapshot.current) throw Object.assign(new Error(changed()), { status: 403 });
       const multipart = data instanceof FormData;
       const fingerprint = JSON.stringify(multipart ? [...data.entries()].map(([name, value]) => [name, value instanceof Blob ? [value.name, value.size, value.lastModified] : value]) : data);
       const retryId = `${action}:${key || fingerprint}`;
@@ -117,7 +120,7 @@ function BusinessServiceContent({ workOrderId, expectedStaffId, scopeVersion, is
   }, [workOrderId, identity, refresh, text, guard, changed, fail]);
 
   const serviceApi = useMemo(() => ({
-    currency: zh ? 'CNY' : 'USD',
+    currency: runtimeConfig.market === 'cn' ? 'CNY' : 'USD',
     saveRepairRecord: (_id, report) => mutate('report', report),
     getFieldDays: async () => { guard(); return snapshot.current?.field_days || { field_days: [], media: [] }; },
     getFieldMedia: async (_id, mediaId, signal) => {
@@ -149,7 +152,7 @@ function BusinessServiceContent({ workOrderId, expectedStaffId, scopeVersion, is
       } catch (err) { fail(err); throw err; } finally { controllers.current.delete(controller); }
     },
     createMaterialRequest: data => mutate('material-requests', data),
-  }), [mutate, workOrderId, identity, zh, guard, fail, text]);
+  }), [mutate, workOrderId, identity, guard, fail, text]);
 
   const caps = state?.capabilities || {}, can = key => !readOnly && caps[key] === true;
   const status = state?.work_order_status, workOrder = state?.work_order || {};
@@ -184,10 +187,10 @@ function BusinessServiceContent({ workOrderId, expectedStaffId, scopeVersion, is
               : ((item.owner === 'engineer' && can('can_confirm_execution_items')) || (item.owner === 'admin' && can('can_confirm_admin_items'))) ? <button type="button" className={button} onClick={() => mutate(`standard/items/${encodeURIComponent(item.key)}/confirm`, { state: 'confirmed' }).catch(() => {})}>{text('确认', 'Confirm')}</button>
                 : <span className="text-[var(--color-text-muted)]">{text('待确认', 'Pending')}</span>}
           </li>)}</ul></details>}
-        {workOrder.service_mode === 'onsite' && <FieldWorkPanel key={`field:${workOrderId}`} workOrderId={workOrderId} detail={fieldDetail} userType="admin" userId={identity?.id} canEdit={can('can_edit')} serviceApi={serviceApi} locale={runtimeConfig.locale} onChanged={refresh} />}
+        {workOrder.service_mode === 'onsite' && <FieldWorkPanel key={`field:${workOrderId}`} workOrderId={workOrderId} detail={fieldDetail} userType="admin" userId={identity?.id} canEdit={can('can_edit')} serviceApi={serviceApi} locale={locale} onChanged={refresh} />}
         {(can('can_edit') || state.repair_record) && <div className="min-w-0 border-t border-[var(--color-border)] pt-4">
           <RepairRecordPanel key={`report:${workOrderId}`} workOrderId={workOrderId} userType="admin" canEdit={can('can_edit')} readOnly={!can('can_edit')}
-            repairRecord={state.repair_record} serviceApi={serviceApi} locale={runtimeConfig.locale} onSaved={refresh}
+            repairRecord={state.repair_record} serviceApi={serviceApi} locale={locale} onSaved={refresh}
             canSubmitComplete={can('can_complete')} onConfirmComplete={() => window.confirm(text('提交最终报告给客户验收？此操作不会确认尾款到账。', 'Submit the final report for customer acceptance? This does not confirm final payment.'))}
             onSubmitComplete={() => mutate('complete')} />
         </div>}

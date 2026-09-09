@@ -4,8 +4,32 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { resolveRuntimeConfig } from './runtime.js';
+import { resolveAdminLocale, getAdminLocale, setAdminLocale } from './locale.js';
 
 const adminRoot = path.resolve(import.meta.dirname, '../..');
+
+test('language preference never changes market, API or CN defaults', () => {
+  const config = resolveRuntimeConfig('admin.sagemro.com');
+  assert.equal(resolveAdminLocale('zh-CN', config.market), 'zh-CN');
+  assert.equal(resolveAdminLocale('invalid', config.market), 'en');
+  assert.equal(resolveAdminLocale('en', 'cn'), 'zh-CN');
+  setAdminLocale('zh-CN');
+  assert.equal(getAdminLocale(), 'zh-CN');
+  setAdminLocale('invalid');
+  assert.equal(getAdminLocale(), 'zh-CN');
+  assert.equal(config.market, 'com');
+  assert.equal(config.apiBase, 'https://api.sagemro.com');
+  setAdminLocale('en');
+});
+
+test('knowledge market and service currency are independent of display language', () => {
+  const knowledge = read('src/pages/KnowledgePage.jsx');
+  const service = read('src/components/BusinessServicePanel.jsx');
+  assert.match(knowledge, /const defaultMarket = runtimeConfig\.market;/);
+  assert.match(knowledge, /const defaultLocale = runtimeConfig\.market === 'cn'/);
+  assert.match(service, /currency: runtimeConfig\.market === 'cn' \? 'CNY' : 'USD'/);
+  assert.doesNotMatch(service, /currency: zh \?/);
+});
 
 function read(relativePath) {
   return readFileSync(path.join(adminRoot, relativePath), 'utf8');

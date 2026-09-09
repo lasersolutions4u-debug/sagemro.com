@@ -91,7 +91,8 @@ test('drawer mutations expose a visible pending state and disable all conflictin
 test('requisition copy and actions are bilingual and buttons do not wrap', () => {
   assert.match(page, /Material requisitions/);
   assert.match(page, /物料领用申请/);
-  assert.match(page, /runtimeConfig\.locale/);
+  assert.match(page, /useAdminLocale\(\)/);
+  assert.match(page, /requisitionLabel\(locale,/);
   assert.match(page, /requisitionLabel/);
   assert.match(page, /whitespace-nowrap/);
 });

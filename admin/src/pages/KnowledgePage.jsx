@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, FileUp, FileText, HelpCircle, Plus, Search, X } from 'lucide-react';
 import { createAdminKnowledge, getAdminKnowledge, updateAdminKnowledge } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 
 const CATEGORIES = [
   'fault',
@@ -186,9 +187,10 @@ const TEXT = {
 };
 
 export function KnowledgePage() {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
-  const defaultMarket = runtimeConfig.locale === 'zh-CN' ? 'cn' : 'com';
-  const defaultLocale = runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en';
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
+  const defaultMarket = runtimeConfig.market;
+  const defaultLocale = runtimeConfig.market === 'cn' ? 'zh-CN' : 'en';
   const [data, setData] = useState({ total: 0, list: [] });
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ status: 'all', category: 'all', search: '' });

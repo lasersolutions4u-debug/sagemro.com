@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, LockKeyhole, RefreshCw } from 'lucide-react';
-import { runtimeConfig } from '../config/runtime';
+import { getAdminLocale, useAdminLocale } from '../config/locale';
 import {
   currentServiceGateForStatus,
   serviceStandardItemTone,
@@ -149,7 +149,8 @@ export function ServiceStandardAdminPanel({
   onRefresh,
   onBlockerStateChange,
 }) {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const currentGate = currentServiceGateForStatus(workOrderStatus);
   const [snapshot, setSnapshot] = useState(null);
   const [snapshotWorkOrderId, setSnapshotWorkOrderId] = useState(workOrderId);
@@ -180,12 +181,12 @@ export function ServiceStandardAdminPanel({
         if (isCurrent()) setSnapshot(nextSnapshot);
       })
       .catch((error) => {
-        if (isCurrent()) setMessage(error.message || t.loadFailed);
+        if (isCurrent()) setMessage(error.message || (TEXT[getAdminLocale()] || TEXT.en).loadFailed);
       })
       .finally(() => {
         if (isCurrent()) setLoading(false);
       });
-  }, [workOrderId, t.loadFailed]);
+  }, [workOrderId]);
 
   const currentSnapshot = snapshotWorkOrderId === workOrderId ? snapshot : null;
   const blockers = useMemo(
