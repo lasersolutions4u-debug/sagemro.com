@@ -1,6 +1,6 @@
 import { Check, ExternalLink, LockKeyhole, ReceiptText, RotateCcw, Split, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 import { money } from '../pages/workOrderDisplay';
 import { getAuthenticatedReceiptEvidenceUrl, getBusinessOrganization, getBusinessQuoteCosts } from '../services/api';
 
@@ -146,7 +146,8 @@ function SummaryItem({ label, value }) {
 }
 
 function BusinessCostSnapshot({ workOrderId, quoteVersion, amount, currency, onReady, onContext }) {
-  const zh = runtimeConfig.locale === 'zh-CN';
+  const locale = useAdminLocale();
+  const zh = locale === 'zh-CN';
   const [snapshot, setSnapshot] = useState(null);
   const [failed, setFailed] = useState(false);
   const key = `${workOrderId}:${quoteVersion}:${amount}:${currency}`;
@@ -196,7 +197,8 @@ function BusinessCostSnapshot({ workOrderId, quoteVersion, amount, currency, onR
 }
 
 export function QuoteExecutionAdminPanel({ detail, readOnly = false, onRefresh, onOpenDialog }) {
-  const t = { ...TEXT.en, ...(TEXT[runtimeConfig.locale] || {}) };
+  const locale = useAdminLocale();
+  const t = { ...TEXT.en, ...(TEXT[locale] || {}) };
   const [evidenceState, setEvidenceState] = useState({ loadingId: '', errorId: '' });
   const [costReady, setCostReady] = useState(null);
   const [costContext, setCostContext] = useState(null);

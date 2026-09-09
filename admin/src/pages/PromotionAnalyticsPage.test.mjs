@@ -142,7 +142,8 @@ test('promotion analytics page shell supplies bilingual accessible copy', async 
 
   assert.match(page, /Promotion Analytics/);
   assert.match(page, /推广分析/);
-  assert.match(page, /runtimeConfig\.locale/);
+  assert.match(page, /useAdminLocale\(\)/);
+  assert.match(page, /runtimeConfig\.market/);
   assert.match(page, /<h1/);
   assert.match(page, /Acquisition/);
   assert.match(page, /自然搜索与 AI 引荐/);

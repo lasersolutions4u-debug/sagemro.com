@@ -73,6 +73,57 @@ test('business navigation uses the scoped workbench instead of legacy operations
   assert.match(app, /businessWorkspace: '商务工作台'/);
 });
 
+test('fixed record entries load only their own kind and omit the old internal navigation', async () => {
+  const { BusinessWorkspacePage } = await vite.ssrLoadModule('/src/pages/BusinessWorkspacePage.jsx');
+  const previousFetch = globalThis.fetch, previousStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: key => key === 'admin_user' ? JSON.stringify(fixtureUser) : null };
+  try {
+    for (const kind of ['customer', 'lead', 'work_order', 'invalid', null]) {
+      const requests = [];
+      globalThis.fetch = async value => {
+        const url = new URL(value); requests.push(url);
+        return Response.json(url.pathname.endsWith('/organization')
+          ? { actor_staff_id: 's1', role: 'business_specialist', staff: [], territories: [], can_assign: false, scope_version: 'fixture' }
+          : { records: [], total: 0, next_cursor: null, scope_version: 'fixture' });
+      };
+      let renderer;
+      try {
+        await act(async () => { renderer = TestRenderer.create(React.createElement(BusinessWorkspacePage, { user: fixtureUser, recordKind: kind })); });
+        assert.equal(renderer.root.findAllByProps({ role: 'group', 'aria-label': 'Business workspace' }).length, 0);
+        if (kind === null || kind === 'invalid') {
+          assert.equal(requests.length, 0);
+          assert.equal(renderer.root.findAllByProps({ role: 'alert' }).length, 1);
+        } else {
+          assert.deepEqual(requests.filter(url => url.pathname.endsWith('/records')).map(url => url.searchParams.get('kind')), [kind]);
+          assert.doesNotMatch(text(renderer.toJSON()), /Business workspace/);
+        }
+      } finally { if (renderer) await act(async () => renderer.unmount()); }
+    }
+  } finally { globalThis.fetch = previousFetch; globalThis.localStorage = previousStorage; }
+});
+
+test('shared entry never mounts legacy management children for business or unknown roles', async () => {
+  const { BusinessRecordsPage } = await vite.ssrLoadModule('/src/pages/BusinessRecordsPage.jsx');
+  const previousFetch = globalThis.fetch, previousStorage = globalThis.localStorage;
+  let mounts = 0;
+  function LegacyPage() { mounts++; return React.createElement('div', null, 'Legacy management fixture'); }
+  globalThis.fetch = async value => Response.json(new URL(value).pathname.endsWith('/organization')
+    ? { actor_staff_id: 's1', staff: [], territories: [], can_assign: false, scope_version: 'fixture' }
+    : { records: [], total: 0, next_cursor: null, scope_version: 'fixture' });
+  try {
+    for (const role of ['business_director', 'business_manager', 'business_specialist', 'warehouse', 'unexpected']) {
+      const user = { ...fixtureUser, staffRole: role };
+      globalThis.localStorage = { getItem: key => key === 'admin_user' ? JSON.stringify(user) : null };
+      let renderer;
+      try {
+        await act(async () => { renderer = TestRenderer.create(React.createElement(BusinessRecordsPage, { user, kind: 'customer' }, React.createElement(LegacyPage))); });
+        assert.equal(mounts, 0);
+        assert.equal(renderer.root.findAllByType('button').some(button => text(button) === 'Record management'), false);
+      } finally { if (renderer) await act(async () => renderer.unmount()); }
+    }
+  } finally { globalThis.fetch = previousFetch; globalThis.localStorage = previousStorage; }
+});
+
 test('business staff form shows inherited territories before a manager or specialist is saved', async () => {
   const { BusinessStaffFields } = await vite.ssrLoadModule('/src/components/BusinessOrganizationPanel.jsx');
   for (const [role, parentRole] of [['business_manager', 'business_director'], ['business_specialist', 'business_manager']]) {

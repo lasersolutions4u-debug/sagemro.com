@@ -165,7 +165,7 @@ test('business quote browser journey keeps costs private and submits the saved r
         return route.fulfill({ response: await route.fetch({ url: `http://127.0.0.1:${server.httpServer.address().port}${url.pathname}${url.search}` }) });
       });
       await page.goto(`https://admin.sagemro.${market}/`);
-      await page.getByRole('button', { name: zh ? '服务工单' : 'Service orders', exact: true }).click();
+      await page.getByRole('button', { name: zh ? '服务工单' : 'Service Orders', exact: true }).click();
       await page.getByRole('button', { name: zh ? '查看详情' : 'View details', exact: true }).click();
       const dialog = page.getByRole('dialog');
       await dialog.getByRole('heading', { name: zh ? '商务报价' : 'Business quotation', exact: true }).waitFor();
@@ -175,6 +175,17 @@ test('business quote browser journey keeps costs private and submits the saved r
       await field(zh ? '客户差旅费' : 'Customer travel fee').fill('100');
       await field(zh ? '客户其他费用' : 'Customer other fee').fill('0');
       await field(zh ? '预计现场天数' : 'Expected onsite days').fill('2');
+      if (!zh) {
+        await page.getByRole('button', { name: '中文', exact: true }).click();
+        await dialog.getByRole('heading', { name: '商务报价', exact: true }).waitFor();
+        assert.equal(await field('客户人工费').inputValue(), '1000');
+        assert.equal(await field('客户备件费').inputValue(), '500');
+        assert.equal(await field('预计现场天数').inputValue(), '2');
+        assert.equal(await page.getByRole('button', { name: '内部员工账号', exact: true }).count(), 0);
+        assert.deepEqual(writes, []);
+        await page.getByRole('button', { name: 'English', exact: true }).click();
+        assert.equal(await field('Customer labor fee').inputValue(), '1000');
+      }
       const submit = dialog.getByRole('button', { name: zh ? '提交 Admin 审核' : 'Submit for Admin review', exact: true });
       const save = dialog.getByRole('button', { name: zh ? '保存报价草稿' : 'Save quote draft', exact: true });
       assert.equal(await submit.isDisabled(), true);

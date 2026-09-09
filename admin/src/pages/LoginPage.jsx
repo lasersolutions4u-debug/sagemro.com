@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { adminLogin } from '../services/api';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 import { BrandMark } from '../components/BrandMark';
 
 const TEXT = {
@@ -30,9 +30,10 @@ const TEXT = {
   },
 };
 
-const t = TEXT[runtimeConfig.locale] || TEXT.en;
 
 export function LoginPage({ onLogin }) {
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');

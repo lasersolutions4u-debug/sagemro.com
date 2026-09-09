@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Download, Search, X } from 'lucide-react';
 import { getAdminEngineerDetail, getAdminUsers, updateAdminEngineer } from '../services/api';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale, getAdminLocale } from '../config/locale';
 import { formatListValue } from './workOrderDisplay';
 
 const STATUS_MAP = {
@@ -57,7 +57,7 @@ function formatScore(value) {
 function formatDateTime(value) {
   if (!value) return '-';
   const date = new Date(value);
-  const locale = runtimeConfig.locale === 'zh-CN' ? 'zh-CN' : 'en-US';
+  const locale = getAdminLocale() === 'zh-CN' ? 'zh-CN' : 'en-US';
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale);
 }
 
@@ -205,7 +205,8 @@ const TEXT = {
 };
 
 export function EngineersPage({ initialEngineerId = '', onEngineerOpened }) {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);

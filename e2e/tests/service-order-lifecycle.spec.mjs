@@ -317,11 +317,12 @@ test('business quote, verified payment, dispatch and engineer service complete a
   await businessPage.getByLabel('New password (10+ characters)', { exact: true }).fill(runtime.customerPassword);
   await businessPage.getByLabel('Confirm new password', { exact: true }).fill(runtime.customerPassword);
   await businessPage.getByRole('button', { name: 'Change password and continue', exact: true }).click();
-  await expect(businessPage.getByRole('heading', { name: 'Business workspace', exact: true })).toBeVisible();
+  await expect(businessPage.getByRole('heading', { name: 'All leads', exact: true })).toBeVisible();
+  await expect(businessPage.getByRole('navigation').getByRole('button', { name: 'Business workspace', exact: true })).toHaveCount(0);
   const businessTitle = localD1Rows(`SELECT short_title FROM work_orders WHERE id = ${sqlText(workOrderId)}`)[0].short_title || orderNo;
   const openBusinessOrder = async () => {
     await businessPage.reload();
-    await businessPage.getByRole('button', { name: 'Service orders', exact: true }).click();
+    await businessPage.getByRole('navigation').getByRole('button', { name: 'Service Orders', exact: true }).click();
     await businessPage.locator('tr').filter({ hasText: businessTitle }).getByRole('button', { name: 'View details', exact: true }).click();
     const dialog = businessPage.getByRole('dialog');
     await expect(dialog).toContainText(orderNo);

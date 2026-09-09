@@ -138,6 +138,7 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
   const copy = isCn ? COPY.cn : COPY.en;
   const isEngineer = (userType === 'engineer' || (userType === 'admin' && serviceApi && canEdit)) && !readOnly;
   const [isEditing, setIsEditing] = useState(false);
+  const [defaultPartUnit] = useState(isCn ? '件' : 'pcs');
 
   const [symptom, setSymptom] = useState('');
   const [inspectionProcess, setInspectionProcess] = useState('');
@@ -163,13 +164,13 @@ export function RepairRecordPanel({ workOrderId, userType, repairRecord, onSaved
       setFollowUpAdvice(repairRecord.follow_up_advice || '');
       setLaborHours(repairRecord.labor_hours ? String(repairRecord.labor_hours) : '');
       const parts = parseParts(repairRecord.parts_used);
-      setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart, unit: isCn ? '件' : 'pcs' }]);
+      setPartsUsed(parts.length > 0 ? parts : [{ ...emptyPart, unit: defaultPartUnit }]);
       setMaterialItems(Array.isArray(repairRecord.material_items) ? repairRecord.material_items : []);
       setIsEditing(isEngineer && !hasRepairRecordContent(repairRecord));
     } else if (isEngineer) {
       setIsEditing(true);
     }
-  }, [isCn, repairRecord, isEngineer]);
+  }, [defaultPartUnit, repairRecord, isEngineer]);
 
   const clearFieldError = (field) => {
     setFieldErrors((current) => {

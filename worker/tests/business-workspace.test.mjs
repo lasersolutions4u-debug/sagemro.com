@@ -92,6 +92,16 @@ test('assignment checks both ends, revision, identity and invalidated pagination
   const next=await api(env,`/api/admin/business/records?kind=customer&cursor=${encodeURIComponent(page.data.next_cursor)}&scope_version=${page.data.scope_version}`,{id:'director-a'}); assert.equal(next.status,409);
 });
 
+test('unified business menus never grant legacy management or deferred modules to any business role', async t => {
+  const env = fixture(t); seed(env);
+  for (const id of ['director-a', 'manager-a', 'specialist-a']) {
+    for (const path of ['/api/admin/users', '/api/admin/leads', '/api/admin/workorders', '/api/admin/staff', '/api/admin/knowledge', '/api/admin/ratings', '/api/admin/materials']) {
+      const result = await api(env, path, { id });
+      assert.equal(result.status, 403, `${id}: ${path}`);
+    }
+  }
+});
+
 test('bootstrap configures territories and creates audited business accounts with valid hierarchy atomically',async(t)=>{
   const env=fixture(t); seed(env);
   const preview=await api(env,'/api/admin/business/organization');

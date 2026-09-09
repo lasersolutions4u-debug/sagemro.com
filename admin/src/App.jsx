@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Boxes, ChartNoAxesCombined, ClipboardCheck, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
+import { useAdminLocale } from './config/locale';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
 import { adminLogout, changeAdminPassword, restoreAdminSession } from './services/api';
@@ -19,6 +20,7 @@ const MaterialRequisitionsPage = lazy(() => import('./pages/MaterialRequisitions
 const StaffAccountsPage = lazy(() => import('./pages/StaffAccountsPage.jsx').then(({ StaffAccountsPage }) => ({ default: StaffAccountsPage })));
 const PromotionAnalyticsPage = lazy(() => import('./pages/PromotionAnalyticsPage.jsx').then(({ PromotionAnalyticsPage }) => ({ default: PromotionAnalyticsPage })));
 const BusinessWorkspacePage = lazy(() => import('./pages/BusinessWorkspacePage.jsx').then(({ BusinessWorkspacePage }) => ({ default: BusinessWorkspacePage })));
+const BusinessRecordsPage = lazy(() => import('./pages/BusinessRecordsPage.jsx').then(({ BusinessRecordsPage }) => ({ default: BusinessRecordsPage })));
 
 const TEXT = {
   en: {
@@ -31,6 +33,7 @@ const TEXT = {
       businessWorkspace: 'Business workspace',
       promotionAnalytics: 'Promotion Analytics',
       leads: 'Machine Leads',
+      unifiedLeads: 'Leads',
       workorders: 'Service Orders',
       engineerApplications: 'Engineer Applications',
       materials: 'Material Master',
@@ -53,8 +56,10 @@ const TEXT = {
       businessWorkspace: '商务工作台',
       promotionAnalytics: '推广分析',
       leads: '整机线索',
+      unifiedLeads: '线索',
       workorders: '服务工单',
       engineerApplications: '工程师申请审核',
+      engineers: '工程师',
       materials: '物料管理',
       materialRequisitions: '物料领用申请',
       staffAccounts: '内部员工账号',
@@ -66,13 +71,11 @@ const TEXT = {
   },
 };
 
-const t = TEXT[runtimeConfig.locale] || TEXT.en;
-
-const NAV_ITEMS = [
+const getNavItems = (t) => [
   { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
   { key: 'businessWorkspace', label: t.nav.businessWorkspace, icon: Users },
   { key: 'promotionAnalytics', label: t.nav.promotionAnalytics, icon: ChartNoAxesCombined },
-  { key: 'leads', label: t.nav.leads, icon: Target },
+  { key: 'leads', label: runtimeConfig.market === 'com' ? t.nav.unifiedLeads : t.nav.leads, icon: Target },
   { key: 'knowledge', label: t.nav.knowledge, icon: BookOpenText },
   { key: 'knowledgeCandidates', label: t.nav.knowledgeCandidates, icon: ClipboardCheck },
   { key: 'workorders', label: t.nav.workorders, icon: FileText },
@@ -88,6 +91,8 @@ const NAV_ITEMS = [
 const REQUISITION_ROLES = ['admin', 'operations', 'warehouse', 'procurement'];
 const OPERATIONAL_NAV_KEYS = new Set(['dashboard', 'materialRequisitions']);
 const OPERATIONS_NAV_KEYS = new Set(['dashboard', 'promotionAnalytics', 'workorders', 'materials', 'materialRequisitions']);
+const BUSINESS_ROLES = ['business_director', 'business_manager', 'business_specialist'];
+const BUSINESS_RECORD_NAV_KEYS = new Set(['users', 'leads', 'workorders']);
 
 function normalizeAdminUser(user) {
   if (!user) return user;
@@ -100,8 +105,9 @@ function normalizeAdminUser(user) {
 }
 
 function AdminPageLoading() {
+  const locale = useAdminLocale();
   return (
-    <div className="space-y-4" aria-busy="true" aria-label="Loading page">
+    <div className="space-y-4" aria-busy="true" aria-label={locale === 'zh-CN' ? '正在加载页面' : 'Loading page'}>
       <div className="h-8 w-52 animate-pulse rounded bg-[var(--color-surface-elevated)]" />
       <div className="h-48 animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]" />
     </div>
@@ -109,7 +115,8 @@ function AdminPageLoading() {
 }
 
 function MandatoryPasswordChange({ user, onChanged }) {
-  const isCn = runtimeConfig.locale === 'zh-CN';
+  const locale = useAdminLocale();
+  const isCn = locale === 'zh-CN';
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -153,6 +160,8 @@ function MandatoryPasswordChange({ user, onChanged }) {
 }
 
 export default function App() {
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [activePage, setActivePage] = useState('dashboard');
@@ -162,8 +171,12 @@ export default function App() {
     if (!user) return [];
     const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
     const isOperationalStaff = user.staffId != null && user.staffRole !== 'admin';
-    const isBusinessStaff = ['business_director', 'business_manager', 'business_specialist'].includes(user.staffRole);
-    return NAV_ITEMS.filter((item) => {
+    const isBusinessStaff = BUSINESS_ROLES.includes(user.staffRole);
+    return getNavItems(t).filter((item) => {
+      if (runtimeConfig.market === 'com') {
+        if (item.key === 'businessWorkspace') return false;
+        if (isBusinessStaff) return BUSINESS_RECORD_NAV_KEYS.has(item.key);
+      }
       if (isBusinessStaff) return item.key === 'businessWorkspace';
       if (item.key === 'businessWorkspace') return user.staffRole === 'admin';
       if (item.key === 'staffAccounts') return isBootstrapAdmin;
@@ -175,7 +188,7 @@ export default function App() {
       }
       return true;
     });
-  }, [user]);
+  }, [user, t]);
 
   useEffect(() => {
     restoreAdminSession()
@@ -219,7 +232,7 @@ export default function App() {
   }, [user]);
 
   if (window.location.pathname !== '/') {
-    const isCn = runtimeConfig.locale === 'zh-CN';
+    const isCn = locale === 'zh-CN';
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
         <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
@@ -264,6 +277,7 @@ export default function App() {
   }
 
   const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
+  const useBusinessRecords = runtimeConfig.market === 'com' && (user.staffRole === 'admin' || BUSINESS_ROLES.includes(user.staffRole));
   const currentPage = visibleNavItems.some((item) => item.key === activePage) ? activePage : visibleNavItems[0]?.key || 'dashboard';
 
   const renderPage = () => {
@@ -271,9 +285,9 @@ export default function App() {
       case 'businessWorkspace': return <BusinessWorkspacePage key={`${user.staffId}:${user.staffRole}`} user={user} />;
       case 'dashboard': return <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
       case 'promotionAnalytics': return <PromotionAnalyticsPage />;
-      case 'users': return <UsersPage />;
+      case 'users': return useBusinessRecords ? <BusinessRecordsPage key={`${user.staffId}:${user.staffRole}:customer`} user={user} kind="customer"><UsersPage /></BusinessRecordsPage> : <UsersPage />;
       case 'engineers': return <EngineersPage initialEngineerId={selectedEngineerId} onEngineerOpened={() => setSelectedEngineerId('')} />;
-      case 'workorders': return <WorkOrdersPage readOnly={user.staffRole === 'operations'} />;
+      case 'workorders': return useBusinessRecords ? <BusinessRecordsPage key={`${user.staffId}:${user.staffRole}:work_order`} user={user} kind="work_order"><WorkOrdersPage /></BusinessRecordsPage> : <WorkOrdersPage readOnly={user.staffRole === 'operations'} />;
       case 'materials': return <MaterialsPage readOnly={user.staffRole === 'operations'} />;
       case 'materialRequisitions': return <MaterialRequisitionsPage staffRole={user.staffRole} />;
       case 'staffAccounts': return isBootstrapAdmin ? <StaffAccountsPage /> : <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
@@ -281,7 +295,7 @@ export default function App() {
       case 'knowledgeCandidates': return <KnowledgeCandidatesPage />;
       case 'engineerApplications': return <EngineerApplicationsPage onOpenEngineer={(engineerId) => { setSelectedEngineerId(engineerId); setActivePage('engineers'); }} />;
       case 'ratings': return <RatingsPage />;
-      case 'leads': return <LeadsPage />;
+      case 'leads': return useBusinessRecords ? <BusinessRecordsPage key={`${user.staffId}:${user.staffRole}:lead`} user={user} kind="lead"><LeadsPage /></BusinessRecordsPage> : <LeadsPage />;
       default: return <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
     }
   };
@@ -295,7 +309,7 @@ export default function App() {
 
       {/* Sidebar */}
       <aside className={`
-        fixed lg:static z-40 w-60 h-screen flex flex-col
+        fixed lg:static z-40 w-60 flex flex-col ${runtimeConfig.market === 'com' ? 'top-14 h-[calc(100dvh-3.5rem)]' : 'h-screen'}
         bg-[var(--color-surface)] border-r border-[var(--color-border)]
         transition-transform duration-200
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -347,10 +361,10 @@ export default function App() {
       {/* Main content */}
       <main className="flex-1 min-w-0">
         {/* Mobile header */}
-        <div className="sticky top-0 z-20 lg:hidden flex items-center gap-3 px-3 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur">
-          <button onClick={() => setSidebarOpen(true)} title="Menu" className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--color-border)]"><Menu size={22} /></button>
+        <div className={`sticky ${runtimeConfig.market === 'com' ? 'top-14' : 'top-0'} z-20 lg:hidden flex items-center gap-3 px-3 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur`}>
+          <button onClick={() => setSidebarOpen(true)} title={locale === 'zh-CN' ? '菜单' : 'Menu'} className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--color-border)]"><Menu size={22} /></button>
           <BrandMark className="h-8 w-8 shrink-0 rounded-full" />
-          <span className="min-w-0 truncate text-sm font-medium">{t.mobileTitle}</span>
+          <span className="min-w-0 truncate pr-20 text-sm font-medium">{t.mobileTitle}</span>
         </div>
 
         <div className="mx-auto max-w-6xl px-3 py-4 sm:px-5 sm:py-5 lg:p-6">

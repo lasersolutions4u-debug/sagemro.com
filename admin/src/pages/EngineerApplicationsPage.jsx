@@ -21,7 +21,7 @@ import {
   resendAdminEngineerActivation,
   updateAdminEngineerApplication,
 } from '../services/api';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 
 const REVIEW_STATUSES = ['submitted', 'reviewing', 'qualified', 'rejected', 'archived'];
 
@@ -199,7 +199,7 @@ function applicantInitial(name = '') {
 }
 
 export function EngineerApplicationsPage({ onOpenEngineer }) {
-  const locale = runtimeConfig.locale;
+  const locale = useAdminLocale();
   const t = TEXT[locale] || TEXT.en;
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);

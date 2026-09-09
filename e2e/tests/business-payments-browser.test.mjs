@@ -154,7 +154,7 @@ for (const market of ['com', 'cn']) test(`business payment form scopes uploads, 
     return route.fulfill({ json: { claim: state.quote_execution.receipt_claims[0] } });
   });
   await page.goto(`https://admin.sagemro.${market}/`);
-  await page.getByRole('button', { name: zh ? '服务工单' : 'Service orders', exact: true }).click();
+  await page.getByRole('button', { name: zh ? '服务工单' : 'Service Orders', exact: true }).click();
   await page.getByRole('button', { name: zh ? '查看详情' : 'View details', exact: true }).click();
   const panel = page.getByRole('region', { name: zh ? '商务收款' : 'Business payments', exact: true });
   await panel.waitFor();

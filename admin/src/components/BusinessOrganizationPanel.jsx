@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 import { createBusinessTerritory, updateBusinessStaff } from '../services/api';
 
 const inputClass = 'mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2 text-sm';
@@ -7,7 +7,8 @@ export const BUSINESS_ROLES = ['business_director', 'business_manager', 'busines
 const roleNames = { en: ['Business director', 'Business manager', 'Business specialist'], 'zh-CN': ['商务总监', '商务经理', '商务专员'] };
 
 export function BusinessStaffFields({ value, onChange, organization, disabled = false }) {
-  const cn = runtimeConfig.locale === 'zh-CN';
+  const locale = useAdminLocale();
+  const cn = locale === 'zh-CN';
   if (!BUSINESS_ROLES.includes(value.role)) return null;
   const director = value.role === 'business_director';
   const parentRole = value.role === 'business_manager' ? 'business_director' : 'business_manager';
@@ -24,7 +25,8 @@ export function BusinessStaffFields({ value, onChange, organization, disabled = 
 }
 
 export function BusinessOrganizationPanel({ organization, onSaved }) {
-  const cn = runtimeConfig.locale === 'zh-CN';
+  const locale = useAdminLocale();
+  const cn = locale === 'zh-CN';
   const [territoryName, setTerritoryName] = useState('');
   const [edit, setEdit] = useState(null);
   const [pending, setPending] = useState(false);
@@ -58,7 +60,7 @@ export function BusinessOrganizationPanel({ organization, onSaved }) {
     <form onSubmit={event => submit(event, () => updateBusinessStaff(edit.id, { expected_staff_id: 'admin', revision: edit.revision, role: edit.role, grade: edit.grade, supervisor_staff_id: edit.role === 'business_director' ? null : edit.supervisor_staff_id, territory_ids: edit.role === 'business_director' ? edit.territory_ids : [], scope_version: organization.scope_version }))} className="grid gap-3 border-t border-[var(--color-border)] pt-4 sm:grid-cols-2">
       <label className="text-sm">{cn ? '调整现有商务员工' : 'Edit existing business staff'}<select disabled={pending} className={inputClass} value={edit?.id || ''} onChange={event => chooseStaff(event.target.value)}><option value="">{cn ? '请选择…' : 'Choose…'}</option>{organization.staff.filter(item => item.is_active && BUSINESS_ROLES.includes(item.role)).map(item => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>
       {edit && <>
-        <label className="text-sm">{cn ? '商务岗位' : 'Business role'}<select disabled={pending} className={inputClass} value={edit.role} onChange={event => setEdit({ ...edit, role: event.target.value, supervisor_staff_id: null, territory_ids: [] })}>{BUSINESS_ROLES.map((role, i) => <option key={role} value={role}>{(roleNames[runtimeConfig.locale] || roleNames.en)[i]}</option>)}</select></label>
+        <label className="text-sm">{cn ? '商务岗位' : 'Business role'}<select disabled={pending} className={inputClass} value={edit.role} onChange={event => setEdit({ ...edit, role: event.target.value, supervisor_staff_id: null, territory_ids: [] })}>{BUSINESS_ROLES.map((role, i) => <option key={role} value={role}>{(roleNames[locale] || roleNames.en)[i]}</option>)}</select></label>
         <BusinessStaffFields value={edit} onChange={setEdit} organization={organization} disabled={pending} />
         <button type="submit" disabled={pending} className="justify-self-start rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm text-white disabled:opacity-40">{cn ? '保存商务授权' : 'Save business authorization'}</button>
       </>}

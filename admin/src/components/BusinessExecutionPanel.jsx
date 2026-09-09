@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 import { assignBusinessExecution, getBusinessExecution, getBusinessOrganization } from '../services/api';
 import { formatApiDateTime } from '../utils/dateTime';
 
@@ -44,7 +44,8 @@ function savedIdentity() {
 }
 
 export function BusinessExecutionPanel({ workOrderId, readOnly = false, expectedStaffId, scopeVersion, isCurrent, onAccessError }) {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [identity] = useState(savedIdentity);
   const [state, setState] = useState(null), [executor, setExecutor] = useState(''), [reason, setReason] = useState('');
   const [pending, setPending] = useState('load'), [error, setError] = useState(''), [blocked, setBlocked] = useState(false);
@@ -119,7 +120,7 @@ export function BusinessExecutionPanel({ workOrderId, readOnly = false, expected
     {state && !blocked && <>
       {execution ? <div className="min-w-0 border-l-4 border-[var(--color-primary)] bg-[var(--color-primary)]/10 p-3">
         <p role="status" className="text-sm font-semibold">{t.assigned}</p>
-        <dl className="mt-3 grid min-w-0 gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-[var(--color-text-muted)]">{t.executor}</dt><dd className="break-words">{execution.staff_name}</dd></div><div><dt className="text-xs text-[var(--color-text-muted)]">{t.when}</dt><dd>{formatApiDateTime(execution.assigned_at, runtimeConfig.locale)}</dd></div><div><dt className="text-xs text-[var(--color-text-muted)]">{t.by}</dt><dd className="break-words">{execution.assigned_by}</dd></div><div><dt className="text-xs text-[var(--color-text-muted)]">{t.reason}</dt><dd className="whitespace-pre-wrap break-words">{execution.reason}</dd></div></dl>
+        <dl className="mt-3 grid min-w-0 gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-[var(--color-text-muted)]">{t.executor}</dt><dd className="break-words">{execution.staff_name}</dd></div><div><dt className="text-xs text-[var(--color-text-muted)]">{t.when}</dt><dd>{formatApiDateTime(execution.assigned_at, locale)}</dd></div><div><dt className="text-xs text-[var(--color-text-muted)]">{t.by}</dt><dd className="break-words">{execution.assigned_by}</dd></div><div><dt className="text-xs text-[var(--color-text-muted)]">{t.reason}</dt><dd className="whitespace-pre-wrap break-words">{execution.reason}</dd></div></dl>
       </div> : !canAssign && <p className="text-sm text-[var(--color-text-muted)]">{readOnly ? t.admin_required : t[state.blocked_reason] || t.execution_data_invalid}</p>}
       {canAssign && <form onSubmit={event => { event.preventDefault(); perform('assign'); }}><fieldset disabled={!!pending} className="min-w-0 space-y-3">
         <label className="block text-sm">{t.executor}<select aria-label={t.executor} className={inputClass} value={executor} onChange={event => { setExecutor(event.target.value); requestKey.current = null; }}><option value="">{t.choose}</option>{state.candidates.map(row => <option key={row.id} value={row.id}>{row.display_name}</option>)}</select></label>

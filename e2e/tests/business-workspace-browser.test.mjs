@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import './admin-locale-browser.test.mjs';
+import './admin-business-navigation-browser.test.mjs';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -132,9 +134,10 @@ test('business workspace and staff organization browser journeys use only local 
           });
           await page.goto(`https://admin.sagemro.${market}/`);
           if (!bootstrap) {
-            await page.getByRole('heading', { name: market === 'cn' ? '商务工作台' : 'Business workspace', exact: true }).waitFor();
+            if (market === 'com') await page.locator('nav').getByRole('button', { name: 'Customers', exact: true }).click();
+            await page.getByRole('heading', { name: market === 'cn' ? '商务工作台' : 'Customers', exact: true }).waitFor();
             await page.getByText('Example Customer', { exact: true }).waitFor();
-            assert.equal(await page.locator('nav button').count(), 1);
+            assert.equal(await page.locator('nav button').count(), market === 'cn' ? 1 : 3);
             assert.ok(calls.every(path => path === '/api/auth/session' || path.startsWith('/api/admin/business/')));
             await page.getByRole('button', { name: market === 'cn' ? '查看详情' : 'View details', exact: true }).click();
             const dialog = page.getByRole('dialog');
@@ -152,7 +155,7 @@ test('business workspace and staff organization browser journeys use only local 
             await dialog.waitFor({ state: 'hidden' });
             assert.equal(writes[0].body.owner_staff_id, 'manager-fixture');
             assert.equal(writes[0].body.revision, 1);
-            await page.getByRole('button', { name: market === 'cn' ? '全部线索' : 'All leads', exact: true }).click();
+            await page.getByRole('button', { name: market === 'cn' ? '全部线索' : 'Leads', exact: true }).click();
             await page.getByText('=1+1', { exact: true }).waitFor();
             const downloadEvent = page.waitForEvent('download');
             await page.getByRole('button', { name: market === 'cn' ? '导出范围内全部资料' : 'Export all in scope', exact: true }).click();
@@ -169,9 +172,9 @@ test('business workspace and staff organization browser journeys use only local 
             const other = await context.newPage();
             await other.goto(`https://admin.sagemro.${market}/fixture-switch`);
             await other.evaluate(() => localStorage.setItem('admin_user', JSON.stringify({ id: 'another-fixture', staffId: 'another-fixture', staffRole: 'business_specialist' })));
-            await page.getByRole('heading', { name: market === 'cn' ? '商务工作台' : 'Business workspace', exact: true }).waitFor({ state: 'hidden' });
+            await page.getByRole('heading', { name: market === 'cn' ? '商务工作台' : 'All leads', exact: true }).waitFor({ state: 'hidden' });
           } else {
-            if (market === 'cn') await page.getByTitle('Menu', { exact: true }).click();
+            if (market === 'cn') await page.getByTitle('菜单', { exact: true }).click();
             await page.getByRole('button', { name: market === 'cn' ? '内部员工账号' : 'Internal Staff', exact: true }).click();
             await page.getByLabel(market === 'cn' ? '新增辖区名称' : 'New territory name', { exact: true }).fill('Second example territory');
             await page.getByRole('button', { name: market === 'cn' ? '创建辖区' : 'Create territory', exact: true }).click();

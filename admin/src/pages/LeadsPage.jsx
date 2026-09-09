@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getAdminLeads, updateAdminLead } from '../services/api';
-import { runtimeConfig } from '../config/runtime';
+import { useAdminLocale } from '../config/locale';
 
 const STATUS_MAP = {
   new: { color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
@@ -144,7 +144,8 @@ const TEXT = {
 };
 
 export function LeadsPage() {
-  const t = TEXT[runtimeConfig.locale] || TEXT.en;
+  const locale = useAdminLocale();
+  const t = TEXT[locale] || TEXT.en;
   const [data, setData] = useState({ total: 0, list: [] });
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
