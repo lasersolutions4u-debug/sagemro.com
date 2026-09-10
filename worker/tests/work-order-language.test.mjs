@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 import { formatSiteTimezone } from '../src/lib/quoteExecution.js';
 import worker from '../src/index.js';
 import { readFile } from 'node:fs/promises';
@@ -17,7 +17,7 @@ function makeEnv() {
   };
   const kv = new Map();
 
-  return {
+  return withFixtureAccounts({
     JWT_SECRET,
     KV: {
       async get(key) {
@@ -106,20 +106,20 @@ function makeEnv() {
       },
     },
     __state: state,
-  };
+  }, { customers: [{ id: 'cust-1' }] });
 }
 
-async function makeCustomerToken() {
-  return signJwt({
+async function makeCustomerToken(env) {
+  return signEnvSession({
     userType: 'customer',
     userId: 'cust-1',
     exp: Math.floor(Date.now() / 1000) + 60,
-  }, JWT_SECRET);
+  }, env);
 }
 
 test('COM work order creation writes customer and engineer service text in English', async () => {
   const env = makeEnv();
-  const token = await makeCustomerToken();
+  const token = await makeCustomerToken(env);
   const errors = [];
   const originalError = console.error;
   console.error = (...args) => errors.push(args.join(' '));

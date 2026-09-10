@@ -1,11 +1,71 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const api = await readFile(new URL('../src/services/api.js', import.meta.url), 'utf8');
 const login = await readFile(new URL('../src/components/Auth/LoginModal.jsx', import.meta.url), 'utf8');
 const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const viteConfig = await readFile(new URL('../vite.config.js', import.meta.url), 'utf8');
+
+function passwordChangeClient(result, status = 200) {
+  const storage = new Map([
+    ['sagemro_token', 'old-bearer'],
+    ['sagemro_csrf_token', 'old-csrf'],
+    ['sagemro_user', '{"id":"test-user"}'],
+  ]);
+  const calls = [];
+  const context = {
+    Headers, URL, setTimeout,
+    localStorage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, value),
+      removeItem: (key) => storage.delete(key),
+    },
+    location: { origin: 'https://customer.example.test', hostname: 'customer.example.test' },
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+      if (url.endsWith('/api/auth/session')) return Response.json({ authenticated: true });
+      if (result instanceof Error) throw result;
+      return Response.json(result, { status });
+    },
+  };
+  context.window = context;
+  runInNewContext(api.replace(/^import [\s\S]*?from '\.\/funnelAnalytics';/, '')
+    .replaceAll('import.meta.env', '{}').replaceAll('export ', ''), context);
+  return { context, storage, calls };
+}
+
+for (const credentials of [
+  { csrfToken: 'rotated-csrf' },
+  { csrfToken: 'rotated-csrf', token: 'rotated-bearer' },
+  { token: 'rotated-bearer' },
+]) {
+  test(`frontend password change rotates credentials for the next write: ${Object.keys(credentials).join(', ')}`, async () => {
+    const result = { success: true, ...credentials };
+    const { context, storage, calls } = passwordChangeClient(result);
+    assert.deepEqual(await context.changePassword({ oldPassword: 'old-password', newPassword: 'new-password' }), result);
+    await context.renameConversation('test-conversation', 'Updated');
+
+    const headers = calls[1].options.headers;
+    assert.equal(headers.get('X-CSRF-Token'), credentials.csrfToken || 'old-csrf');
+    assert.equal(headers.get('Authorization'), credentials.csrfToken ? null : 'Bearer rotated-bearer');
+    assert.equal(storage.get('sagemro_token'), credentials.csrfToken ? undefined : 'rotated-bearer');
+    assert.equal(calls[1].options.credentials, 'include');
+    assert.equal(storage.get('sagemro_user'), '{"id":"test-user"}');
+  });
+}
+
+for (const status of [400, 401, 503, 'network']) {
+  test(`frontend failed password change preserves credentials: ${status}`, async () => {
+    const result = status === 'network' ? new Error('Network unavailable') : { error: 'Rejected' };
+    const { context, storage } = passwordChangeClient(result, status === 'network' ? 200 : status);
+    const original = [...storage];
+    await assert.rejects(context.changePassword({ oldPassword: 'wrong-password', newPassword: 'new-password' }));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual([...storage], original);
+  });
+}
 
 test('frontend API requests include cookies and non-empty CSRF for unsafe methods', () => {
   assert.match(api, /credentials:\s*'include'/);

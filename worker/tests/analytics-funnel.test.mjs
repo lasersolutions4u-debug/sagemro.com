@@ -2,13 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signFixtureSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 
 const JWT_SECRET = 'analytics-funnel-test-secret-32-chars';
 
 function createEnv() {
   const rows = [];
-  return {
+  return withFixtureAccounts({
     DB: {
       prepare(sql) {
         return {
@@ -44,7 +44,7 @@ function createEnv() {
     },
     JWT_SECRET,
     __rows: rows,
-  };
+  }, { customers: [{ id: 'customer-analytics-1' }] });
 }
 
 async function postFunnel(body, env = createEnv(), headers = {}) {
@@ -192,7 +192,7 @@ test('public funnel endpoint rejects unknown event names', async () => {
 
 test('cookie-authenticated funnel events reject missing CSRF', async () => {
   const csrf = 'analytics-csrf-token';
-  const token = await signJwt({
+  const token = await signFixtureSession({
     userId: 'customer-analytics-1',
     userType: 'customer',
     csrf,
@@ -214,7 +214,7 @@ test('cookie-authenticated funnel events reject missing CSRF', async () => {
 
 test('cookie-authenticated funnel events accept matching CSRF and trust the session identity', async () => {
   const csrf = 'analytics-csrf-token';
-  const token = await signJwt({
+  const token = await signFixtureSession({
     userId: 'customer-analytics-1',
     userType: 'customer',
     csrf,

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 import './business-quote-api.test.mjs';
 
 const secret = 'business-workspace-fictional-test-secret';
@@ -12,10 +12,10 @@ function fixture(t) {
   sqlite.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
   t.after(() => sqlite.close());
   const DB = { __sqlite: sqlite, prepare(sql) { let args=[]; return { bind(...v) { args=v; return this; }, async first() { return sqlite.prepare(sql).get(...args)||null; }, async all() { return {results:sqlite.prepare(sql).all(...args)}; }, async run() { const r=sqlite.prepare(sql).run(...args); return {meta:{changes:Number(r.changes)}}; } }; }, async batch(statements) { sqlite.exec('BEGIN'); try { const out=[]; for(const s of statements) out.push(await s.run()); sqlite.exec('COMMIT'); return out; } catch(e) { sqlite.exec('ROLLBACK'); throw e; } } };
-  return { DB, JWT_SECRET:secret, ENVIRONMENT:'development', KV:{async get(){return null;},async put(){},async delete(){}} };
+  return { DB, ...fixtureAdminEnv, JWT_SECRET:secret, ENVIRONMENT:'development', KV:{async get(){return null;},async put(){},async delete(){}} };
 }
 async function api(env,path,{id='admin',method='GET',body,claims={},cookie=false}={}) {
-  const token=await signJwt({userId:id,userType:'admin',market:'com',...(id==='admin'?{}:{staffId:id,staffRole:'admin'}),csrf:'fixture-csrf',exp:Math.floor(Date.now()/1000)+3600,...claims},secret);
+  const token=await signEnvSession({userId:id,userType:'admin',market:'com',...(id==='admin'?{}:{staffId:id,staffRole:'admin'}),csrf:'fixture-csrf',exp:Math.floor(Date.now()/1000)+3600,...claims},env);
   const headers={Origin:'https://admin.sagemro.com','Content-Type':'application/json','X-CSRF-Token':'fixture-csrf',...(cookie?{Cookie:`sagemro_admin_session=${token}`}:{Authorization:`Bearer ${token}`})};
   const url=new URL(`https://api.sagemro.com${path}`); if(method==='GET'&&!url.searchParams.has('expected_staff_id'))url.searchParams.set('expected_staff_id',id);
   const response=await worker.fetch(new Request(url,{method,headers,...(body?{body:JSON.stringify({expected_staff_id:id,...body})}:{})}),env,{});
@@ -137,7 +137,7 @@ test('business notifications never join legacy admin/operations broadcasts',()=>
 test('business scope intersects database market and staff market with active fixed-depth hierarchy',async(t)=>{
   const env=fixture(t); seed(env);
   const cn=fixture(t); seed(cn); env.DB_CN=cn.DB;
-  const cnToken=await signJwt({userId:'specialist-a',staffId:'specialist-a',staffRole:'admin',userType:'admin',market:'cn',exp:Math.floor(Date.now()/1000)+3600},secret);
+  const cnToken=await signEnvSession({userId:'specialist-a',staffId:'specialist-a',staffRole:'admin',userType:'admin',market:'cn',exp:Math.floor(Date.now()/1000)+3600},env);
   const r=await worker.fetch(new Request('https://api.sagemro.com/api/admin/business/records?kind=customer&expected_staff_id=specialist-a',{headers:{Origin:'https://admin.sagemro.cn',Authorization:`Bearer ${cnToken}`}}),env,{});
   assert.equal(r.status,403);
   const db=env.DB.__sqlite;
@@ -216,10 +216,18 @@ test('large teams fit bounded SQL parameters',async(t)=>{
 test('scope changes while resolving an admin actor fail closed',async(t)=>{
   const env=fixture(t); seed(env);
   env.DB.__sqlite.prepare("INSERT INTO admin_staff_accounts(id,normalized_login,password_hash,salt,role,display_name,market_scope,must_change_password) VALUES ('staff-admin','admin@example.invalid','hash','salt','admin','Admin Fixture','com',0)").run();
-  const prepare=env.DB.prepare.bind(env.DB);let reads=0;
+  const prepare=env.DB.prepare.bind(env.DB);let resolvingScope=false;
   env.DB.prepare=sql=>{
     const s=prepare(sql),first=s.first.bind(s);
-    s.first=async()=>{const r=await first();if(sql==='SELECT * FROM admin_staff_accounts WHERE id = ?'&&++reads===3)env.DB.__sqlite.prepare("UPDATE admin_staff_accounts SET is_active=0 WHERE id='staff-admin'").run();return r;};return s;
+    s.first=async()=>{
+      const r=await first();
+      if(sql==='SELECT revision FROM business_scope_version WHERE id = 1')resolvingScope=true;
+      if(resolvingScope&&sql==='SELECT * FROM admin_staff_accounts WHERE id = ?'){
+        resolvingScope=false;
+        env.DB.__sqlite.prepare("UPDATE admin_staff_accounts SET is_active=0 WHERE id='staff-admin'").run();
+      }
+      return r;
+    };return s;
   };
   assert.equal((await api(env,'/api/admin/business/records?kind=customer',{id:'staff-admin'})).status,409);
 });

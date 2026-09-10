@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 import worker from '../src/index.js';
 
 const JWT_SECRET = 'work-order-messages-test-secret-32-chars';
@@ -19,7 +19,7 @@ function makeEnv() {
     messages: [],
   };
 
-  return {
+  return withFixtureAccounts({
     JWT_SECRET,
     DB: {
       prepare(sql) {
@@ -76,19 +76,19 @@ function makeEnv() {
       },
     },
     __state: state,
-  };
+  }, { customers: [{ id: 'cust-1' }, { id: 'cust-2' }], engineers: [{ id: 'eng-1' }, { id: 'eng-2' }] });
 }
 
-async function makeToken(userType = 'customer', userId = 'cust-1') {
-  return signJwt({
+async function makeToken(env, userType = 'customer', userId = 'cust-1') {
+  return signEnvSession({
     userType,
     userId,
     exp: Math.floor(Date.now() / 1000) + 60,
-  }, JWT_SECRET);
+  }, env);
 }
 
 async function api(env, path, { method = 'GET', body, userType = 'customer', userId = 'cust-1' } = {}) {
-  const token = await makeToken(userType, userId);
+  const token = await makeToken(env, userType, userId);
   const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, {
     method,
     headers: {

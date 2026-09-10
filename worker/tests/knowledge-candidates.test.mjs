@@ -9,7 +9,7 @@ import {
   prepareWorkOrderCandidate,
   toKnowledgeMarket,
 } from '../src/lib/knowledge-candidates.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 import worker from '../src/index.js';
 
 function submittedReport(overrides = {}) {
@@ -408,16 +408,18 @@ function createCandidateEnv({
     },
     KV: { async get() { return null; }, async put() {} },
   };
+  withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
   return { env, state };
 }
 
 async function authenticatedRequest(env, { type, path, body, host = 'api.sagemro.com' }) {
-  const token = await signJwt({
-    userId: `${type}-1`,
+  const token = await signEnvSession({
+    userId: type === 'admin' ? 'admin' : `${type}-1`,
     userType: type,
     market: host.endsWith('.cn') ? 'cn' : 'com',
     iat: 1,
-  }, env.JWT_SECRET);
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  }, env);
   const response = await worker.fetch(new Request(`https://${host}${path}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

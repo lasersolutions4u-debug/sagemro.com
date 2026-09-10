@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 
 function createStatement(env, sql) {
   return {
@@ -186,18 +186,18 @@ function createEnv() {
       async put() {},
     },
   };
-  return env;
+  return withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
 }
 
 async function token(env, userType = 'admin') {
-  return signJwt({
-    userId: `${userType}-1`,
+  return signEnvSession({
+    userId: userType === 'admin' ? 'admin' : `${userType}-1`,
     userType,
     market: 'cn',
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
 }
 
 async function api(env, path, { method = 'GET', body, userType = 'admin' } = {}) {

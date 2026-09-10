@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { createServer } from '../../admin/node_modules/vite/dist/node/index.js';
 import { calculateBusinessQuoteEstimate } from '../../worker/src/lib/businessQuoteEstimate.js';
 import worker from '../../worker/src/index.js';
-import { signJwt } from '../../worker/src/lib/auth.js';
+import { signEnvSession } from '../../worker/tests/helpers/session-jwt.mjs';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 
@@ -27,7 +27,7 @@ test('real browser form saves and submits through the actual scoped Worker and S
     INSERT INTO business_record_assignments(kind,record_id,territory_id,owner_staff_id) VALUES ('work_order','order-fixture','territory-fixture','biz-fixture');`);
   const env = { DB, JWT_SECRET: 'fictional-local-browser-test-secret', ENVIRONMENT: 'development', KV: { async get() { return null; }, async put() {} } };
   const user = { id: 'biz-fixture', staffId: 'biz-fixture', staffRole: 'business_director', name: 'Example Business Director' };
-  const token = await signJwt({ userId: user.id, staffId: user.staffId, userType: 'admin', market: 'cn', exp: Math.floor(Date.now() / 1000) + 3600 }, env.JWT_SECRET);
+  const token = await signEnvSession({ userId: user.id, staffId: user.staffId, userType: 'admin', market: 'cn', exp: Math.floor(Date.now() / 1000) + 3600 }, env);
   const server = await createServer({ root: fileURLToPath(new URL('../../admin', import.meta.url)), logLevel: 'error',
     define: { 'import.meta.env.VITE_API_BASE': 'window.location.origin' }, server: { host: '127.0.0.1', port: 0, hmr: false } });
   await server.listen(); t.after(() => server.close());

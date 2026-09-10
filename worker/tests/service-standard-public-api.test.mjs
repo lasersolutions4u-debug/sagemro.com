@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 import { buildServiceStandardDefinition } from '../src/lib/serviceStandard.js';
 
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
@@ -70,6 +70,7 @@ function createEnv() {
   `).run();
 
   const env = {
+    ...fixtureAdminEnv,
     JWT_SECRET: 'test-secret-with-enough-length',
     __sqlite: sqlite,
     KV: {
@@ -119,7 +120,7 @@ async function api(env, path, {
   userType = 'customer',
   staffId,
 } = {}) {
-  const jwt = await signJwt({
+  const jwt = await signEnvSession({
     userId,
     userType,
     staffId,
@@ -127,7 +128,7 @@ async function api(env, path, {
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
   const response = await worker.fetch(
     new Request(`https://api.sagemro.com${path}`, {
       headers: {
@@ -283,7 +284,7 @@ test('engineer and Admin details do not receive the customer milestone projectio
 
   for (const auth of [
     { userType: 'engineer', userId: 'engineer-1' },
-    { userType: 'admin', userId: 'admin-1' },
+    { userType: 'admin', userId: 'admin' },
   ]) {
     const detail = await api(env, '/api/workorders/wo-active', auth);
     assert.equal(detail.response.status, 200, auth.userType);

@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 import { buildServiceStandardDefinition } from '../src/lib/serviceStandard.js';
 
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
@@ -141,6 +141,7 @@ function createQuoteExecutionEnv({
   return {
     db,
     env: {
+      ...fixtureAdminEnv,
       JWT_SECRET: 'test-secret-with-enough-length',
       DB: createD1Database(db, hooks),
       KV: {
@@ -281,7 +282,7 @@ function createBatchBarrier(expected) {
 }
 
 async function token(env, userType, userId, market = 'com', { staffId, staffRole } = {}) {
-  return signJwt({
+  return signEnvSession({
     userId,
     userType,
     market,
@@ -290,7 +291,7 @@ async function token(env, userType, userId, market = 'com', { staffId, staffRole
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
 }
 
 async function api(ctx, path, {
@@ -816,6 +817,7 @@ test('COM business: customer activates the exact approved baseline and its immut
   assert.equal(stale.response.status, 409);
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 0);
 
+  ctx.db.exec("INSERT INTO customers(id,user_no,name,phone,password_hash) VALUES ('customer-2','FICTIONAL-U2','Fictional Other Customer','+12025550122','hash')");
   const forbidden = await confirmQuote(ctx, 1, { userId: 'customer-2' });
   assert.equal(forbidden.response.status, 403);
   assert.equal(ctx.db.prepare('SELECT COUNT(*) AS count FROM work_order_installments').get().count, 0);
@@ -1312,6 +1314,7 @@ test('CN legacy: assigned engineer opens trigger-ready installments and owning c
   await confirmBaselineForReceiptTests(ctx);
   const row = installment(ctx);
 
+  ctx.db.exec("INSERT INTO engineers(id,user_no,name,phone,password_hash) VALUES ('engineer-2','FICTIONAL-E2','Fictional Other Engineer','+12025550123','hash')");
   const wrongEngineer = await startCollection(ctx, { userId: 'engineer-2' });
   assert.equal(wrongEngineer.response.status, 403);
 
@@ -1335,6 +1338,7 @@ test('CN legacy: assigned engineer opens trigger-ready installments and owning c
 
   const engineerMethod = await selectPaymentMethod(ctx, 'bank_transfer', { userType: 'engineer', userId: 'engineer-1' });
   assert.equal(engineerMethod.response.status, 403);
+  ctx.db.exec("INSERT INTO customers(id,user_no,name,phone,password_hash) VALUES ('customer-2','FICTIONAL-U2','Fictional Other Customer','+12025550122','hash')");
   const wrongCustomer = await selectPaymentMethod(ctx, 'bank_transfer', { userId: 'customer-2' });
   assert.equal(wrongCustomer.response.status, 403);
 
@@ -1637,6 +1641,8 @@ test('CN legacy: receipt claim validates input, stores private PDF evidence, str
     staffId: 'warehouse-1', staffRole: 'warehouse',
   });
   assert.equal(warehouse.response.status, 403);
+  ctx.db.exec("INSERT INTO customers(id,user_no,name,phone,password_hash) VALUES ('customer-2','FICTIONAL-U2','Fictional Other Customer','+12025550122','hash')");
+  ctx.db.exec("INSERT INTO engineers(id,user_no,name,phone,password_hash) VALUES ('engineer-2','FICTIONAL-E2','Fictional Other Engineer','+12025550123','hash')");
   for (const [userType, userId] of [
     ['customer', 'customer-2'],
     ['engineer', 'engineer-2'],
@@ -2055,6 +2061,7 @@ test('CN legacy: collection workflow errors and notifications follow the CN requ
   const ctx = createQuoteExecutionEnv({ market: 'cn' });
   await confirmBaselineForReceiptTests(ctx);
 
+  ctx.db.exec("INSERT INTO engineers(id,user_no,name,phone,password_hash) VALUES ('engineer-2','FICTIONAL-E2','Fictional Other Engineer','+12025550123','hash')");
   const denied = await startCollection(ctx, { userId: 'engineer-2' });
   assert.equal(denied.response.status, 403);
   assert.match(denied.json.error, /工程师|工单|指派/);

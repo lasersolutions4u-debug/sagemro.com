@@ -136,10 +136,16 @@ export async function getMaterialRequisitionMetrics() {
 }
 
 export async function changeAdminPassword(oldPassword, newPassword) {
-  return request('/api/auth/change-password', {
+  const data = await request('/api/auth/change-password', {
     method: 'POST',
     body: JSON.stringify({ oldPassword, newPassword }),
   });
+  if (data.token) localStorage.setItem('admin_token', data.token);
+  if (data.csrfToken) {
+    localStorage.setItem('admin_csrf_token', data.csrfToken);
+    localStorage.removeItem('admin_token');
+  }
+  return data;
 }
 
 export async function getAdminStaffAccounts() {

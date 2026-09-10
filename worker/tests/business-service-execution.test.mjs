@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 
 const secret = 'fictional-business-quote-test-secret';
 const path = '/api/admin/business/work-orders/order-a/quote';
@@ -30,12 +30,12 @@ function fixture(t) {
     sqlite.prepare("INSERT INTO work_orders(id,order_no,customer_id,type,description,status,service_mode) VALUES (?,?,?,'fault','Fictional request','pending','onsite')").run(`order-${id}`, `ORDER-${id}`, `customer-${id}`);
     sqlite.prepare("INSERT INTO business_record_assignments(kind,record_id,territory_id,owner_staff_id) VALUES ('work_order',?,?,?)").run(`order-${id}`, id, id);
   }
-  return { DB, JWT_SECRET: secret, ENVIRONMENT: 'development', KV: { async get() { return null; }, async put() {}, async delete() {} } };
+  return { DB, ...fixtureAdminEnv, JWT_SECRET: secret, ENVIRONMENT: 'development', KV: { async get() { return null; }, async put() {}, async delete() {} } };
 }
 async function api(env, route = path, { id = 'a', method = 'GET', body, userType = 'admin', omitReviewScope = false } = {}) {
   if (id === 'admin' && /\/pricing\/(approve|reject)$/.test(route) && !omitReviewScope) body = { ...await context(env, id), ...body };
   const market = env.testMarket || 'com';
-  const token = await signJwt({ userId: id, userType, market, ...(userType === 'admin' && id !== 'admin' ? { staffId: id, staffRole: 'admin' } : {}), exp: Math.floor(Date.now() / 1000) + 3600 }, secret);
+  const token = await signEnvSession({ userId: id, userType, market, ...(userType === 'admin' && id !== 'admin' ? { staffId: id, staffRole: 'admin' } : {}), exp: Math.floor(Date.now() / 1000) + 3600 }, env);
   const response = await worker.fetch(new Request(`https://api.sagemro.com${route}`, { method, headers: { Origin: `https://admin.sagemro.${market}`, Authorization: `Bearer ${token}`, ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}) }), env, {});
   return { status: response.status, data: response.headers.get('Content-Type')?.includes('application/json') ? await response.json() : await response.text(), headers: response.headers };
 }

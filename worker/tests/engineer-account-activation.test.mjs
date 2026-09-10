@@ -10,10 +10,11 @@ import {
   createEngineerActivationToken,
   hashEngineerActivationToken,
 } from '../src/lib/engineerActivation.js';
-import { signJwt } from '../src/lib/auth.js';
+import { fixtureAdminEnv, signEnvSession } from './helpers/session-jwt.mjs';
 import worker, { sendEngineerActivationEmail } from '../src/index.js';
 
 const JWT_SECRET = 'engineer-activation-test-secret';
+const signJwt = (payload) => signEnvSession(payload, { ...fixtureAdminEnv, JWT_SECRET });
 const FIXED_EXPIRES_AT = '2026-07-23T12:00:00.000Z';
 
 function statement(sql, env) {
@@ -68,6 +69,7 @@ function makeActivationEnv(options = {}) {
   }
   const env = {
     JWT_SECRET,
+    ...fixtureAdminEnv,
     ENVIRONMENT: options.ENVIRONMENT,
     E2E_TEST_MODE: options.E2E_TEST_MODE,
     VERIFICATION_EMAIL_FROM: 'SAGEMRO <verify@example.com>',
@@ -163,7 +165,7 @@ function makeActivationEnv(options = {}) {
 
 async function adminActivationRequest(action, body = {}) {
   const token = await signJwt({
-    userId: 'admin-1',
+    userId: 'admin',
     userType: 'admin',
     market: 'com',
     exp: Math.floor(Date.now() / 1000) + 3600,
@@ -709,7 +711,7 @@ test('application list projects independent review and activation states', async
   const body = await response.json();
 
   assert.equal(response.status, 404);
-  const token = await signJwt({ userId: 'admin-1', userType: 'admin', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const token = await signJwt({ userId: 'admin', userType: 'admin', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
   const listResponse = await worker.fetch(new Request('https://api.sagemro.com/api/admin/engineer-applications', {
     headers: { Authorization: `Bearer ${token}` },
   }), env, { waitUntil() {} });
@@ -722,7 +724,7 @@ test('application list projects independent review and activation states', async
 test('legacy converted applications remain readable but cannot be newly written', async () => {
   const env = makeActivationEnv({ applicationStatus: 'converted' });
   const token = await signJwt({
-    userId: 'admin-1',
+    userId: 'admin',
     userType: 'admin',
     market: 'com',
     exp: Math.floor(Date.now() / 1000) + 3600,
@@ -752,7 +754,7 @@ test('legacy converted applications remain readable but cannot be newly written'
 test('saving an application review preserves its linked engineer account', async () => {
   const env = makeActivationEnv({ convertedUserId: 'eng-1' });
   const token = await signJwt({
-    userId: 'admin-1',
+    userId: 'admin',
     userType: 'admin',
     market: 'com',
     exp: Math.floor(Date.now() / 1000) + 3600,

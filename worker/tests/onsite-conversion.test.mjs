@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 
 function normalizeSql(sql) {
   return sql.replace(/\s+/g, ' ').trim();
@@ -61,7 +61,7 @@ function createEnv() {
       }
     },
   };
-  return env;
+  return withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
 }
 
 function createStatement(env, sql) {
@@ -134,14 +134,14 @@ function createStatement(env, sql) {
 }
 
 async function api(env, path, { body, userType, userId, method = 'POST' }) {
-  const jwt = await signJwt({
+  const jwt = await signEnvSession({
     userId,
     userType,
     market: 'com',
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
   const requestOptions = {
     method,
     headers: {
@@ -244,14 +244,14 @@ test('admin arrival override requires a reason and preserves an audit trail', as
 
   const missingReason = await api(env, '/api/admin/workorders/wo-remote-1/arrival-override', {
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     body: {},
   });
   assert.equal(missingReason.response.status, 400);
 
   const approved = await api(env, '/api/admin/workorders/wo-remote-1/arrival-override', {
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     body: { reason: 'Customer confirmed the engineer is onsite; browser GPS is unavailable.' },
   });
   assert.equal(approved.response.status, 200);
@@ -266,7 +266,7 @@ test('admin can confirm the onsite location on behalf of the customer with a rea
 
   const { response, json } = await api(env, '/api/admin/workorders/wo-remote-1/onsite-conversion/confirm', {
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     body: {
       service_address: '88 Test Road, Jinan',
       service_latitude: 36.6512,

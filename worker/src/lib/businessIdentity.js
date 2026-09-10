@@ -36,11 +36,11 @@ export async function resolveStaffIdentity(env, staffOrId, market) {
     businessProfileRequired: true, businessDirectorId: current.staff_id, businessRevision: profile.revision };
 }
 
-export async function hydrateStaffAuth(payload, env) {
+export async function hydrateStaffAuth(payload, env, account) {
   if (!payload || payload.userType !== 'admin') return payload;
   if (!payload.staffId) return isBusinessRole(payload.staffRole) || payload.businessProfileRequired ? null : payload;
   if (payload.userId !== payload.staffId) return null;
-  const staff = await resolveStaffIdentity(env, payload.staffId, payload.market);
+  const staff = await resolveStaffIdentity(env, account || payload.staffId, payload.market);
   if (!staff) return { ...payload, staffRole: 'invalid_staff', invalidStaff: true,
     businessGrade: null, supervisorStaffId: null, businessProfileRequired: false, mustChangePassword: true };
   return { ...payload, staffRole: staff.role, marketScope: staff.market_scope,

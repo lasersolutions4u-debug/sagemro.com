@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 import { buildServiceStandardDefinition } from '../src/lib/serviceStandard.js';
 
 function normalizeSql(sql) {
@@ -146,7 +146,7 @@ function createPaymentFlowEnv({ market = 'com' } = {}) {
     },
   };
 
-  return env;
+  return withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
 }
 
 function createStatement(env, sql) {
@@ -760,14 +760,14 @@ function createStatement(env, sql) {
 }
 
 async function token(env, userType, userId) {
-  return signJwt({
+  return signEnvSession({
     userId,
     userType,
     market: env.__market,
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
 }
 
 async function api(env, path, { method = 'POST', body, userType = 'customer', userId = 'customer-1' } = {}) {
@@ -897,7 +897,7 @@ test('versioned quotes reject every legacy payment and start route without readi
     {
       name: 'Admin start confirmation',
       path: '/api/admin/workorders/wo-pay-1/payment/approve-start',
-      options: { userType: 'admin', userId: 'admin-1', body: { note: 'Legacy receipt confirmed.' } },
+      options: { userType: 'admin', userId: 'admin', body: { note: 'Legacy receipt confirmed.' } },
       workOrderStatus: 'pending_payment',
       paymentStage: 'advance',
       paymentStatus: 'instructions_requested',
@@ -905,7 +905,7 @@ test('versioned quotes reject every legacy payment and start route without readi
     {
       name: 'Admin balance confirmation',
       path: '/api/admin/workorders/wo-pay-1/payment/approve-balance',
-      options: { userType: 'admin', userId: 'admin-1', body: { note: 'Legacy balance confirmed.' } },
+      options: { userType: 'admin', userId: 'admin', body: { note: 'Legacy balance confirmed.' } },
       workOrderStatus: 'resolved',
       paymentStage: 'balance',
       paymentStatus: 'instructions_requested',
@@ -1007,7 +1007,7 @@ test('CN legacy: admin confirms payment before work order enters service', async
 
   const { response, json } = await api(env, '/api/admin/workorders/wo-pay-1/payment/approve-start', {
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     body: { note: 'Receipt confirmed in company account.' },
   });
 
@@ -1265,7 +1265,7 @@ test('customer requests and Admin confirms the service balance without changing 
 
   const approved = await api(env, '/api/admin/workorders/wo-pay-1/payment/approve-balance', {
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     body: { note: 'Balance receipt confirmed.' },
   });
   assert.equal(approved.response.status, 200);
@@ -1332,7 +1332,7 @@ test('final service report opens customer review and creates admin service revie
   const reviews = await api(env, '/api/admin/ratings?page=1&pageSize=20', {
     method: 'GET',
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
   });
 
   assert.equal(reviews.response.status, 200);
@@ -1536,7 +1536,7 @@ test('Admin payout completion requires a completed work order and positive amoun
   const beforeCompletion = await api(env, '/api/admin/workorders/wo-pay-1/payout', {
     method: 'PATCH',
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     body: { status: 'completed', amount: 720, currency: 'USD', method: 'paypal' },
   });
   assert.equal(beforeCompletion.response.status, 409);
@@ -1545,7 +1545,7 @@ test('Admin payout completion requires a completed work order and positive amoun
   const zeroAmount = await api(env, '/api/admin/workorders/wo-pay-1/payout', {
     method: 'PATCH',
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     body: { status: 'completed', amount: 0, currency: 'USD', method: 'paypal' },
   });
   assert.equal(zeroAmount.response.status, 400);
@@ -1558,7 +1558,7 @@ test('completed engineer payout is idempotent and cannot be reopened', async () 
   const completed = await api(env, '/api/admin/workorders/wo-pay-1/payout', {
     method: 'PATCH',
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     body: {
       status: 'completed',
       amount: 720,
@@ -1573,7 +1573,7 @@ test('completed engineer payout is idempotent and cannot be reopened', async () 
   const repeated = await api(env, '/api/admin/workorders/wo-pay-1/payout', {
     method: 'PATCH',
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     body: { status: 'completed', amount: 999, currency: 'USD', method: 'paypal' },
   });
   assert.equal(repeated.response.status, 200);
@@ -1583,7 +1583,7 @@ test('completed engineer payout is idempotent and cannot be reopened', async () 
   const reopen = await api(env, '/api/admin/workorders/wo-pay-1/payout', {
     method: 'PATCH',
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     body: { status: 'processing', amount: 720, currency: 'USD', method: 'paypal' },
   });
   assert.equal(reopen.response.status, 409);

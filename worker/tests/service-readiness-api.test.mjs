@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import worker, { executeTool } from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 import { parseServiceReadinessReview, redactReadinessText } from '../src/lib/serviceReadiness.js';
 
 const JWT_SECRET = 'service-readiness-api-test-secret';
@@ -105,6 +105,7 @@ function createEnv(t) {
   });
 
   const env = {
+    ...fixtureAdminEnv,
     JWT_SECRET,
     DB,
     KV: { async get() { return null; }, async put() {} },
@@ -163,17 +164,17 @@ function validReadinessJson({ service_mode = 'remote' } = {}) {
   });
 }
 
-async function tokenFor(userId, userType = 'customer', market = 'com') {
-  return signJwt({
+async function tokenFor(env, userId, userType = 'customer', market = 'com') {
+  return signEnvSession({
     userId,
     userType,
     market,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, JWT_SECRET);
+  }, env);
 }
 
 async function api(env, path, { method = 'GET', body, userId = 'customer-1', userType = 'customer', market = 'com' } = {}) {
-  const token = await tokenFor(userId, userType, market);
+  const token = await tokenFor(env, userId, userType, market);
   const headers = {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
@@ -516,7 +517,7 @@ test('only the currently assigned engineer can access readiness data', async (t)
     { userType: 'customer', userId: 'customer-1' },
     { userType: 'engineer', userId: 'engineer-2' },
     { userType: 'engineer', userId: 'regional-lead-1' },
-    { userType: 'admin', userId: 'admin-1' },
+    { userType: 'admin', userId: 'admin' },
   ]) {
     const result = await api(env, '/api/workorders/wo-assigned/service-readiness', actor);
     assert.equal(result.response.status, 403);

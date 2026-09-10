@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 import worker from '../src/index.js';
 
 const migrationUrl = new URL('../migrations/046_knowledge_candidate_pipeline.sql', import.meta.url);
@@ -374,16 +374,17 @@ function createRepairRecordEnv({
     },
   };
 
+  withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
   return { env, state };
 }
 
 async function engineerRequest(env, path, body = {}) {
-  const token = await signJwt({
+  const token = await signEnvSession({
     userId: 'engineer-1',
     userType: 'engineer',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
   const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, {
     method: 'POST',
     headers: {

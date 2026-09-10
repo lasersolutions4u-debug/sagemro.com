@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 
 const workerDir = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
 const wranglerBin = join(workerDir, 'node_modules', 'wrangler', 'bin', 'wrangler.js');
@@ -40,7 +40,7 @@ async function workflowModule() {
 test('transitionCandidate exposes the allowed operations and technical review transitions', async () => {
   const { CURRENT_ADMIN_CANDIDATE_CAPABILITIES, transitionCandidate } = await workflowModule();
   assert.deepEqual(CURRENT_ADMIN_CANDIDATE_CAPABILITIES, ['operations', 'technical_review']);
-  const admin = { type: 'admin', id: 'admin-1', capabilities: ['operations', 'technical_review'] };
+  const admin = { type: 'admin', id: 'admin', capabilities: ['operations', 'technical_review'] };
 
   assert.deepEqual(
     transitionCandidate({ currentStatus: 'awaiting_operations', action: 'editorial', actor: admin, candidate: {} }),
@@ -71,7 +71,7 @@ test('transitionCandidate returns stable errors for invalid transition, missing 
     transitionCandidate({
       currentStatus: 'approved',
       action: 'submit_review',
-      actor: { type: 'admin', id: 'admin-1', capabilities: ['operations'] },
+      actor: { type: 'admin', id: 'admin', capabilities: ['operations'] },
       candidate: {},
     }),
     { ok: false, error: 'invalid_transition' },
@@ -80,7 +80,7 @@ test('transitionCandidate returns stable errors for invalid transition, missing 
     transitionCandidate({
       currentStatus: 'awaiting_operations',
       action: 'editorial',
-      actor: { type: 'admin', id: 'admin-1', capabilities: [] },
+      actor: { type: 'admin', id: 'admin', capabilities: [] },
       candidate: {},
     }),
     { ok: false, error: 'forbidden' },
@@ -449,7 +449,7 @@ function createReadonlyEnv() {
     },
     KV: { async get() { return null; }, async put() {} },
   };
-  return env;
+  return withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
 }
 
 function candidateFixture(overrides = {}) {
@@ -586,7 +586,7 @@ function createWorkflowEnv(candidate = candidateFixture()) {
           const existing = env.__articles.find((row) => row.id === id);
           if (existing && existing.source !== source) return { success: true, meta: { changes: 0 } };
           const values = { id, market, locale, category, title, content, source, applicable_equipment: equipment,
-            applicable_brand: brand, applicable_model: model, risk_level: risk, status: 'draft', reviewed_by: 'admin-1' };
+            applicable_brand: brand, applicable_model: model, risk_level: risk, status: 'draft', reviewed_by: 'admin' };
           if (existing) Object.assign(existing, values);
           else env.__articles.push(values);
           return { success: true, meta: { changes: 1 } };
@@ -627,14 +627,14 @@ function createWorkflowEnv(candidate = candidateFixture()) {
 }
 
 async function token(env, userType = 'admin', market = 'com') {
-  return signJwt({
-    userId: `${userType}-1`,
+  return signEnvSession({
+    userId: userType === 'admin' ? 'admin' : `${userType}-1`,
     userType,
     market,
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
 }
 
 async function api(env, path, { method = 'GET', body, userType = 'admin', host = 'api.sagemro.com' } = {}) {
@@ -742,7 +742,7 @@ test('editorial patch applies only validated fields, returns safe evidence, and 
   });
   assert.equal(edited.response.status, 200);
   assert.equal(edited.json.candidate.status, 'operations_editing');
-  assert.equal(edited.json.candidate.operations_owner_id, 'admin-1');
+  assert.equal(edited.json.candidate.operations_owner_id, 'admin');
   assert.equal('raw_content' in edited.json.candidate, false);
   assert.equal(edited.json.candidate.safe_raw_content.includes('BM111 alarm'), true);
   assert.equal(edited.json.candidate.safe_raw_content.includes('Secret GmbH'), false);
@@ -845,7 +845,7 @@ test('request changes and reject require bounded notes and record reviewer metad
   });
   assert.equal(changed.response.status, 200);
   assert.equal(changed.json.candidate.status, 'changes_requested');
-  assert.equal(changed.json.candidate.technical_reviewer_id, 'admin-1');
+  assert.equal(changed.json.candidate.technical_reviewer_id, 'admin');
 
   const rejected = await api(env, '/api/admin/knowledge-candidates/cand-1/reject', {
     method: 'POST', body: { notes: 'Evidence cannot be verified.' },

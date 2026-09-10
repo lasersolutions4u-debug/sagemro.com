@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 
 function createStatement(result = {}, onBind = () => {}) {
   return {
@@ -36,28 +36,28 @@ function createEnv({ engineer = false } = {}) {
     __calls: calls,
     __bindings: [],
   };
-  return env;
+  return withFixtureAccounts(env, { engineers: engineer ? [{ id: 'eng_1', engineer_role: 'engineer' }] : [] });
 }
 
 async function adminToken(env) {
-  return signJwt({
+  return signEnvSession({
     userId: 'admin',
     userType: 'admin',
     market: 'com',
     phone: 'admin',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
 }
 
 async function engineerToken(env) {
-  return signJwt({
+  return signEnvSession({
     userId: 'eng_1',
     userType: 'engineer',
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
 }
 
 test('public engineer application submits without creating an engineer account', async () => {

@@ -4,7 +4,7 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 import {
   GUIDANCE_GENERATION_STATUSES,
   GUIDANCE_VISIBLE_STATUSES,
@@ -84,6 +84,7 @@ function createGuidanceEnv(t) {
     DB.__close();
   });
   return {
+    ...fixtureAdminEnv,
     JWT_SECRET: GUIDANCE_JWT_SECRET,
     DB,
     KV: { async get() { return null; }, async put() {} },
@@ -93,13 +94,13 @@ function createGuidanceEnv(t) {
   };
 }
 
-async function guidanceToken(userId, userType = 'engineer') {
-  return signJwt({
+async function guidanceToken(env, userId, userType = 'engineer') {
+  return signEnvSession({
     userId,
     userType,
     market: 'com',
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, GUIDANCE_JWT_SECRET);
+  }, env);
 }
 
 async function guidanceApi(env, path, {
@@ -111,7 +112,7 @@ async function guidanceApi(env, path, {
   userType = 'engineer',
 } = {}) {
   const requestHeaders = {
-    Authorization: `Bearer ${await guidanceToken(userId, userType)}`,
+    Authorization: `Bearer ${await guidanceToken(env, userId, userType)}`,
     Origin: 'https://sagemro.com',
     ...headers,
   };
@@ -435,7 +436,7 @@ test('guidance access is limited to the assigned engineer', async (t) => {
     { userType: 'engineer', userId: 'guidance-foreign' },
     { userType: 'engineer', userId: 'guidance-regional' },
     { userType: 'customer', userId: 'guidance-customer' },
-    { userType: 'admin', userId: 'admin-1' },
+    { userType: 'admin', userId: 'admin' },
   ]) {
     const result = await guidanceApi(
       env,
