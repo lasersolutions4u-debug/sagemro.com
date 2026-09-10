@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import worker from '../src/index.js';
-import { hashPasswordNew, signJwt } from '../src/lib/auth.js';
+import { hashPasswordNew } from '../src/lib/auth.js';
+import { signEnvSession, fixtureCredential, withFixtureAccounts } from './helpers/session-jwt.mjs';
 import { isKnownProtectedRoute } from '../src/lib/routes.js';
 
 function normalizeSql(sql) {
@@ -445,17 +446,17 @@ function createEnv() {
       async delete(key) { this.values.delete(key); },
     },
   };
-  return env;
+  return withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
 }
 
 async function authToken(env, payload) {
-  return signJwt({
+  return signEnvSession({
     phone: '13800000000',
     market: 'com',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
     ...payload,
-  }, env.JWT_SECRET);
+  }, env);
 }
 
 async function api(env, path, {
@@ -473,8 +474,7 @@ async function api(env, path, {
       id: auth.staffId,
       normalized_login: auth.staffId,
       normalized_phone: null,
-      password_hash: '',
-      salt: '',
+      ...fixtureCredential,
       role: auth.staffRole,
       display_name: auth.staffRole,
       market_scope: 'all',
@@ -593,13 +593,13 @@ test('COM bootstrap and staff admin tokens are denied on CN protected routes', a
     host: 'api.sagemro.cn',
     auth: { userId: 'admin', userType: 'admin', market: 'com' },
   });
-  assert.equal(bootstrap.response.status, 403);
+  assert.equal(bootstrap.response.status, 401);
 
   const staff = await api(env, '/api/material-requisitions', {
     host: 'api.sagemro.cn',
     auth: staffAuth('warehouse'),
   });
-  assert.equal(staff.response.status, 403);
+  assert.equal(staff.response.status, 401);
 });
 
 test('bootstrap admin creates staff, staff login carries role claims, and only bootstrap manages accounts', async () => {
@@ -650,7 +650,7 @@ test('bootstrap admin creates staff, staff login carries role claims, and only b
   const crossMarket = await api(env, '/api/material-requisitions', {
     auth: { ...temporaryAuth, market: 'cn' },
   });
-  assert.equal(crossMarket.response.status, 403);
+  assert.equal(crossMarket.response.status, 401);
   const crossMarketSession = await api(env, '/api/auth/session', {
     auth: { ...temporaryAuth, market: 'cn' },
   });
@@ -665,7 +665,7 @@ test('bootstrap admin creates staff, staff login carries role claims, and only b
   assert.equal(deactivated.response.status, 200);
   assert.equal(deactivated.json.staff.is_active, 0);
   const rejectedSession = await api(env, '/api/material-requisitions', { auth: temporaryAuth });
-  assert.equal(rejectedSession.response.status, 403);
+  assert.equal(rejectedSession.response.status, 401);
   const inactiveSession = await api(env, '/api/auth/session', { auth: temporaryAuth });
   assert.equal(inactiveSession.response.status, 200);
   assert.equal(inactiveSession.json.authenticated, false);

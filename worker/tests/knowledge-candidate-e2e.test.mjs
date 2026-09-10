@@ -10,14 +10,14 @@ process.emitWarning = (warning, ...args) => {
 const { DatabaseSync } = await import('node:sqlite');
 process.emitWarning = emitWarning;
 
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 import { transitionCandidate } from '../src/lib/knowledge-candidate-workflow.js';
 import worker, { executeTool } from '../src/index.js';
 
 const JWT_SECRET = 'fictional-e2e-secret-with-sufficient-length';
 const CUSTOMER_ID = 'fictional-customer';
 const ENGINEER_ID = 'fictional-engineer';
-const ADMIN_ID = 'fictional-admin';
+const ADMIN_ID = 'admin';
 const WORK_ORDERS = [
   ['fictional-normal', 'FICT-WO-NORMAL', 'Normal fictional repair'],
   ['fictional-high-risk', 'FICT-WO-HIGH-RISK', 'High-risk fictional repair'],
@@ -156,6 +156,7 @@ function createE2eEnv() {
   `);
   return {
     DB,
+    ...fixtureAdminEnv,
     JWT_SECRET,
     KV: {
       async get() { return null; },
@@ -171,13 +172,13 @@ async function route(env, role, path, {
   host = 'api.sagemro.com',
 } = {}) {
   const userId = role === 'customer' ? CUSTOMER_ID : role === 'engineer' ? ENGINEER_ID : ADMIN_ID;
-  const token = await signJwt({
+  const token = await signEnvSession({
     userId,
     userType: role,
     market: host.endsWith('.cn') ? 'cn' : 'com',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, JWT_SECRET);
+  }, env);
   const waits = [];
   const response = await worker.fetch(new Request(`https://${host}${path}`, {
     method,

@@ -3,7 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv, fixtureCredential } from './helpers/session-jwt.mjs';
 import { REQUISITION_OPERATION_METRIC_QUERIES } from '../src/lib/requisitionMetrics.js';
 
 function normalizeSql(sql) {
@@ -12,9 +12,11 @@ function normalizeSql(sql) {
 
 function createEnv(role = 'operations') {
   const staff = {
+    ...fixtureCredential,
     id: `${role}-1`, role, is_active: 1, market_scope: 'all', must_change_password: 0,
   };
   return {
+    ...fixtureAdminEnv,
     JWT_SECRET: 'metrics-test-secret',
     ADMIN_PHONE: '13800000000',
     ADMIN_PASSWORD: 'bootstrap-password',
@@ -27,6 +29,7 @@ function createEnv(role = 'operations') {
           async all() { return { results: [] }; },
           async first() {
             const normalized = normalizeSql(sql);
+            if (/^SELECT \* FROM (customers|engineers) WHERE id = \?$/i.test(normalized) && this.args[0] === 'admin') return { id: 'admin', ...fixtureCredential };
             if (/FROM admin_staff_accounts WHERE id = \?/i.test(normalized)) return staff;
             if (/status = 'submitted'/i.test(normalized) && /material_requisitions/i.test(normalized)) return { count: 7 };
             if (/stock_allocated_quantity \+ procurement_received_quantity < requested_quantity/i.test(normalized)) return { count: 4 };
@@ -44,11 +47,11 @@ function createEnv(role = 'operations') {
 }
 
 async function adminToken(env, { role = 'operations', userType = 'admin', staffId = `${role}-1` } = {}) {
-  return signJwt({
+  return signEnvSession({
     userId: staffId || 'admin', userType, staffId, staffRole: role,
     mustChangePassword: false, phone: '13800000000', market: 'com', iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
 }
 
 async function getWithToken(env, path, token) {

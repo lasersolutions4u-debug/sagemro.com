@@ -94,6 +94,22 @@ export async function signJwt(payload, secret) {
   return `${data}.${signatureB64}`;
 }
 
+export async function credentialVersion(payload, credential, secret) {
+  if (!credential?.password_hash || !secret || secret.length < 16) return null;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const data = JSON.stringify(['session-credential-v1', payload.userType, payload.userId,
+    payload.staffId || null, payload.market, credential.password_hash, credential.salt || '']);
+  return base64UrlEncode(await crypto.subtle.sign('HMAC', key, encoder.encode(data)));
+}
+
+export async function signSessionJwt(payload, credential, secret) {
+  const cv = await credentialVersion(payload, credential, secret);
+  if (!cv) throw new Error('Session credential unavailable');
+  return signJwt({ ...payload, cv }, secret);
+}
+
 // 验证 JWT token（HS256）
 export async function verifyJwt(token, secret) {
   try {

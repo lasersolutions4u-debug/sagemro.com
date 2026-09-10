@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 import worker from '../src/index.js';
 
 const JWT_SECRET = 'service-request-create-api-test-secret';
@@ -60,6 +60,7 @@ function createEnv(t, options) {
   const pending = [];
   t.after(async () => Promise.all(pending.splice(0)));
   return {
+    ...fixtureAdminEnv,
     JWT_SECRET,
     DB,
     KV: { async get() { return null; }, async put() {}, async delete() {} },
@@ -67,14 +68,14 @@ function createEnv(t, options) {
   };
 }
 
-async function tokenFor(userId, userType = 'customer', extra = {}) {
-  return signJwt({
+async function tokenFor(env, userId, userType = 'customer', extra = {}) {
+  return signEnvSession({
     userId,
     userType,
     market: 'com',
     exp: Math.floor(Date.now() / 1000) + 3600,
     ...extra,
-  }, JWT_SECRET);
+  }, env);
 }
 
 async function api(env, path, {
@@ -97,7 +98,7 @@ async function api(env, path, {
     headers.Cookie = cookie;
     if (csrf) headers['X-CSRF-Token'] = csrf;
   } else {
-    headers.Authorization = `Bearer ${await tokenFor(userId, userType)}`;
+    headers.Authorization = `Bearer ${await tokenFor(env, userId, userType)}`;
   }
   const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, {
     method,
@@ -338,7 +339,7 @@ test('structured intake validation returns stable 400 responses', async (t) => {
 test('cookie creation keeps the existing CSRF requirement', async (t) => {
   const env = createEnv(t);
   const csrf = 'service-request-csrf-token';
-  const token = await tokenFor('customer-1', 'customer', { csrf });
+  const token = await tokenFor(env, 'customer-1', 'customer', { csrf });
   const cookie = `__Host-sagemro_customer_session=${token}`;
 
   const rejected = await api(env, '/api/workorders', {

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../../worker/src/index.js';
-import { signJwt } from '../../worker/src/lib/auth.js';
+import { fixtureAdminEnv, signEnvSession } from '../../worker/tests/helpers/session-jwt.mjs';
 import { createServer } from '../../admin/node_modules/vite/dist/node/index.js';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -24,8 +24,8 @@ test('real business form and Admin dialogs collect and assign an unassigned orde
     INSERT INTO customers(id,user_no,name,password_hash) VALUES ('customer-fixture','CUSTOMER-FIXTURE','Fictional Customer','fictional');
     INSERT INTO work_orders(id,order_no,customer_id,type,description,status,service_mode) VALUES ('order-fixture','ORDER-FIXTURE','customer-fixture','fault','Fictional request','pending','onsite');
     INSERT INTO business_record_assignments(kind,record_id,territory_id,owner_staff_id) VALUES ('work_order','order-fixture','territory-fixture','biz-fixture');`);
-  const env = { DB, JWT_SECRET: 'fictional-local-receipt-browser-secret', ENVIRONMENT: 'development', KV: { async get() { return null; }, async put() {}, async delete() {} } };
-  async function token(id) { return signJwt({ userId: id, userType: id === 'customer-fixture' ? 'customer' : 'admin', ...(id === 'biz-fixture' ? { staffId: id } : {}), market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, env.JWT_SECRET); }
+  const env = { ...fixtureAdminEnv, DB, JWT_SECRET: 'fictional-local-receipt-browser-secret', ENVIRONMENT: 'development', KV: { async get() { return null; }, async put() {}, async delete() {} } };
+  async function token(id) { return signEnvSession({ userId: id, userType: id === 'customer-fixture' ? 'customer' : 'admin', ...(id === 'biz-fixture' ? { staffId: id } : {}), market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, env); }
   async function api(path, id = 'biz-fixture', method = 'GET', body) {
     const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, { method, headers: { Origin: 'https://admin.sagemro.com', Authorization: `Bearer ${await token(id)}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) }), env, {});
     const data = await response.json(); assert.equal(response.status, 200, JSON.stringify(data)); return data;

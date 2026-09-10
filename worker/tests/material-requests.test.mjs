@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 
 function normalizeSql(sql) {
   return sql.replace(/\s+/g, ' ').trim();
@@ -191,18 +191,18 @@ function createEnv() {
       async put() {},
     },
   };
-  return env;
+  return withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
 }
 
 async function token(env, userType, userId) {
-  return signJwt({
+  return signEnvSession({
     userId,
     userType,
     market: 'cn',
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
 }
 
 async function api(env, path, { method = 'GET', body, userType = 'engineer', userId = 'engineer-1', origin = 'https://engineer.sagemro.cn' } = {}) {
@@ -283,7 +283,7 @@ test('admin can review material requests and approve one into material master', 
 
   const listed = await api(env, '/api/admin/material-requests', {
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     origin: 'https://admin.sagemro.cn',
   });
 
@@ -294,7 +294,7 @@ test('admin can review material requests and approve one into material master', 
   const reviewed = await api(env, `/api/admin/material-requests/${created.json.request.id}`, {
     method: 'PATCH',
     userType: 'admin',
-    userId: 'admin-1',
+    userId: 'admin',
     origin: 'https://admin.sagemro.cn',
     body: {
       action: 'approve_create',

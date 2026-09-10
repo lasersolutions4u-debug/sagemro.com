@@ -1523,7 +1523,13 @@ export async function changePassword({ oldPassword, newPassword }) {
     body: JSON.stringify({ oldPassword, newPassword }),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
+  const data = await response.json();
+  if (data.token) localStorage.setItem('sagemro_token', data.token);
+  if (data.csrfToken) {
+    localStorage.setItem('sagemro_csrf_token', data.csrfToken);
+    localStorage.removeItem('sagemro_token');
+  }
+  return data;
 }
 
 // ============ 工程师评价客户 ============

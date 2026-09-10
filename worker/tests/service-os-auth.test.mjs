@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import './business-workspace.test.mjs';
 import assert from 'node:assert/strict';
 
-import { hashPasswordNew, signJwt } from '../src/lib/auth.js';
+import { hashPasswordNew } from '../src/lib/auth.js';
+import { fixtureCredential, signFixtureSession as signJwt, signEnvSession } from './helpers/session-jwt.mjs';
 import worker from '../src/index.js';
 
 const ENGINEER_REJECT_JWT_SECRET = 'service-os-auth-test-secret-32-chars';
@@ -226,12 +227,12 @@ function createTestEnv(overrides = {}) {
 }
 
 async function adminRequest(url, { method = 'POST', body, market = 'com' } = {}) {
-  const token = await signJwt({
+  const token = await signEnvSession({
     userId: 'admin',
     userType: 'admin',
     market,
     exp: Math.floor(Date.now() / 1000) + 60,
-  }, 'test-secret-with-enough-length');
+  }, createTestEnv());
 
   return new Request(url, {
     method,
@@ -795,7 +796,7 @@ test('COM password reset sends and consumes a code by normalized email', async (
   }, env);
   assert.equal(sent.response.status, 200);
   const code = await env.KV.get('reset_code_email_reset@example.com');
-  assert.match(code, /^\d{4}$/);
+  assert.match(code, /^[1-9]\d{5}$/);
 
   const reset = await postJson('https://api.sagemro.com/api/auth/reset-password', {
     email: 'RESET@example.com',
@@ -823,7 +824,91 @@ test('CN password reset continues to use the phone target', async () => {
     phone: '13800000091',
   }, env);
   assert.equal(sent.response.status, 200);
-  assert.match(await env.KV.get('reset_code_13800000091'), /^\d{4}$/);
+  assert.match(await env.KV.get('reset_code_13800000091'), /^[1-9]\d{5}$/);
+});
+
+test('password reset locks the normalized target after five wrong codes', async () => {
+  const env = createTestEnv({ ENVIRONMENT: 'production' });
+  await env.KV.put('reset_code_email_reset-limit@example.test', '123456');
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const { response } = await postJson('https://api.sagemro.com/api/auth/reset-password', {
+      email: attempt % 2 ? ' RESET-LIMIT@Example.test ' : 'reset-limit@example.test',
+      code: '654321', newPassword: 'fictional-password-123',
+    }, env);
+    assert.equal(response.status, attempt === 5 ? 429 : 400);
+  }
+  assert.equal(await env.KV.get('reset_code_email_reset-limit@example.test'), null);
+  await env.KV.put('reset_code_email_reset-limit@example.test', '123456');
+  const { response, json } = await postJson('https://api.sagemro.com/api/auth/reset-password', {
+    email: 'reset-limit@example.test', code: '123456', newPassword: 'fictional-password-123',
+  }, env);
+  assert.equal(response.status, 429, 'resending a code must not clear the attempt lock');
+  assert.match(json.error, /5 minutes/);
+});
+
+test('password reset limits one IP across different targets', async () => {
+  const env = createTestEnv({ ENVIRONMENT: 'production' });
+  for (let attempt = 1; attempt <= 20; attempt++) {
+    const { response } = await postJson('https://api.sagemro.com/api/auth/reset-password', {
+      email: `reset-${attempt}@example.test`, code: '654321', newPassword: 'fictional-password-123',
+    }, env);
+    assert.equal(response.status, attempt === 20 ? 429 : 400);
+  }
+  await env.KV.put('reset_code_email_other@example.test', '123456');
+  const { response } = await postJson('https://api.sagemro.com/api/auth/reset-password', {
+    email: 'other@example.test', code: '123456', newPassword: 'fictional-password-123',
+  }, env);
+  assert.equal(response.status, 429);
+});
+
+test('password reset accepts a valid code below the limit only once', async () => {
+  const env = createTestEnv({ ENVIRONMENT: 'production', DEV_BYPASS_CODE: '999999' });
+  const payload = { email: 'reset-once@example.test', code: '123456', newPassword: 'fictional-password-123' };
+  await env.KV.put('reset_code_email_reset-once@example.test', payload.code);
+  const wrong = await postJson('https://api.sagemro.com/api/auth/reset-password', { ...payload, code: '999999' }, env);
+  assert.equal(wrong.response.status, 400, 'production must ignore a development bypass');
+  const valid = await postJson('https://api.sagemro.com/api/auth/reset-password', payload, env);
+  assert.equal(valid.response.status, 200);
+  const replay = await postJson('https://api.sagemro.com/api/auth/reset-password', payload, env);
+  assert.equal(replay.response.status, 400);
+});
+
+test('password reset attempt lock expires without allowing a used code to replay', async () => {
+  let now = 0;
+  const entries = new Map();
+  const env = createTestEnv({
+    ENVIRONMENT: 'production',
+    KV: {
+      async get(key) {
+        const entry = entries.get(key);
+        return entry && entry.expires > now ? entry.value : null;
+      },
+      async put(key, value, options) { entries.set(key, { value, expires: now + options.expirationTtl }); },
+      async delete(key) { entries.delete(key); },
+    },
+  });
+  const payload = { email: 'reset-expiry@example.test', code: '123456', newPassword: 'fictional-password-123' };
+  const url = 'https://api.sagemro.com/api/auth/reset-password';
+  await env.KV.put('reset_code_email_reset-expiry@example.test', '123456', { expirationTtl: 300 });
+  for (let i = 0; i < 5; i++) await postJson(url, { ...payload, code: '654321' }, env);
+  assert.equal((await postJson(url, payload, env)).response.status, 429);
+  now = 301;
+  assert.equal((await postJson(url, payload, env)).response.status, 400);
+  await env.KV.put('reset_code_email_reset-expiry@example.test', '234567', { expirationTtl: 300 });
+  assert.equal((await postJson(url, { ...payload, code: '234567' }, env)).response.status, 200);
+});
+
+test('a successful password reset does not erase the shared IP failure budget', async () => {
+  const env = createTestEnv({ ENVIRONMENT: 'production' });
+  const url = 'https://api.sagemro.com/api/auth/reset-password';
+  for (let i = 0; i < 19; i++) {
+    await postJson(url, { email: `ip-budget-${i}@example.test`, code: '654321', newPassword: 'fictional-password-123' }, env);
+  }
+  await env.KV.put('reset_code_email_valid-budget@example.test', '123456');
+  const valid = await postJson(url, { email: 'valid-budget@example.test', code: '123456', newPassword: 'fictional-password-123' }, env);
+  assert.equal(valid.response.status, 200);
+  const blocked = await postJson(url, { email: 'other-budget@example.test', code: '654321', newPassword: 'fictional-password-123' }, env);
+  assert.equal(blocked.response.status, 429);
 });
 
 test('customer registration rejects an email owned by an engineer identity', async () => {
@@ -1191,10 +1276,11 @@ test('customer session is restored from its HttpOnly cookie', async () => {
   assert.equal(json.csrfToken, loginResult.json.csrfToken);
 });
 
-test('legacy Bearer session restore rotates into a CSRF-bound HttpOnly cookie', async () => {
+test('credential-bound Bearer session without CSRF rotates into a CSRF-bound HttpOnly cookie', async () => {
   const env = createTestEnv();
   env.__dbState.customers.push({
     id: 'cust-legacy-session',
+    ...fixtureCredential,
     user_no: 'U000098',
     name: 'Legacy Session Customer',
     phone: '+15550000098',
@@ -1533,7 +1619,7 @@ test('shared COM API chooses registration and reset channel only from trusted po
     email: 'reset-forged@example.com',
   }, forgedResetEnv, 'https://sagemro.cn.evil.com');
   assert.equal(forgedReset.response.status, 200);
-  assert.match(await forgedResetEnv.KV.get('reset_code_email_reset-forged@example.com'), /^\d{4}$/);
+  assert.match(await forgedResetEnv.KV.get('reset_code_email_reset-forged@example.com'), /^[1-9]\d{5}$/);
 });
 
 test('customer registration rejects public passwords shorter than 10 characters', async () => {
@@ -1596,6 +1682,9 @@ function makeEngineerRejectEnv() {
           return this;
         },
         async first() {
+          if (/SELECT \* FROM engineers WHERE id = \?/.test(sql) && this.args[0] === 'eng-1') {
+            return { id: 'eng-1', ...fixtureCredential };
+          }
           if (/SELECT status, engineer_id, assigned_regional_lead_id, rejected_engineers FROM work_orders/.test(sql)) {
             return workOrder;
           }

@@ -11,6 +11,7 @@ import {
   verifyPassword,
   generateOrderNo,
   signJwt,
+  signSessionJwt,
 } from './lib/auth.js';
 import {
   buildSessionCookie,
@@ -2433,6 +2434,10 @@ const ERROR_MESSAGES = {
     com: 'Too many verification attempts. Request a new code and try again.',
     cn: '验证码尝试次数过多，请重新获取验证码',
   },
+  too_many_reset_attempts: {
+    com: 'Too many password reset attempts. Wait 5 minutes, then request a new code.',
+    cn: '重置密码尝试次数过多，请等待 5 分钟后重新获取验证码',
+  },
   phone_password_required: {
     com: 'Phone number and password are required.',
     cn: '手机号、密码不能为空',
@@ -3427,6 +3432,8 @@ async function handleLogin(request, env) {
         await env.DB.prepare(
           `UPDATE ${table} SET password_hash = ?, salt = ? WHERE id = ?`
         ).bind(newHash, newSalt, user.id).run();
+        user.password_hash = newHash;
+        user.salt = newSalt;
       } catch (e) {
         console.error('[handleLogin] password upgrade failed:', e);
       }
@@ -3434,14 +3441,15 @@ async function handleLogin(request, env) {
 
     // 签发 JWT token（有效期 7 天）
     const csrfToken = generateCsrfToken();
-    const token = await signJwt({
+    const token = await signSessionJwt({
       userId: user.id,
       userType,
+      market: getRequestMarket(request),
       phone: user.phone,
       csrf: csrfToken,
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60,
-    }, env.JWT_SECRET);
+    }, user, env.JWT_SECRET);
     await incrementApiCounter(env, "login");
 
     return addSessionCookie(jsonResponse(sessionResponsePayload({
@@ -3700,17 +3708,14 @@ async function handleSendResetCode(request, env) {
     }
 
     // 生成验证码
-    const code = String(Math.floor(1000 + Math.random() * 9000));
+    const code = generateVerificationCode();
 
     // 存储验证码（有效期5分钟）
     await env.KV.put(`reset_code_${target.key}`, code, { expirationTtl: 300 });
     await env.KV.put(rateKey, '1', { expirationTtl: 60 });
     await env.KV.put(ipKey, String(ipCount + 1), { expirationTtl: 60 });
 
-    // 验证码策略：
-    // - 真实验证码：仅 development 环境在响应中返回，production 通过短信发送
-    // - bypass 码 "888888"：所有环境均写入 KV，供自动化测试使用（TTL 5 分钟）
-    // - DEV_BYPASS_CODE：如果配置了固定验证码，直接使用该码
+    // 生产环境仅通过邮件或短信发送，开发环境允许测试验证码。
     const devBypass = env.DEV_BYPASS_CODE;
     const response = { success: true, message: '验证码已发送' };
     if (env.ENVIRONMENT === 'development') {
@@ -3773,12 +3778,30 @@ async function handleResetPassword(request, env) {
       return passwordTooShortResponse(request);
     }
 
-    // 验证验证码（开发环境支持 bypass 码 "888888" + DEV_BYPASS_CODE 用于自动化测试）
-    const storedCode = await env.KV.get(`reset_code_${target.key}`);
+    const targetFailureKey = `reset_code_fail_${target.key}`;
+    const ipFailureKey = `reset_code_check_ip_${getRequestIp(request) || 'unknown'}`;
+    const [storedCode, targetFailureValue, ipFailureValue] = await Promise.all([
+      env.KV.get(`reset_code_${target.key}`),
+      env.KV.get(targetFailureKey),
+      env.KV.get(ipFailureKey),
+    ]);
+    const targetFailures = Number.parseInt(targetFailureValue || '0', 10) || 0;
+    const ipFailures = Number.parseInt(ipFailureValue || '0', 10) || 0;
+    if (targetFailures >= 5 || ipFailures >= 20) {
+      return localizedErrorResponse('too_many_reset_attempts', request, 429);
+    }
     const devBypass = env.ENVIRONMENT === 'development' ? env.DEV_BYPASS_CODE : null;
     const isValid = (storedCode && storedCode === code)
       || (devBypass && devBypass === code);
     if (!isValid) {
+      await Promise.all([
+        env.KV.put(targetFailureKey, String(targetFailures + 1), { expirationTtl: 300 }),
+        env.KV.put(ipFailureKey, String(ipFailures + 1), { expirationTtl: 300 }),
+      ]);
+      if (targetFailures + 1 >= 5 || ipFailures + 1 >= 20) {
+        await env.KV.delete(`reset_code_${target.key}`);
+        return localizedErrorResponse('too_many_reset_attempts', request, 429);
+      }
       return errorResponse('验证码错误或已过期');
     }
 
@@ -3798,6 +3821,7 @@ async function handleResetPassword(request, env) {
 
     // 删除已使用的验证码
     await env.KV.delete(`reset_code_${target.key}`);
+    await env.KV.delete(targetFailureKey);
 
     return jsonResponse({ success: true, message: '密码重置成功' });
   } catch (error) {
@@ -4194,6 +4218,22 @@ async function handleChatUploadImage(request, env) {
       return errorResponse('附件服务未配置', 503);
     }
 
+    try {
+      if (!env.KV) throw new Error('Quota storage unavailable');
+      await enforceHourlyKvLimit(env, {
+        key: `chat_image_upload_hour_${getRequestIp(request) || 'unknown'}`,
+        limit: 20,
+        message: getRequestMarket(request) === 'cn'
+          ? '图片上传次数已达上限，请稍后再试'
+          : 'Image upload limit reached. Please try again later.',
+      });
+    } catch (error) {
+      if (error instanceof BudgetError) return errorResponse(error.message, error.status);
+      return errorResponse(getRequestMarket(request) === 'cn'
+        ? '图片上传暂时不可用，请稍后再试'
+        : 'Image upload is temporarily unavailable. Please try again later.', 503);
+    }
+
     const formData = await request.formData();
     const file = formData.get('image');
 
@@ -4264,7 +4304,8 @@ export async function handleChatTranscribe(request, env) {
     let auth = null;
     try {
       auth = await authenticateRequest(request, env);
-    } catch {
+    } catch (error) {
+      if (error?.code === 'SESSION_AUTH_UNAVAILABLE') return errorResponse(error.message, 503);
       auth = null;
     }
     if (auth && !hasValidCsrf(request, auth)) {
@@ -4348,7 +4389,8 @@ export async function handleChat(request, env) {
     let chatAuth = null;
     try {
       chatAuth = await authenticateRequest(request, env);
-    } catch {
+    } catch (error) {
+      if (error?.code === 'SESSION_AUTH_UNAVAILABLE') return errorResponse(error.message, 503);
       chatAuth = null;
     }
     if (chatAuth && !hasValidCsrf(request, chatAuth)) {
@@ -4387,11 +4429,8 @@ export async function handleChat(request, env) {
     }
 
     // ============ OpenAI 日配额保护（登录用户也限）============
-    // 先取 JWT，拿不到就按 guest IP 计数
-    let preAuth = null;
-    try { preAuth = await authenticateRequest(request, env); } catch { preAuth = null; }
-    const userKey = preAuth?.userId
-      ? `${preAuth.userType}:${preAuth.userId}`
+    const userKey = chatAuth?.userId
+      ? `${chatAuth.userType}:${chatAuth.userId}`
       : `guest:${clientIP}`;
     try {
       await enforceOpenAIBudget(env, { userKey, tag: 'chat' });
@@ -11178,7 +11217,7 @@ async function handleChangePassword(request, env) {
         beforeState: { must_change_password: Boolean(staff.must_change_password) },
         afterState: { must_change_password: false },
       });
-      return jsonResponse({ success: true, mustChangePassword: false });
+      return passwordChangedResponse(request, env, auth, { password_hash: newHash, salt: newSalt });
     }
 
     const table = auth.userType === 'engineer' ? 'engineers' : 'customers';
@@ -11192,10 +11231,21 @@ async function handleChangePassword(request, env) {
     const newHash = await hashPasswordNew(newPassword, newSalt);
     await env.DB.prepare(`UPDATE ${table} SET password_hash = ?, salt = ? WHERE id = ?`).bind(newHash, newSalt, auth.userId).run();
 
-    return jsonResponse({ success: true });
+    return passwordChangedResponse(request, env, auth, { password_hash: newHash, salt: newSalt });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
+}
+
+async function passwordChangedResponse(request, env, auth, credential) {
+  const { authMethod, ...claims } = auth;
+  const csrfToken = generateCsrfToken();
+  const now = Math.floor(Date.now() / 1000);
+  const token = await signSessionJwt({ ...claims, mustChangePassword: false, csrf: csrfToken,
+    iat: now, exp: now + 7 * 86400 }, credential, env.JWT_SECRET);
+  return addSessionCookie(jsonResponse(sessionResponsePayload({ success: true, csrfToken,
+    ...(auth.userType === 'admin' ? { mustChangePassword: false } : {}),
+  }, token, requestPortalRole(request))), request, env, auth.userType, token);
 }
 
 // ============ 商机线索 API ============
@@ -15252,7 +15302,7 @@ async function handleAdminLogin(request, env) {
       businessProfileRequired: staff.businessProfileRequired,
       mustChangePassword: Boolean(staff.must_change_password),
     } : {};
-    const token = await signJwt({
+    const token = await signSessionJwt({
       userId: staff?.id || 'admin',
       userType: 'admin',
       phone: staff?.normalized_phone || adminPhone,
@@ -15261,7 +15311,7 @@ async function handleAdminLogin(request, env) {
       csrf: csrfToken,
       iat: now,
       exp: now + 86400 * 7,
-    }, env.JWT_SECRET);
+    }, staff || { password_hash: adminPassword, salt: adminPhone }, env.JWT_SECRET);
 
     return addSessionCookie(jsonResponse(sessionResponsePayload({
       csrfToken,
@@ -23000,10 +23050,11 @@ async function routeRequest(request, env, ctx) {
     // 暂存 ctx 供需要 waitUntil 的处理函数使用（如 AI 摘要异步生成）
     request._ctx = ctx;
 
+    let earlyAuth;
     if (request.method !== 'OPTIONS' && !path.startsWith('/api/admin/business/') && ![
       '/api/auth/session', '/api/auth/logout', '/api/auth/change-password', '/api/admin/login',
     ].includes(path)) {
-      const earlyAuth = await authenticateRequest(request, env);
+      earlyAuth = await authenticateRequest(request, env);
       if (isBusinessRole(earlyAuth?.staffRole) || earlyAuth?.invalidStaff) return errorResponse('当前商务角色无权使用此接口', 403);
     }
 
@@ -23094,7 +23145,7 @@ async function routeRequest(request, env, ctx) {
       return errorResponse(getRequestMarket(request) === 'cn' ? '未找到' : 'Not found', 404);
     }
 
-    const auth = await authenticateRequest(request, env);
+    const auth = earlyAuth === undefined ? await authenticateRequest(request, env) : earlyAuth;
     if (!auth) {
       return localizedErrorResponse('sign_in_required', request, 401);
     }
@@ -23793,10 +23844,15 @@ export default {
     const requestEnv = env.DB_CN && shouldUseCnDatabase(request)
       ? { ...env, DB_COM: env.DB, DB: env.DB_CN }
       : { ...env, DB_COM: env.DB };
+    requestEnv.SESSION_MARKET = shouldUseCnDatabase(request) ? 'cn' : 'com';
     try {
       const response = await routeRequest(request, requestEnv, ctx);
       return withCorsHeaders(response, request, requestEnv);
     } catch (error) {
+      if (error?.code === 'SESSION_AUTH_UNAVAILABLE') {
+        return withCorsHeaders(errorResponse(getRequestMarket(request) === 'cn'
+          ? '登录验证暂时不可用，请稍后重试。' : 'Authentication temporarily unavailable. Please try again.', 503), request, requestEnv);
+      }
       console.error('[fetch] unhandled error:', error);
       captureException(error, requestEnv, { request, ctx });
       const corsH = getCorsHeaders(request, requestEnv);

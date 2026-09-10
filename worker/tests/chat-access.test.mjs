@@ -1,12 +1,82 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { signJwt } from '../src/lib/auth.js';
-import { buildWorkOrderSummaryPrompt, handleChat, handleChatTranscribe } from '../src/index.js';
+import { fixtureCredential, signFixtureSession as signJwt } from './helpers/session-jwt.mjs';
+import worker, { buildWorkOrderSummaryPrompt, handleChat, handleChatTranscribe } from '../src/index.js';
 
 const JWT_SECRET = 'chat-access-test-secret-32-chars';
 const AI_TEMPORARY_FALLBACK = 'SAGEMRO AI is temporarily unavailable. Please try again shortly, or leave the equipment details and SAGEMRO will follow up through the service process.';
 const SENTRY_ENVELOPE_URL = 'https://example.ingest.sentry.io/api/1/envelope/';
+
+function makeImageUploadEnv() {
+  let now = 0;
+  const entries = new Map();
+  const writes = [];
+  return {
+    writes,
+    advance(seconds) { now += seconds; },
+    env: {
+      ENVIRONMENT: 'production', JWT_SECRET, R2_PUBLIC_HOST: 'uploads.example.test',
+      DB: makeEnv().env.DB,
+      KV: {
+        async get(key) {
+          const entry = entries.get(key);
+          return entry && entry.expires > now ? entry.value : null;
+        },
+        async put(key, value, options) { entries.set(key, { value, expires: now + options.expirationTtl }); },
+      },
+      ATTACHMENTS: { async put(key) { writes.push(key); } },
+    },
+  };
+}
+
+function imageUploadRequest(ip = '192.0.2.10', headers = {}) {
+  const form = new FormData();
+  form.set('image', new File([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])], 'example.jpg', { type: 'image/jpeg' }));
+  return new Request('https://api.sagemro.com/api/chat/upload-image', {
+    method: 'POST', headers: { 'CF-Connecting-IP': ip, ...headers }, body: form,
+  });
+}
+
+test('chat image upload limits a guest IP before reading another upload body', async () => {
+  const fixture = makeImageUploadEnv();
+  for (let i = 0; i < 20; i++) {
+    assert.equal((await worker.fetch(imageUploadRequest(), fixture.env, {})).status, 201);
+  }
+  const blocked = imageUploadRequest();
+  blocked.formData = () => { throw new Error('Limited upload body must not be parsed'); };
+  assert.equal((await worker.fetch(blocked, fixture.env, {})).status, 429);
+  assert.equal(fixture.writes.length, 20);
+  assert.equal((await worker.fetch(imageUploadRequest('192.0.2.11'), fixture.env, {})).status, 201);
+  fixture.advance(3601);
+  assert.equal((await worker.fetch(imageUploadRequest(), fixture.env, {})).status, 201);
+});
+
+test('chat image upload cannot bypass the IP limit with a login or forwarded IP', async () => {
+  const fixture = makeImageUploadEnv();
+  for (let i = 0; i < 20; i++) await worker.fetch(imageUploadRequest(), fixture.env, {});
+  const token = await signJwt({ userId: 'example-customer', userType: 'customer', exp: Math.floor(Date.now() / 1000) + 60 }, JWT_SECRET);
+  const response = await worker.fetch(imageUploadRequest('192.0.2.10', {
+    Authorization: `Bearer ${token}`, 'X-Forwarded-For': '192.0.2.99',
+  }), fixture.env, {});
+  assert.equal(response.status, 429);
+  assert.equal(fixture.writes.length, 20);
+});
+
+test('chat image upload fails closed when its quota storage is unavailable', async () => {
+  for (const quota of [
+    undefined,
+    { async get() { throw new Error('Simulated quota outage'); } },
+    { async get() { return null; }, async put() { throw new Error('Simulated quota outage'); } },
+  ]) {
+    const fixture = makeImageUploadEnv();
+    fixture.env.KV = quota;
+    const response = await worker.fetch(imageUploadRequest(), fixture.env, {});
+    assert.equal(response.status, 503);
+    assert.equal(fixture.writes.length, 0);
+    assert.doesNotMatch(await response.text(), /Simulated quota outage/);
+  }
+});
 
 function makeRequest(body, token, url = 'https://api.sagemro.com/api/chat', origin = 'https://sagemro.com') {
   const headers = { 'Content-Type': 'application/json', 'CF-Connecting-IP': '127.0.0.1' };
@@ -32,6 +102,10 @@ function makeEnv({ conversation = null, conversationInsertFailures = 0, commitCo
           return this;
         },
         async first() {
+          if (/SELECT \* FROM customers WHERE id = \?/.test(sql)
+            && ['example-customer', 'customer-a', 'customer-b', 'customer-voice-1'].includes(this.args[0])) {
+            return { id: this.args[0], ...fixtureCredential };
+          }
           if (/FROM conversations WHERE id = \?/.test(sql)) return loadedConversation;
           return null;
         },
@@ -103,6 +177,49 @@ function makeSseResponse(text = 'Captured.') {
     headers: { 'Content-Type': 'text/event-stream' },
   });
 }
+
+test('chat credential lookup failure does not downgrade an authenticated request to guest', async () => {
+  const { env } = makeEnv();
+  const token = await signJwt({ userId: 'example-customer', userType: 'customer', exp: Math.floor(Date.now() / 1000) + 60 }, JWT_SECRET);
+  const prepare = env.DB.prepare;
+  env.DB.prepare = sql => {
+    if (/SELECT \* FROM customers WHERE id = \?/.test(sql)) throw new Error('Simulated credential database failure');
+    return prepare(sql);
+  };
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { providerCalls++; return makeSseResponse(); };
+  try {
+    const response = await handleChat(makeRequest({ message: 'Fictional equipment request' }, token), env);
+    assert.equal(response.status, 503);
+    assert.doesNotMatch(await response.text(), /Simulated credential database/);
+    assert.equal(providerCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('voice credential lookup failure does not send audio as a guest', async () => {
+  const { env } = makeEnv();
+  env.DEEPGRAM_API_KEY = 'fictional-voice-key';
+  env.DB.prepare = () => { throw new Error('Simulated credential database failure'); };
+  const token = await signJwt({ userId: 'example-customer', userType: 'customer', exp: Math.floor(Date.now() / 1000) + 60 }, JWT_SECRET);
+  const form = new FormData();
+  form.append('audio', new Blob(['fictional audio'], { type: 'audio/webm' }), 'voice.webm');
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { providerCalls++; return Response.json({ results: { channels: [] } }); };
+  try {
+    const response = await handleChatTranscribe(new Request('https://api.sagemro.com/api/chat/transcribe', {
+      method: 'POST', headers: { Origin: 'https://ai.sagemro.com', Authorization: `Bearer ${token}` }, body: form,
+    }), env);
+    assert.equal(response.status, 503);
+    assert.doesNotMatch(await response.text(), /Simulated credential database/);
+    assert.equal(providerCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('form-only chat does not auto-create an order when a customer confirms a historical summary', async () => {
   const { env } = makeEnv({
@@ -987,6 +1104,7 @@ test('handleChatTranscribe rejects cookie authentication without matching CSRF',
     body: formData,
   }), {
     JWT_SECRET,
+    DB: makeEnv().env.DB,
     DEEPGRAM_API_KEY: 'deepgram-test-key',
   });
 

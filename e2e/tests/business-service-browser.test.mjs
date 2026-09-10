@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../../worker/src/index.js';
-import { signJwt } from '../../worker/src/lib/auth.js';
+import { fixtureAdminEnv, signEnvSession } from '../../worker/tests/helpers/session-jwt.mjs';
 import { createServer } from '../../admin/node_modules/vite/dist/node/index.js';
 import { createServer as createFrontendServer } from '../../frontend/node_modules/vite/dist/node/index.js';
 
@@ -26,9 +26,9 @@ for (const market of ['com', 'cn']) test(`real business onsite service ${market 
     INSERT INTO work_orders(id,order_no,customer_id,type,description,status,service_mode,site_timezone,planned_daily_end_time) VALUES ('order-fixture','ORDER-FIXTURE','customer-fixture','fault','Fictional request','pending','onsite','UTC','23:59');
     INSERT INTO business_record_assignments(kind,record_id,territory_id,owner_staff_id) VALUES ('work_order','order-fixture','territory-fixture','biz-fixture');`);
   const objects = new Map();
-  const env = { DB, JWT_SECRET: 'fictional-local-service-browser-secret', ENVIRONMENT: 'development', KV: { async get() { return null; }, async put() {}, async delete() {} },
+  const env = { ...fixtureAdminEnv, DB, JWT_SECRET: 'fictional-local-service-browser-secret', ENVIRONMENT: 'development', KV: { async get() { return null; }, async put() {}, async delete() {} },
     FIELD_EVIDENCE: { async put(key, bytes) { objects.set(key, bytes); }, async get(key) { const bytes = objects.get(key); return bytes ? { body: bytes } : null; }, async delete(key) { objects.delete(key); } } };
-  const token = id => signJwt({ userId: id, userType: id === 'customer-fixture' ? 'customer' : 'admin', ...(id === 'biz-fixture' ? { staffId: id } : {}), market, exp: Math.floor(Date.now() / 1000) + 3600 }, env.JWT_SECRET);
+  const token = id => signEnvSession({ userId: id, userType: id === 'customer-fixture' ? 'customer' : 'admin', ...(id === 'biz-fixture' ? { staffId: id } : {}), market, exp: Math.floor(Date.now() / 1000) + 3600 }, env);
   let workOrderId = 'order-fixture';
   async function api(path, id = 'biz-fixture', method = 'GET', body) {
     path = path.replace('order-fixture', workOrderId);

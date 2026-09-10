@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { signJwt } from '../src/lib/auth.js';
+import { signFixtureSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 import worker from '../src/index.js';
 
 const JWT_SECRET = 'admin-engineers-test-secret-32-chars';
@@ -62,6 +62,7 @@ function makeEnv() {
   const updates = [];
 
   return {
+    ...fixtureAdminEnv,
     JWT_SECRET,
     __updates: updates,
     DB: {
@@ -113,12 +114,12 @@ function makeEnv() {
 }
 
 async function adminRequest(path, options = {}) {
-  const token = await signJwt({
+  const token = await signFixtureSession({
     userId: 'admin',
     userType: 'admin',
     market: 'com',
     exp: Math.floor(Date.now() / 1000) + 60,
-  }, JWT_SECRET);
+  }, JWT_SECRET, { password_hash: fixtureAdminEnv.ADMIN_PASSWORD, salt: fixtureAdminEnv.ADMIN_PHONE });
 
   return new Request(`https://api.sagemro.com${path}`, {
     method: options.method || 'GET',

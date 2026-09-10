@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 
 const JWT_SECRET = 'work-order-short-title-api-test-secret';
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
@@ -100,6 +100,7 @@ function createEnv(t) {
   `);
 
   return {
+    ...fixtureAdminEnv,
     JWT_SECRET,
     DB,
     KV: { async get() { return null; }, async put() {} },
@@ -114,13 +115,13 @@ async function api(env, path, {
   staffId,
   market = 'com',
 } = {}) {
-  const token = await signJwt({
+  const token = await signEnvSession({
     userId,
     userType,
     market,
     staffId,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, JWT_SECRET);
+  }, env);
   const suffix = market === 'cn' ? '.cn' : '.com';
   const origin = userType === 'admin'
     ? `https://admin.sagemro${suffix}`
@@ -246,16 +247,20 @@ for (const [market, conflictMessage] of [
 ]) {
   test(`stale ${market.toUpperCase()} Admin title updates are rejected without a false audit`, async (t) => {
     const env = createEnv(t);
+    for (const id of ['winning-admin', 'stale-admin']) {
+      insertStaff(env.DB.__sqlite, { id, role: 'admin' });
+      env.DB.__sqlite.prepare('UPDATE admin_staff_accounts SET market_scope=? WHERE id=?').run(market, id);
+    }
     env.DB.__afterWorkOrderTitleRead = async () => {
       const winning = await api(env, '/api/admin/workorders/wo-title/short-title', {
-        method: 'PATCH', userType: 'admin', userId: 'winning-admin', market,
+        method: 'PATCH', userType: 'admin', userId: 'winning-admin', staffId: 'winning-admin', market,
         body: { short_title: 'Winning title' },
       });
       assert.equal(winning.response.status, 200);
     };
 
     const stale = await api(env, '/api/admin/workorders/wo-title/short-title', {
-      method: 'PATCH', userType: 'admin', userId: 'stale-admin', market,
+      method: 'PATCH', userType: 'admin', userId: 'stale-admin', staffId: 'stale-admin', market,
       body: { short_title: 'Stale title' },
     });
 

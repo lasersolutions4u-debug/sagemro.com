@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 
 import {
   DIRECT_ATTRIBUTION_FILTER,
@@ -44,8 +44,13 @@ function createD1Database() {
     );
     CREATE TABLE admin_staff_accounts (
       id TEXT PRIMARY KEY, role TEXT NOT NULL, is_active INTEGER NOT NULL,
+      password_hash TEXT NOT NULL DEFAULT 'fictional-hash', salt TEXT NOT NULL DEFAULT 'fictional-salt',
       market_scope TEXT NOT NULL, must_change_password INTEGER NOT NULL DEFAULT 0
     );
+    CREATE TABLE customers (id TEXT PRIMARY KEY, password_hash TEXT NOT NULL, salt TEXT);
+    CREATE TABLE engineers (id TEXT PRIMARY KEY, password_hash TEXT NOT NULL, salt TEXT);
+    INSERT INTO customers VALUES ('customer-1', 'fictional-customer-hash', 'fictional-salt');
+    INSERT INTO engineers VALUES ('engineer-1', 'fictional-engineer-hash', 'fictional-salt');
   `);
   return {
     prepare(sql) {
@@ -893,11 +898,11 @@ async function promotionApi(env, path, {
 } = {}) {
   const headers = { Origin: host.endsWith('.cn') ? 'https://admin.sagemro.cn' : 'https://admin.sagemro.com' };
   if (auth) {
-    const token = await signJwt({
+    const token = await signEnvSession({
       iat: 1,
       exp: Math.floor(Date.now() / 1000) + 3600,
       ...auth,
-    }, env.JWT_SECRET);
+    }, env);
     headers.Authorization = `Bearer ${token}`;
   }
   const response = await worker.fetch(new Request(`https://${host}${path}`, { method, headers }), env, ctx);
@@ -908,6 +913,7 @@ function promotionEnv(com, cn = null) {
   return {
     DB: com,
     ...(cn ? { DB_CN: cn } : {}),
+    ...fixtureAdminEnv,
     JWT_SECRET: 'promotion-analytics-api-test-secret',
   };
 }

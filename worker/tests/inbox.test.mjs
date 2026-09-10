@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { canStartDirectConversation, isConversationParticipant, isInboxIdentity } from '../src/lib/inbox.js';
 import { createNotification } from '../src/lib/push.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 import worker from '../src/index.js';
 
 test('unified operations inbox migration defines the conversation, membership, and message schema', async () => {
@@ -121,11 +121,11 @@ function createInboxEnv() {
     }
     return { success: true };
   } }; } };
-  return { JWT_SECRET, DB, __state: state };
+  return withFixtureAccounts({ JWT_SECRET, DB, __state: state }, { engineers: state.engineers, customers: [{ id: 'cust-1' }] });
 }
 
 async function inboxRequest(env, userType, userId, path, method = 'GET', body) {
-  const token = await signJwt({ userType, userId, exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const token = await signEnvSession({ userType, userId, exp: Math.floor(Date.now() / 1000) + 3600 }, env);
   const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, { method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) }), env, { waitUntil() {} });
   return { response, json: await response.json() };
 }

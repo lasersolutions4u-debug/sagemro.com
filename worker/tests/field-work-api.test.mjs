@@ -4,7 +4,7 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureCredential, withFixtureAccounts } from './helpers/session-jwt.mjs';
 import { fieldDayLocalDate, siteLocalDateTimeToUtc } from '../src/lib/field-work.js';
 import { buildServiceStandardDefinition } from '../src/lib/serviceStandard.js';
 
@@ -169,7 +169,7 @@ function createEnv() {
       }
     },
   };
-  return env;
+  return withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
 }
 
 function createStatement(env, sql) {
@@ -184,10 +184,12 @@ function createStatement(env, sql) {
       }
       if (/FROM admin_staff_accounts WHERE id = \? AND is_active = 1/i.test(normalized)) {
         const record = env.__staff.find((item) => item.id === this.args[0] && item.is_active === 1);
+        if (record && !record.password_hash) Object.assign(record, fixtureCredential);
         return record ? { ...record } : null;
       }
       if (/FROM admin_staff_accounts WHERE id = \?/i.test(normalized)) {
         const record = env.__staff.find((item) => item.id === this.args[0]);
+        if (record && !record.password_hash) Object.assign(record, fixtureCredential);
         return record ? { ...record } : null;
       }
       if (/FROM work_order_field_days WHERE id = \? AND work_order_id = \?/i.test(normalized)) {
@@ -614,7 +616,7 @@ async function api(env, path, {
   }
   const hostname = market === 'cn' ? 'api.sagemro.cn' : 'api.sagemro.com';
   const origin = market === 'cn' ? 'https://sagemro.cn' : 'https://sagemro.com';
-  const jwt = await signJwt({ userId, userType, market, staffRole, staffId, phone: '13800000000', iat: 1, exp: Math.floor(Date.now() / 1000) + 3600 }, env.JWT_SECRET);
+  const jwt = await signEnvSession({ userId, userType, market, staffRole, staffId, phone: '13800000000', iat: 1, exp: Math.floor(Date.now() / 1000) + 3600 }, env);
   const headers = { Authorization: `Bearer ${jwt}`, Origin: origin };
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -997,7 +999,7 @@ test('scheduler does not insert a reminder when its conditional claim loses', as
 test('scheduler marks a prior site-local day overdue and notifies engineer and active operations once', async () => {
   const env = createEnv();
   env.__staff.push(
-    { id: 'admin-1', role: 'admin', is_active: 1, market_scope: 'all' },
+    { id: 'admin', role: 'admin', is_active: 1, market_scope: 'all' },
     { id: 'operations-1', role: 'operations', is_active: 1, market_scope: 'com' },
     { id: 'inactive-1', role: 'operations', is_active: 0, market_scope: 'all' },
   );
@@ -1011,7 +1013,7 @@ test('scheduler marks a prior site-local day overdue and notifies engineer and a
   assert.equal(env.__fieldDays[0].status, 'report_overdue');
   assert.ok(env.__fieldDays[0].overdue_notification_sent_at);
   const overdue = env.__notifications.filter((item) => item.args[3] === 'field_report_overdue');
-  assert.deepEqual(overdue.map((item) => item.args[1]).sort(), ['admin-1', 'engineer-1', 'operations-1']);
+  assert.deepEqual(overdue.map((item) => item.args[1]).sort(), ['admin', 'engineer-1', 'operations-1']);
 });
 
 test('scheduler rotates beyond a full batch so a newly due checkout reminder is not starved', async () => {
@@ -2066,18 +2068,18 @@ test('work-order detail exposes evidence holds, report revisions, and field audi
   seedFieldDay(env, { status: 'report_submitted' });
   env.__holds.push({
     id: 'hold-1', work_order_id: 'wo-onsite-1', reason_category: 'complaint', reason: 'Customer complaint review',
-    status: 'open', opened_by: 'admin-1', opened_at: '2026-07-24T01:00:00Z',
+    status: 'open', opened_by: 'admin', opened_at: '2026-07-24T01:00:00Z',
   });
   env.__revisions.push({
     id: 'revision-1', work_order_id: 'wo-onsite-1', field_day_id: 'field-day-1', previous_report: '{"completed_work":"Before"}',
-    changed_by_type: 'admin', changed_by_id: 'admin-1', reason: 'Corrected report', created_at: '2026-07-24T02:00:00Z',
+    changed_by_type: 'admin', changed_by_id: 'admin', reason: 'Corrected report', created_at: '2026-07-24T02:00:00Z',
   });
   env.__fieldWorkAudits.push({
     id: 'audit-1', work_order_id: 'wo-onsite-1', target_type: 'work_order_field_day', target_id: 'field-day-1',
-    action: 'field_day_report_corrected', actor_type: 'admin', actor_id: 'admin-1', created_at: '2026-07-24T02:00:00Z',
+    action: 'field_day_report_corrected', actor_type: 'admin', actor_id: 'admin', created_at: '2026-07-24T02:00:00Z',
   }, {
     id: 'audit-plan', work_order_id: 'wo-onsite-1', target_type: 'work_order', target_id: 'wo-onsite-1',
-    action: 'field_plan_updated', actor_type: 'admin', actor_id: 'admin-1', created_at: '2026-07-24T03:00:00Z',
+    action: 'field_plan_updated', actor_type: 'admin', actor_id: 'admin', created_at: '2026-07-24T03:00:00Z',
   });
 
   const admin = await api(env, '/api/workorders/wo-onsite-1', { userType: 'admin', userId: 'admin' });
@@ -2121,7 +2123,7 @@ test('customer work-order detail includes safe approved extension history', asyn
     customer_explanation: 'One additional visit is required.', decision_reason: 'Schedule evidence approved.',
     approved_plan: JSON.stringify({ expected_service_days: 4, expected_completion_date: '2026-07-26' }),
     decided_at: '2026-07-24T10:00:00Z', internal_note: 'Supplier detail', original_plan: '{"expected_service_days":2}',
-    decided_by: 'admin-1', reason: 'Internal operational reason', field_day_id: 'field-day-1', created_at: '2026-07-24T09:00:00Z',
+    decided_by: 'admin', reason: 'Internal operational reason', field_day_id: 'field-day-1', created_at: '2026-07-24T09:00:00Z',
   });
 
   const detail = await api(env, '/api/workorders/wo-onsite-1', { userType: 'customer', userId: 'customer-1' });
@@ -2140,7 +2142,7 @@ test('customer work-order detail includes safe approved extension history', asyn
   assert.equal(engineerDetail.response.status, 200);
   assert.equal(engineerDetail.json.field_extension_requests[0].internal_note, 'Supplier detail');
   assert.equal(engineerDetail.json.field_extension_requests[0].original_plan, '{"expected_service_days":2}');
-  assert.equal(engineerDetail.json.field_extension_requests[0].decided_by, 'admin-1');
+  assert.equal(engineerDetail.json.field_extension_requests[0].decided_by, 'admin');
 });
 
 test('final service completion rejects a complete field plan with no field days', async () => {

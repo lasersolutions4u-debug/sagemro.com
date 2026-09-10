@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, fixtureAdminEnv, withFixtureAccounts } from './helpers/session-jwt.mjs';
 
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
 
@@ -18,6 +18,7 @@ function clone(value) {
 
 function createEnv() {
   const env = {
+    ...fixtureAdminEnv,
     JWT_SECRET: 'test-secret-with-enough-length',
     __workOrders: [{
       id: 'wo-1',
@@ -93,7 +94,7 @@ function createEnv() {
       }
     },
   };
-  return env;
+  return withFixtureAccounts(env, { engineers: env.__engineers, customers: [{ id: 'customer-1' }, { id: 'customer-2' }], admin_staff_accounts: env.__staff });
 }
 
 function createSqliteEnv() {
@@ -118,6 +119,7 @@ function createSqliteEnv() {
   `).run();
 
   const env = {
+    ...fixtureAdminEnv,
     JWT_SECRET: 'test-secret-with-enough-length',
     __sqlite: sqlite,
     __conversionBatchHook: null,
@@ -402,7 +404,7 @@ async function api(env, path, {
   method = 'GET',
   market = 'com',
 } = {}) {
-  const jwt = await signJwt({
+  const jwt = await signEnvSession({
     userId,
     userType,
     staffId,
@@ -410,7 +412,7 @@ async function api(env, path, {
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
   const requestOptions = {
     method,
     headers: {
@@ -678,6 +680,7 @@ test('read-only regional management cannot initialize progress through confirmat
 
 test('Admin identity cannot confirm engineer-owned items even when its user id matches the assignment', async () => {
   const env = createEnv();
+  env.__staff.push({ id: 'engineer-1', role: 'admin', is_active: 1, market_scope: 'all', must_change_password: 0 });
 
   const denied = await api(
     env,
@@ -686,6 +689,7 @@ test('Admin identity cannot confirm engineer-owned items even when its user id m
       method: 'POST',
       userType: 'admin',
       userId: 'engineer-1',
+      staffId: 'engineer-1',
       body: { state: 'confirmed' },
     },
   );

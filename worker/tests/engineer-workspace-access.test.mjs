@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import worker from '../src/index.js';
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, signFixtureSession, fixtureAdminEnv } from './helpers/session-jwt.mjs';
 
 const JWT_SECRET = 'engineer-workspace-access-test-secret';
 const schemaSql = readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
@@ -12,7 +12,7 @@ const workerSource = readFileSync(new URL('../src/index.js', import.meta.url), '
 
 test('service profile expected identity rejects switched cookie reads and writes even at the same revision', async (t) => {
   const env = createEnv(t);
-  const token = await signJwt({ userId: 'eng-2', userType: 'engineer', csrf: 'fixture-csrf', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const token = await signEnvSession({ userId: 'eng-2', userType: 'engineer', csrf: 'fixture-csrf', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, env);
   const url = 'https://api.sagemro.com/api/engineers/service-profile';
   const headers = { Cookie: `__Host-sagemro_engineer_session=${token}`, Origin: 'https://engineer.sagemro.com', 'X-CSRF-Token': 'fixture-csrf', 'Content-Type': 'application/json' };
   const switchedRead = await worker.fetch(new Request(url + '?expected_engineer_id=eng-1', { headers }), env, {});
@@ -39,7 +39,7 @@ test('admin deletion still removes an otherwise unlinked engineer with a private
     const saved = await api(env, '/api/engineers/service-profile', { method: 'PUT', userId, body: { revision: 0, profile: { version: 1, hourly_rate: null } } });
     assert.equal(saved.response.status, 200);
   }
-  const token = await signJwt({ userId: 'admin-fixture', userType: 'admin', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const token = await signEnvSession({ userId: 'admin', userType: 'admin', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, env);
   const response = await worker.fetch(new Request('https://api.sagemro.com/api/admin/users/deletable-fixture?type=engineer', { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }), env, {});
   assert.equal(response.status, 200);
   assert.equal(env.DB.__sqlite.prepare("SELECT id FROM engineers WHERE id = 'deletable-fixture'").get(), undefined);
@@ -81,7 +81,7 @@ test('service profile rejects impersonation, non-engineer identities and invalid
   const env = createEnv(t);
   const path = '/api/engineers/service-profile';
   for (const userType of ['customer', 'admin']) {
-    const token = await signJwt({ userId: 'lead-1', userType, market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+    const token = await signEnvSession({ userId: userType === 'admin' ? 'admin' : 'customer-1', userType, market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, env);
     for (const method of ['GET', 'PUT']) {
       const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, { method, headers: { Authorization: `Bearer ${token}` } }), env, {});
       assert.equal(response.status, 403);
@@ -89,7 +89,7 @@ test('service profile rejects impersonation, non-engineer identities and invalid
   }
   const anonymous = await worker.fetch(new Request(`https://api.sagemro.com${path}`), env, {});
   assert.equal(anonymous.status, 401);
-  assert.equal((await api(env, path, { userId: 'missing-engineer' })).response.status, 403);
+  assert.equal((await api(env, path, { userId: 'missing-engineer' })).response.status, 401);
   const invalidBodies = [
     null, [], {}, { revision: -1, profile: { version: 1 } },
     { revision: 0, engineer_id: 'eng-2', profile: { version: 1 } },
@@ -105,7 +105,7 @@ test('service profile rejects impersonation, non-engineer identities and invalid
 
 test('service profile enforces cookie CSRF and rejects malformed or oversized request streams in both markets', async (t) => {
   const env = createEnv(t);
-  const token = await signJwt({ userId: 'eng-1', userType: 'engineer', market: 'com', csrf: 'fixture-csrf', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const token = await signEnvSession({ userId: 'eng-1', userType: 'engineer', market: 'com', csrf: 'fixture-csrf', exp: Math.floor(Date.now() / 1000) + 3600 }, env);
   const url = 'https://api.sagemro.com/api/engineers/service-profile';
   const headers = { Cookie: `__Host-sagemro_engineer_session=${token}`, Origin: 'https://engineer.sagemro.com', 'Content-Type': 'application/json' };
   const body = JSON.stringify({ expected_engineer_id: 'eng-1', revision: 0, profile: { version: 1, hourly_rate: null } });
@@ -115,6 +115,7 @@ test('service profile enforces cookie CSRF and rejects malformed or oversized re
   const allowed = await worker.fetch(new Request(url, { method: 'PUT', headers: { ...headers, 'X-CSRF-Token': 'fixture-csrf' }, body }), env, {});
   assert.equal(allowed.status, 200);
   for (const market of ['com', 'cn']) {
+    const token = await signEnvSession({ userId: 'eng-1', userType: 'engineer', market, exp: Math.floor(Date.now() / 1000) + 3600 }, env);
     for (const raw of ['{broken', '{"revision":0,"profile":{"version":1,"hourly_rate":1e999}}', JSON.stringify({ revision: 0, profile: { version: 1, tools: 'x'.repeat(33000) } })]) {
       const response = await worker.fetch(new Request(url, { method: 'PUT', headers: { Authorization: `Bearer ${token}`, Origin: `https://engineer.sagemro.${market}`, 'Content-Type': 'application/json' }, body: raw }), { ...env, DB_CN: env.DB }, {});
       assert.equal(response.status, 400);
@@ -124,7 +125,7 @@ test('service profile enforces cookie CSRF and rejects malformed or oversized re
       else assert.match(data.error, /^Invalid profile/);
     }
   }
-  const customer = await signJwt({ userId: 'customer-1', userType: 'customer', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  const customer = await signEnvSession({ userId: 'customer-1', userType: 'customer', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, env);
   for (const path of ['/api/engineers/recommend', '/api/engineers/profile?engineer_id=eng-1', '/api/workorders/wo-member']) {
     const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, { headers: { Authorization: `Bearer ${customer}` } }), env, {});
     const output = await response.text();
@@ -231,19 +232,21 @@ function createEnv(t) {
   });
 
   return {
+    ...fixtureAdminEnv,
     JWT_SECRET,
     DB,
     KV: { async get() { return null; }, async put() {} },
   };
 }
 
-async function tokenFor(userId) {
-  return signJwt({
+async function tokenFor(env, userId) {
+  if (userId === 'missing-engineer') return signFixtureSession({ userId, userType: 'engineer', market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+  return signEnvSession({
     userId,
     userType: 'engineer',
     market: 'com',
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, JWT_SECRET);
+  }, env);
 }
 
 async function api(env, path, { method = 'GET', body, userId = 'lead-1', idempotencyKey } = {}) {
@@ -251,7 +254,7 @@ async function api(env, path, { method = 'GET', body, userId = 'lead-1', idempot
     if (method === 'GET') path += `${path.includes('?') ? '&' : '?'}expected_engineer_id=${encodeURIComponent(userId)}`;
     if (method === 'PUT' && body && !Array.isArray(body)) body = { expected_engineer_id: userId, ...body };
   }
-  const token = await tokenFor(userId);
+  const token = await tokenFor(env, userId);
   const headers = {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
@@ -695,7 +698,7 @@ test('regional lead can read a direct subordinate work order but cannot send mes
 async function confirmBusinessDispatchPayment(env) {
   const pending = [];
   async function call(path, method = 'GET', body, userType = 'admin', userId = 'admin') {
-    const token = await signJwt({ userId, userType, market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, JWT_SECRET);
+    const token = await signEnvSession({ userId, userType, market: 'com', exp: Math.floor(Date.now() / 1000) + 3600 }, env);
     const response = await worker.fetch(new Request(`https://api.sagemro.com${path}`, {
       method, headers: { Authorization: `Bearer ${token}`, Origin: 'https://admin.sagemro.com', ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) },
       ...(body ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}),

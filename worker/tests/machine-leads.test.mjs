@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { signJwt } from '../src/lib/auth.js';
+import { signEnvSession, withFixtureAccounts } from './helpers/session-jwt.mjs';
 import worker from '../src/index.js';
 
 const JWT_SECRET = 'machine-leads-test-secret-32-chars';
@@ -158,18 +158,18 @@ function createEnv() {
       async delete() {},
     },
   };
-  return env;
+  return withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
 }
 
 async function token(env, userType, userId) {
-  return signJwt({
+  return signEnvSession({
     userId,
     userType,
     market: 'com',
     phone: '+15550001111',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
-  }, env.JWT_SECRET);
+  }, env);
 }
 
 async function chat(env, message) {
