@@ -6,6 +6,65 @@ import { createServer } from '../../admin/node_modules/vite/dist/node/index.js';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 
+test('session restoration runs once and preserves the selected service-order page', { timeout: 60_000 }, async t => {
+  const server = await createServer({ root: fileURLToPath(new URL('../../admin', import.meta.url)), logLevel: 'error', server: { host: '127.0.0.1', port: 0, hmr: false } });
+  await server.listen(); t.after(() => server.close());
+  const browser = await chromium.launch({ channel: process.platform === 'win32' ? 'chrome' : 'chromium', headless: true }); t.after(() => browser.close());
+  const context = await browser.newContext({ serviceWorkers: 'block' });
+  let releaseLateSession;
+  const lateSession = new Promise(resolve => { releaseLateSession = resolve; });
+  try {
+    const page = await context.newPage(); page.setDefaultTimeout(6000);
+    const user = { id: 'staff-fixture', staffId: 'staff-fixture', staffRole: 'business_director', name: 'Example operator' };
+    const errors = [], writes = [];
+    let sessionRequests = 0;
+    let sessionState = 'authenticated';
+    page.on('pageerror', error => errors.push(error.message));
+    await context.route('**/*', async route => {
+      const request = route.request(), url = new URL(request.url());
+      if (url.pathname.startsWith('/api/')) {
+        if (request.method() !== 'GET') writes.push(url.pathname);
+        if (url.pathname === '/api/auth/session') {
+          if (++sessionRequests > 1) await lateSession;
+          if (sessionState === 'unavailable') return route.fulfill({ status: 503, json: { error: 'Fictional session lookup unavailable' } });
+          if (sessionState === 'expired') return route.fulfill({ json: { authenticated: false } });
+          return route.fulfill({ json: { authenticated: true, userType: 'admin', user, csrfToken: 'fixture-csrf' } });
+        }
+        if (url.pathname === '/api/admin/business/organization') return route.fulfill({ json: { actor_staff_id: user.staffId, market: 'com', role: user.staffRole, grade: 1, staff: [], territories: [], can_configure: false, can_assign: true, scope_version: 'fixture' } });
+        if (url.pathname === '/api/admin/business/records') {
+          const records = url.searchParams.get('kind') === 'work_order'
+            ? [{ id: 'order-fixture', order_no: 'FICTIONAL-001', short_title: 'Equipment repair', status: 'pending' }] : [];
+          return route.fulfill({ json: { records, total: records.length, next_cursor: null, scope_version: 'fixture' } });
+        }
+        return route.fulfill({ json: {} });
+      }
+      if (url.hostname !== 'admin.sagemro.com') return route.abort();
+      return route.fulfill({ response: await route.fetch({ url: `http://127.0.0.1:${server.httpServer.address().port}${url.pathname}${url.search}` }) });
+    });
+    await page.goto('https://admin.sagemro.com/', { waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: 'All leads', exact: true }).waitFor();
+    await page.getByRole('navigation').getByRole('button', { name: 'Service Orders', exact: true }).click();
+    await page.getByText('Equipment repair', { exact: true }).waitFor();
+    releaseLateSession();
+    await page.waitForLoadState('networkidle');
+    assert.equal(await page.locator('h1').textContent(), 'Service orders');
+    assert.equal(await page.getByRole('button', { name: 'View details', exact: true }).count(), 1);
+    assert.equal(sessionRequests, 1, 'StrictMode must not start a second session restoration');
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('admin_user'))), { ...user, mustChangePassword: false });
+    for (const state of ['expired', 'unavailable']) {
+      sessionState = state; sessionRequests = 0;
+      await page.reload();
+      await page.getByRole('button', { name: 'Sign In', exact: true }).waitFor();
+      await page.waitForLoadState('networkidle');
+      assert.equal(sessionRequests, 1, `${state} restoration must run once per reload`);
+      assert.equal(await page.getByRole('navigation').count(), 0);
+      assert.equal(await page.evaluate(() => localStorage.getItem('admin_user')), null);
+      assert.equal(await page.evaluate(() => localStorage.getItem('admin_csrf_token')), null);
+    }
+    assert.deepEqual(errors, []); assert.deepEqual(writes, []);
+  } finally { releaseLateSession(); await context.close(); }
+});
+
 test('international shared record menus keep business roles scoped and administrator tools available', { timeout: 120_000 }, async t => {
   const server = await createServer({ root: fileURLToPath(new URL('../../admin', import.meta.url)), logLevel: 'error', server: { host: '127.0.0.1', port: 0, hmr: false } });
   await server.listen(); t.after(() => server.close());

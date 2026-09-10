@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Boxes, ChartNoAxesCombined, ClipboardCheck, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { useAdminLocale } from './config/locale';
@@ -164,6 +164,7 @@ export default function App() {
   const t = TEXT[locale] || TEXT.en;
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const sessionRestore = useRef(null);
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedEngineerId, setSelectedEngineerId] = useState('');
@@ -191,8 +192,11 @@ export default function App() {
   }, [user, t]);
 
   useEffect(() => {
-    restoreAdminSession()
+    let active = true;
+    sessionRestore.current ??= restoreAdminSession();
+    sessionRestore.current
       .then((session) => {
+        if (!active) return;
         if (session.authenticated && session.userType === 'admin') {
           const restoredUser = normalizeAdminUser(session.user);
           localStorage.setItem('admin_user', JSON.stringify(restoredUser));
@@ -204,11 +208,13 @@ export default function App() {
         }
       })
       .catch(() => {
+        if (!active) return;
         localStorage.removeItem('admin_user');
         localStorage.removeItem('admin_csrf_token');
         setUser(null);
       })
-      .finally(() => setAuthReady(true));
+      .finally(() => { if (active) setAuthReady(true); });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
