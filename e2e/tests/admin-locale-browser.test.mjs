@@ -6,6 +6,17 @@ import { createServer } from '../../admin/node_modules/vite/dist/node/index.js';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
 
+async function assertAlignedHeader(page) {
+  const logo = page.getByRole('img', { name: 'SAGEMRO', exact: true }).filter({ visible: true });
+  const language = page.getByRole('button', { name: /^(English|中文)$/ });
+  assert.equal(await logo.count(), 1, 'Only one visible console logo');
+  const brandBox = await logo.boundingBox();
+  const languageBox = await language.boundingBox();
+  assert.ok(Math.abs(brandBox.y + brandBox.height / 2 - languageBox.y - languageBox.height / 2) <= 1, 'Logo and language switch must share a vertical center');
+  assert.ok(brandBox.x + brandBox.width < languageBox.x, 'Logo must not overlap the language switch');
+  assert.ok(brandBox.y >= 0 && brandBox.y + brandBox.height <= 56, 'Logo belongs in the top bar');
+}
+
 test('language changes preserve gate reasons and edits to existing service reports', { timeout: 60_000 }, async t => {
   const moduleId = '\0locale-draft-fixture';
   const server = await createServer({ root: fileURLToPath(new URL('../../admin', import.meta.url)), logLevel: 'error', server: { host: '127.0.0.1', port: 0, hmr: false },
@@ -89,6 +100,8 @@ test('international admin switches language without changing API, permissions or
   await page.getByRole('button', { name: 'English', exact: true }).waitFor();
   authenticated = true;
   await page.reload();
+  await page.getByRole('button', { name: '客户', exact: true }).waitFor();
+  await assertAlignedHeader(page);
   await page.getByRole('button', { name: '客户', exact: true }).click();
   await page.getByRole('button', { name: '添加客户', exact: true }).click();
   await page.getByPlaceholder('姓名', { exact: true }).fill('Example unsaved customer');
@@ -102,12 +115,20 @@ test('international admin switches language without changing API, permissions or
   await page.waitForFunction(() => { const box = document.querySelector('aside').getBoundingClientRect(); return box.right <= 1; });
   await page.evaluate(() => window.scrollTo(0, 0));
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await assertAlignedHeader(page);
+  await page.getByRole('button', { name: '菜单', exact: true }).click();
+  await page.getByRole('button', { name: '客户', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('aside').getBoundingClientRect().right <= 1);
+  await page.getByRole('button', { name: '菜单', exact: true }).click();
+  await page.getByRole('button', { name: '内部员工账号', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('aside').getBoundingClientRect().right <= 1);
   if (process.env.SAGEMRO_LOCALE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SAGEMRO_LOCALE_SCREENSHOT_DIR}/admin-zh-mobile.png`, fullPage: false });
   await page.getByRole('button', { name: 'English', exact: true }).filter({ visible: true }).click();
   assert.equal(await page.locator('html').getAttribute('lang'), 'en');
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.waitForFunction(() => Math.abs(document.querySelector('aside').getBoundingClientRect().left) < 1);
   await page.evaluate(() => window.scrollTo(0, 0));
+  await assertAlignedHeader(page);
   if (process.env.SAGEMRO_LOCALE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SAGEMRO_LOCALE_SCREENSHOT_DIR}/admin-en-desktop.png`, fullPage: false });
   await page.getByRole('button', { name: 'Knowledge Base', exact: true }).click();
   await page.getByLabel('Title', { exact: true }).fill('Example unsaved knowledge draft');
