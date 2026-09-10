@@ -4,6 +4,7 @@ import { LoginPage } from './pages/LoginPage';
 import { useAdminLocale } from './config/locale';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
+import { LanguageSwitch } from './components/LanguageSwitch';
 import { adminLogout, changeAdminPassword, restoreAdminSession } from './services/api';
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage.jsx').then(({ DashboardPage }) => ({ default: DashboardPage })));
@@ -102,6 +103,29 @@ function normalizeAdminUser(user) {
     staffId: user.staffId ?? null,
     mustChangePassword: Boolean(user.mustChangePassword),
   };
+}
+
+function AdminFrame({ children, onMenuToggle, sidebarOpen }) {
+  const locale = useAdminLocale();
+  if (runtimeConfig.market !== 'com') return children;
+  return (
+    <>
+      <header className="fixed inset-x-0 top-0 z-[100] flex h-14 items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 lg:px-5">
+        {onMenuToggle && (
+          <div className="flex min-w-0 items-center gap-3">
+            <button type="button" onClick={onMenuToggle} title={locale === 'zh-CN' ? '菜单' : 'Menu'} aria-label={locale === 'zh-CN' ? '菜单' : 'Menu'} aria-expanded={sidebarOpen} aria-controls="admin-sidebar" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] lg:hidden"><Menu size={22} /></button>
+            <BrandMark className="h-10 w-10 shrink-0 rounded-full shadow-sm" />
+            <div className="min-w-0">
+              <div className="text-base font-semibold text-[var(--color-primary)]">SAGEMRO</div>
+              <div className="truncate text-xs text-[var(--color-text-muted)]">{TEXT[locale]?.subtitle || TEXT.en.subtitle}</div>
+            </div>
+          </div>
+        )}
+        <LanguageSwitch className="ml-auto shrink-0" />
+      </header>
+      <div className="pt-14 [&_.fixed.inset-0]:top-14">{children}</div>
+    </>
+  );
 }
 
 function AdminPageLoading() {
@@ -240,6 +264,7 @@ export default function App() {
   if (window.location.pathname !== '/') {
     const isCn = locale === 'zh-CN';
     return (
+      <AdminFrame>
       <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-5 text-[var(--color-text-primary)]">
         <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center shadow-xl">
           <div className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-primary)]">404</div>
@@ -252,6 +277,7 @@ export default function App() {
           </a>
         </div>
       </main>
+      </AdminFrame>
     );
   }
 
@@ -271,15 +297,15 @@ export default function App() {
   };
 
   if (!authReady) {
-    return <div className="min-h-screen bg-[var(--color-bg)]" aria-busy="true" />;
+    return <AdminFrame><div className="min-h-screen bg-[var(--color-bg)]" aria-busy="true" /></AdminFrame>;
   }
 
   if (!user) {
-    return <LoginPage onLogin={handleLogin} />;
+    return <AdminFrame><LoginPage onLogin={handleLogin} /></AdminFrame>;
   }
 
   if (user.mustChangePassword) {
-    return <MandatoryPasswordChange user={user} onChanged={setUser} />;
+    return <AdminFrame><MandatoryPasswordChange user={user} onChanged={setUser} /></AdminFrame>;
   }
 
   const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
@@ -307,20 +333,21 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex bg-[var(--color-bg)]">
+    <AdminFrame onMenuToggle={() => setSidebarOpen((open) => !open)} sidebarOpen={sidebarOpen}>
+    <div className={`flex bg-[var(--color-bg)] ${runtimeConfig.market === 'com' ? 'min-h-[calc(100dvh-3.5rem)]' : 'min-h-screen'}`}>
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* Sidebar */}
-      <aside className={`
-        fixed lg:static z-40 w-60 flex flex-col ${runtimeConfig.market === 'com' ? 'top-14 h-[calc(100dvh-3.5rem)]' : 'h-screen'}
+      <aside id="admin-sidebar" className={`
+        fixed lg:static z-40 w-60 shrink-0 flex flex-col ${runtimeConfig.market === 'com' ? 'top-14 h-[calc(100dvh-3.5rem)] overflow-y-auto' : 'h-screen'}
         bg-[var(--color-surface)] border-r border-[var(--color-border)]
         transition-transform duration-200
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
-        <div className="px-5 py-4 border-b border-[var(--color-border)]">
+        {runtimeConfig.market !== 'com' && <div className="px-5 py-4 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-3">
             <BrandMark className="h-10 w-10 shrink-0 rounded-full shadow-sm" />
             <div>
@@ -328,7 +355,7 @@ export default function App() {
               <div className="text-xs text-[var(--color-text-muted)]">{t.subtitle}</div>
             </div>
           </div>
-        </div>
+        </div>}
 
         <nav className="flex-1 py-4 px-3 space-y-1">
           {visibleNavItems.map((item) => (
@@ -367,11 +394,11 @@ export default function App() {
       {/* Main content */}
       <main className="flex-1 min-w-0">
         {/* Mobile header */}
-        <div className={`sticky ${runtimeConfig.market === 'com' ? 'top-14' : 'top-0'} z-20 lg:hidden flex items-center gap-3 px-3 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur`}>
+        {runtimeConfig.market !== 'com' && <div className="sticky top-0 z-20 lg:hidden flex items-center gap-3 px-3 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/95 backdrop-blur">
           <button onClick={() => setSidebarOpen(true)} title={locale === 'zh-CN' ? '菜单' : 'Menu'} className="flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--color-border)]"><Menu size={22} /></button>
           <BrandMark className="h-8 w-8 shrink-0 rounded-full" />
           <span className="min-w-0 truncate pr-20 text-sm font-medium">{t.mobileTitle}</span>
-        </div>
+        </div>}
 
         <div className="mx-auto max-w-6xl px-3 py-4 sm:px-5 sm:py-5 lg:p-6">
           <Suspense fallback={<AdminPageLoading />}>
@@ -380,5 +407,6 @@ export default function App() {
         </div>
       </main>
     </div>
+    </AdminFrame>
   );
 }
