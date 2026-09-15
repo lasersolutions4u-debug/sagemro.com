@@ -228,6 +228,16 @@ test('business quote browser journey keeps costs private and submits the saved r
       await other.evaluate(() => localStorage.setItem('admin_user', JSON.stringify({ staffId: 'other-fixture', staffRole: 'business_specialist' })));
       await dialog.waitFor({ state: 'hidden' });
       assert.deepEqual(errors, []);
-    } finally { await context.close(); }
+    } finally {
+      // Closing a context disposes responses that in-flight route.fetch() handlers
+      // are still awaiting. Left alone that surfaces as an unhandled rejection
+      // inside the route callback, which then aborts the *next* market's subtest
+      // with "Target page, context or browser has been closed" even though that
+      // market never ran a single assertion. Observed twice on CI, both times on
+      // the `cn` run right after `com` had passed.
+      // Detaching routes first is Playwright's documented remedy for exactly this.
+      await context.unrouteAll({ behavior: 'ignoreErrors' });
+      await context.close();
+    }
   });
 });
