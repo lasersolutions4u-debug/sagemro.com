@@ -60,3 +60,10 @@ test('chat offers an explicit handoff and App connects it to the existing form, 
   assert.match(flow, /!choosingDraft/);
   assert.match(flow, /useEntryConversation \? conversationId : undefined/);
 });
+
+test('service-request handoff uses a compact action bar instead of a large instruction panel', async () => {
+  const chat = await readFile(new URL('../src/components/Chat/ChatArea.jsx', import.meta.url), 'utf8');
+  assert.match(chat, /max-w-4xl flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between/);
+  assert.match(chat, /min-h-9 rounded-lg/);
+  assert.match(chat, /AI prepares the existing form from this chat\./);
+});
