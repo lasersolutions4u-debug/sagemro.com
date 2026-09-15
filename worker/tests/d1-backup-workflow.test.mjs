@@ -30,8 +30,23 @@ test('production D1 backup workflow has scheduled production safeguards', async 
     'cancel-in-progress': false,
   });
   assert.equal(job['runs-on'], 'ubuntu-latest');
-  assert.equal(job.environment, 'production');
   assert.equal(job['timeout-minutes'], 30);
+});
+
+test('scheduled backups never wait on a human approval gate', async () => {
+  const workflow = parse(await readFile(workflowPath, 'utf8'));
+  const job = workflow.jobs.backup;
+
+  // 审批等待没有超时限制，一个卡在门禁上的计划任务会永久占住并发组
+  // production-d1-backup，其后每晚的新 run 都会被取消。2026-08-11 至 2026-09-14
+  // 期间生产 D1 因此没有任何自动备份。定时运行必须落到无审批人的环境上；
+  // 手动 Run workflow 仍保留 production 审批门禁。
+  assert.equal(
+    job.environment,
+    "${{ github.event_name == 'workflow_dispatch' && 'production' || 'production-backup' }}",
+  );
+  assert.notEqual(job.environment, 'production');
+  assert.match(job.environment, /production-backup/);
 });
 
 test('production credentials are scoped only to the D1 export step', async () => {

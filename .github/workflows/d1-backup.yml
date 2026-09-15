@@ -16,7 +16,10 @@ jobs:
   backup:
     name: Export production D1 databases
     runs-on: ubuntu-latest
-    environment: production
+    # 定时备份必须无人值守。审批等待没有超时限制，一次卡在门禁上的计划任务会永久
+    # 占住并发组 production-d1-backup，其后每晚的新 run 都会被取消：2026-08-11 至
+    # 2026-09-14 的实际历史就是如此。手动 Run workflow 仍走 production 审批门禁。
+    environment: "${{ github.event_name == 'workflow_dispatch' && 'production' || 'production-backup' }}"
     timeout-minutes: 30
 
     steps:
