@@ -1,0 +1,43 @@
+name: D1 Backup Freshness Watchdog
+
+# 为什么存在：2026-08-11 至 2026-09-14 期间，每晚的计划备份都因为审批门禁卡死
+# 而被取消，五周内没有任何人发现。备份静默停掉比备份报错更危险。
+#
+# 这个检查必须独立于 d1-backup.yml，并且自身绝不能挂到审批门禁上：它唯一的职责
+# 就是在备份不再产生成功记录时大声叫出来。
+
+on:
+  schedule:
+    # 备份在 18:17 UTC 运行；这里晚约 3.5 小时检查，窗口 12 小时。
+    - cron: '43 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: d1-backup-freshness-watchdog
+  cancel-in-progress: true
+
+jobs:
+  watchdog:
+    name: Verify a recent production D1 backup exists
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+
+      - name: Check backup freshness
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAX_AGE_HOURS: '12'
+        run: node worker/scripts/backup-freshness-watchdog.mjs
