@@ -47,7 +47,12 @@ worker/.eval-runs/
 /memory/
 .claude/memory/
 .claude/cache/
-.Codex/memory/
+
+# Codex/Claude 工作产物：加密的生产 D1 备份、回归演练的生产 schema 与本地 D1、
+# 发布验证截图、跨会话笔记。含客户数据与生产结构，绝不入库。
+# 整体忽略而非逐个列举：新出现的子目录同样不该进版本库。
+# 注意 .git/info/exclude 只在单机生效且不随仓库分发，不能替代这条规则。
+.Codex/
 
 # Machine-local editor state
 .obsidian/workspace.json
