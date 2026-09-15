@@ -27,7 +27,9 @@ test('production D1 backup workflow has scheduled production safeguards', async 
   assert.deepEqual(workflow.permissions, { contents: 'read' });
   assert.deepEqual(workflow.concurrency, {
     group: 'production-d1-backup',
-    'cancel-in-progress': false,
+    // 必须让新 run 取代卡住的旧 run：手动派发的 waiting run 会一直占住并发组，
+    // 保留 false 时当晚的计划备份会被取消。
+    'cancel-in-progress': true,
   });
   assert.equal(job['runs-on'], 'ubuntu-latest');
   assert.equal(job['timeout-minutes'], 30);
