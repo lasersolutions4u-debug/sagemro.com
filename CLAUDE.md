@@ -9,45 +9,62 @@
 
 ## 二、三件套部署目标
 
-| 组件       | 域名              | 平台               | 目录              | CF 项目名       |
-| ---------- | ----------------- | ------------------ | ----------------- | --------------- |
-| 国际版前端 | sagemro.com       | Cloudflare Pages   | `frontend/`       | `sagemro-com`   |
-| 中国版前端 | （待定）          | Cloudflare Pages   | `frontend/`       | `sagemro-cn`    |
-| 管理后台   | admin.sagemro.com | Cloudflare Pages   | `admin/`          | `sagemro-admin` |
-| API        | api.sagemro.com   | Cloudflare Workers | `worker/`（单数） | env=production  |
+| 组件                          | 域名                                                    | 实际平台                            | 目录                     | 部署目标                                                    |
+| ----------------------------- | ------------------------------------------------------- | ----------------------------------- | ------------------------ | ----------------------------------------------------------- |
+| 国际版前端                    | sagemro.com                                             | Cloudflare Pages                    | `frontend/`（dist）      | `sagemro-com`                                               |
+| 国际版 AI 门户                | ai.sagemro.com                                          | Cloudflare Pages                    | `frontend/`（dist-portal） | `sagemro-ai`                                              |
+| 国际版管理后台                | admin.sagemro.com                                       | Cloudflare Pages                    | `admin/`                 | `sagemro-admin`                                             |
+| 国际版 API                    | api.sagemro.com                                         | Cloudflare Workers                  | `worker/`（单数）        | env=production                                              |
+| **中国版全部**（公开站 / AI 门户 / 后台 / 工程师端） | sagemro.cn · `ai.` · `admin.` · `engineer.sagemro.cn` | **阿里云 ECS + nginx**              | `frontend/`、`admin/`    | `/var/www/sagemro-cn/current/{frontend,ai,admin,engineer}`   |
+| 中国版 API                    | api.sagemro.cn                                          | 同上（经阿里云 nginx 前置到共用 Worker） | —                    | —                                                           |
 
-> 国际版与中国版**共用同一个 API**（`api.sagemro.com`）。中国版前端走独立分支 `china-edition`。
+> **平台口径以实测为准（2026-09-15 复核）**：`sagemro.cn`、`www.sagemro.cn`、`ai.sagemro.cn`、`admin.sagemro.cn`、`engineer.sagemro.cn`、`api.sagemro.cn` 的响应头全部是 `nginx/1.18.0 (Ubuntu)`；COM 侧全部是 `cloudflare`。**CN 目前不在 Cloudflare 上服务。**
+> 国际版与中国版**共用同一个 Worker**，分别绑定 COM / CN 两套 D1。中国版源码走独立分支 `china-edition`。
 
 ## 三、部署流程
 
+### 国际版（COM）：push `main` 自动部署
+
 Claude Code（本地）
- ↓ git push origin main / china-edition
+ ↓ git push origin main
  GitHub Actions: .github/workflows/deploy.yml
  ↓
  [test job]（PR 也跑，但只跑测试，不进入下面任何部署）
- ↓ needs: test + environment: production 门禁
- ↓ 按分支分发
- ├─ push main：
- │   ├─ deploy-frontend → wrangler pages deploy frontend/dist --project-name=sagemro-com
- │   ├─ deploy-admin    → wrangler pages deploy admin/dist    --project-name=sagemro-admin
- │   └─ deploy-worker   → wrangler deploy --env production (cwd: worker/)
- └─ push china-edition：
-     └─ deploy-frontend → wrangler pages deploy frontend/dist --project-name=sagemro-cn
-        （Worker / Admin 不部署）
+ ↓ needs: test + environment: production 审批门禁
+ ├─ deploy-worker      → wrangler deploy --env production (cwd: worker/)
+ ├─ deploy-ai-frontend → wrangler pages deploy frontend/dist-portal --project-name=sagemro-ai
+ ├─ deploy-frontend    → wrangler pages deploy frontend/dist        --project-name=sagemro-com
+ └─ deploy-admin       → wrangler pages deploy admin/dist           --project-name=sagemro-admin
+
+### 中国版（CN）：独立链路，**只能手动触发**
+
+ push `china-edition` 只跑测试；`deploy.yml` 上仍会执行
+ deploy-frontend → CF Pages `sagemro-cn` 与 deploy-admin → CF Pages `sagemro-admin-cn`
+ ⚠️ 这两条 CF Pages 发布**不是** CN 线上服务的来源
+
+ CN 真正的生产发布：
+   Actions 页面手动 dispatch `Deploy China Edition to Aliyun ECS`
+   （`.github/workflows/aliyun-cn-deploy.yml`）
+   → workflow 硬校验 `GITHUB_REF_NAME == china-edition`，不满足直接失败
+   → 构建 frontend(public) + frontend(portal) + admin
+   → scp 到阿里云 ECS，解包到 /var/www/sagemro-cn/releases/<sha12>-<run>
+   → 切换 current/{frontend,ai,admin,engineer} 符号链接 → nginx -t → reload nginx
+   → 健康检查 sagemro.cn / ai / admin / engineer / api.sagemro.cn/health
 
 **关键事实**：
-- 三个目标全部由 GitHub Actions 调 wrangler 部署，**不使用** Cloudflare 原生 Git 集成
-- 单一 workflow 文件 `deploy.yml` 管控全部
-- 测试 → 门禁 → 并行部署的强制顺序
+- **CN 生产发布必须手动 dispatch，且只能从 `china-edition` 触发**；不发布就不会更新
+- `deploy.yml` 在 `china-edition` 上确实会发布前端与 Admin 到 CF Pages（`sagemro-cn` / `sagemro-admin-cn`），但 CN 线上由阿里云 nginx 提供，两者不是一回事
+- Worker 与 AI 门户**只在 `main` 上部署**
+- COM 侧由 GitHub Actions 调 wrangler 部署，**不使用** Cloudflare 原生 Git 集成
 - **PR 永远不部署**，只跑 test job（jobs 层 `if: github.event_name == 'push'` 兜底）
-- **china-edition 分支只部署前端**到 `sagemro-cn`，不触发 Worker / Admin 部署
 - D1 schema 迁移和 Worker secrets 设置**不在 workflow 中**，需手动执行（详见 DEPLOY.md）
 
 ## 四、目录约定
 - `/frontend/` — 主站源码，构建产物 `frontend/dist/`
 - `/admin/` — 管理后台源码，构建产物 `admin/dist/`
 - `/worker/` — Workers 后端（含 `wrangler.toml`，**单数**）
-- `/.github/workflows/deploy.yml` — 唯一 CI/CD 入口
+- `/.github/workflows/deploy.yml` — COM（Cloudflare）CI/CD 入口
+- `/.github/workflows/aliyun-cn-deploy.yml` — CN 生产发布入口（**仅手动 dispatch，仅允许 `china-edition`**）
 - `/.claude/memory/` — Claude 跨会话笔记（坚果云同步，**不进 git**）
 - `/CLAUDE.md`、`/TECH-SPEC.md`、`/DEPLOY.md` — 项目文档（进 git）
 
