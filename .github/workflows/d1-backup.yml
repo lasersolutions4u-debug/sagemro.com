@@ -10,7 +10,11 @@ permissions:
 
 concurrency:
   group: production-d1-backup
-  cancel-in-progress: false
+  # 新的 run 必须能取代卡住的旧 run。手动 Run workflow 仍会停在审批门禁上，
+  # 而审批等待没有超时：若保留 false，那个 waiting run 会一直占住并发组，
+  # 当晚的计划备份就会被取消——正是 2026-08-11 至 2026-09-14 的失效方式。
+  # 代价：若手动派发恰好与一次正在执行的导出重叠，会中断那一次（约 20 秒的窗口）。
+  cancel-in-progress: true
 
 jobs:
   backup:
