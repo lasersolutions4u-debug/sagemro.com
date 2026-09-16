@@ -62,3 +62,63 @@ test('build runner sets the target in Node and dispatches exactly one post-build
   assert.match(runner, /target === ['"]portal['"]/);
   assert.doesNotMatch(runner, /cross-env|set SAGEMRO_BUILD_TARGET|SAGEMRO_BUILD_TARGET=/);
 });
+
+test('the market resolver defaults to com and rejects anything else', async () => {
+  const { DEFAULT_MARKET, MARKETS, resolveMarket } = await import('../scripts/markets.mjs');
+
+  assert.equal(DEFAULT_MARKET, 'com');
+  assert.deepEqual(Object.keys(MARKETS), ['com', 'cn']);
+  assert.equal(MARKETS.com.locale, 'en');
+  assert.equal(MARKETS.cn.locale, 'zh-CN');
+
+  assert.equal(resolveMarket(undefined), 'com');
+  assert.equal(resolveMarket(''), 'com');
+  assert.equal(resolveMarket('cn'), 'cn');
+  assert.throws(() => resolveMarket('uk'), /Unsupported SAGEMRO_BUILD_MARKET/);
+});
+
+test('the selected market decides crawl policy, host and document language', async (t) => {
+  const { buildPublicPages } = await import('../scripts/buildPublicPages.mjs');
+  // Deliberately the international template: the market, not the checkout, must
+  // decide. This is what used to require a separate branch.
+  const template = '<!doctype html><html lang="en"><head><meta name="robots" content="index, follow">'
+    + '<meta name="description" content="placeholder" /><title>placeholder</title></head><body></body></html>';
+
+  const build = async (locale) => {
+    const distDir = await mkdtemp(join(tmpdir(), 'sagemro-market-'));
+    t.after(() => rm(distDir, { force: true, recursive: true }));
+    await writeFile(join(distDir, 'index.html'), template);
+    await buildPublicPages({ distDir, locale });
+    return {
+      index: await readFile(join(distDir, 'index.html'), 'utf8'),
+      robots: await readFile(join(distDir, 'robots.txt'), 'utf8'),
+      llms: await readFile(join(distDir, 'llms.txt'), 'utf8'),
+    };
+  };
+
+  const cn = await build('zh-CN');
+  assert.match(cn.index, /<html lang="zh-CN">/);
+  assert.match(cn.robots, /User-agent: Baiduspider\nAllow: \//);
+  assert.match(cn.robots, /Sitemap: https:\/\/sagemro\.cn\/sitemap\.xml/);
+  assert.match(cn.llms, /- https:\/\/sagemro\.cn\//);
+  assert.doesNotMatch(cn.llms, /- https:\/\/sagemro\.com\//);
+
+  const com = await build('en');
+  assert.match(com.index, /<html lang="en">/);
+  assert.match(com.robots, /User-agent: Baiduspider\nDisallow: \//);
+  assert.match(com.robots, /Sitemap: https:\/\/sagemro\.com\/sitemap\.xml/);
+  assert.match(com.llms, /- https:\/\/sagemro\.com\//);
+});
+
+test('the build runner forwards the market to both post-build helpers', async () => {
+  const runner = await readProjectFile('scripts/runBuild.mjs');
+  const pkg = JSON.parse(await readProjectFile('package.json'));
+
+  assert.match(runner, /SAGEMRO_BUILD_MARKET:\s*selected/);
+  assert.match(runner, /buildPortalPages\(\{\s*distDir,\s*locale,\s*lang\s*\}\)/);
+  assert.match(runner, /buildPublicPages\(\{\s*distDir,\s*locale\s*\}\)/);
+  assert.match(runner, /resolveMarket\(market\)/);
+
+  assert.equal(pkg.scripts['build:public:cn'], 'node scripts/runBuild.mjs public cn');
+  assert.equal(pkg.scripts['build:portal:cn'], 'node scripts/runBuild.mjs portal cn');
+});
