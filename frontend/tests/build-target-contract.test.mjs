@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -110,11 +110,36 @@ test('the selected market decides crawl policy, host and document language', asy
   assert.match(com.llms, /- https:\/\/sagemro\.com\//);
 });
 
+test('market assets overlay only their own market', async (t) => {
+  const { copyMarketAssets } = await import('../scripts/markets.mjs');
+  const frontendDir = await mkdtemp(join(tmpdir(), 'sagemro-market-assets-'));
+  const distDir = await mkdtemp(join(tmpdir(), 'sagemro-market-dist-'));
+  t.after(() => rm(frontendDir, { force: true, recursive: true }));
+  t.after(() => rm(distDir, { force: true, recursive: true }));
+
+  await Promise.all([
+    mkdir(join(frontendDir, 'public-cn'), { recursive: true }),
+    writeFile(join(distDir, 'shared.txt'), 'shared'),
+  ]);
+  await writeFile(join(frontendDir, 'public-cn', 'cn-only.txt'), 'cn');
+
+  // The international artifact must not receive a China-only file, even though
+  // both markets build from the same checkout.
+  assert.equal(await copyMarketAssets({ frontendDir, distDir, market: 'com' }), false);
+  await assert.rejects(readFile(join(distDir, 'cn-only.txt')), /ENOENT/);
+  assert.equal(await readFile(join(distDir, 'shared.txt'), 'utf8'), 'shared');
+
+  assert.equal(await copyMarketAssets({ frontendDir, distDir, market: 'cn' }), true);
+  assert.equal(await readFile(join(distDir, 'cn-only.txt'), 'utf8'), 'cn');
+  assert.equal(await readFile(join(distDir, 'shared.txt'), 'utf8'), 'shared');
+});
+
 test('the build runner forwards the market to both post-build helpers', async () => {
   const runner = await readProjectFile('scripts/runBuild.mjs');
   const pkg = JSON.parse(await readProjectFile('package.json'));
 
   assert.match(runner, /SAGEMRO_BUILD_MARKET:\s*selected/);
+  assert.match(runner, /copyMarketAssets\(\{\s*frontendDir,\s*distDir,\s*market:\s*selected\s*\}\)/);
   assert.match(runner, /buildPortalPages\(\{\s*distDir,\s*locale,\s*lang\s*\}\)/);
   assert.match(runner, /buildPublicPages\(\{\s*distDir,\s*locale\s*\}\)/);
   assert.match(runner, /resolveMarket\(market\)/);

@@ -51,6 +51,28 @@ Codex（本地）
    → 切换 current/{frontend,ai,admin,engineer} 符号链接 → nginx -t → reload nginx
    → 健康检查 sagemro.cn / ai / admin / engineer / api.sagemro.cn/health
 
+### CN 构建方式（2026-09-15 起，与分支解耦）
+
+CN 产物不再依赖 `china-edition` 的模板，改由**同一套 main 代码**用市场开关构建：
+
+```
+SAGEMRO_BUILD_MARKET=cn   →   npm run build:public:cn / npm run build:portal:cn
+```
+
+market 决定 locale，locale 决定**预渲染语言 / sitemap 与 llms.txt 域名 / Baiduspider 策略**。
+market **默认 `com`**，所有现有调用方式行为不变。国内版专属静态资产放在 `frontend/public-cn/`，
+**只在 market=cn 时叠加**——因此 CN 的文件不可能改变国际版产物的任何一个字节。
+
+⚠️ **把阿里云发布入口切到 main 时，三件必须一起改**。只改 ref 校验会把 COM 产物发到 CN：
+
+1. `aliyun-cn-deploy.yml` 的 ref 校验（当前强制 `china-edition`）
+2. 构建步骤加 `SAGEMRO_BUILD_MARKET: cn`，或改用 `build:public:cn` / `build:portal:cn`
+   —— 否则默认 `com` → 英文预渲染 + `Baiduspider: Disallow: /` → **CN 百度收录归零**
+3. `frontend/tests/aliyun-deploy-workflow-contract.test.mjs` 中对应的断言
+
+**`china-edition` 现状：冻结。** 不再同步、不再作为 CN 的唯一发布来源，但保留远端做历史。
+CN 的最终形态（继续冻结 / 正式并入 main / 关停）**尚未决定**——在决定前，不要把它当成待同步的分支。
+
 **关键事实**：
 - **CN 生产发布必须手动 dispatch，且只能从 `china-edition` 触发**；不发布就不会更新
 - `deploy.yml` 在 `china-edition` 上确实会发布前端与 Admin 到 CF Pages（`sagemro-cn` / `sagemro-admin-cn`），但 CN 线上由阿里云 nginx 提供，两者不是一回事
@@ -61,6 +83,7 @@ Codex（本地）
 
 ## 四、目录约定
 - `/frontend/` — 主站源码，构建产物 `frontend/dist/`
+- `/frontend/public-cn/` — 中国版专属静态资产（仅 `market=cn` 时叠加，不进国际版产物）
 - `/admin/` — 管理后台源码，构建产物 `admin/dist/`
 - `/worker/` — Workers 后端（含 `wrangler.toml`，**单数**）
 - `/.github/workflows/deploy.yml` — COM（Cloudflare）CI/CD 入口
