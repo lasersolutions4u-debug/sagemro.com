@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 
 import { buildPortalPages } from './buildPortalPages.mjs';
 import { buildPublicPages } from './buildPublicPages.mjs';
-import { MARKETS, resolveMarket } from './markets.mjs';
+import { MARKETS, copyMarketAssets, resolveMarket } from './markets.mjs';
 
 const execFile = promisify(execFileCallback);
 const frontendDir = fileURLToPath(new URL('..', import.meta.url));
@@ -28,6 +28,8 @@ export async function runBuild(target, market = resolveMarket(process.env.SAGEMR
   });
 
   const distDir = join(frontendDir, target === 'portal' ? 'dist-portal' : 'dist');
+  await copyMarketAssets({ frontendDir, distDir, market: selected });
+
   if (target === 'portal') {
     await buildPortalPages({ distDir, locale, lang });
   } else {
