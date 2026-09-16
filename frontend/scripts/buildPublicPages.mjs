@@ -72,9 +72,13 @@ async function writeRoute(distDir, route, template, locale) {
   await writeFile(target, renderPublicDocument(template, route, locale));
 }
 
-export async function buildPublicPages({ distDir }) {
+export async function buildPublicPages({ distDir, locale: requestedLocale }) {
   const template = await readFile(join(distDir, 'index.html'), 'utf8');
-  const locale = localeFromTemplate(template);
+  // An explicit locale is what SAGEMRO_BUILD_MARKET supplies. The template fallback
+  // keeps a bare `node scripts/buildPublicPages.mjs` working against whatever
+  // checkout it happens to run in, which is how this behaved before the market
+  // dimension existed.
+  const locale = requestedLocale ?? localeFromTemplate(template);
   const routes = getPublicSeoRoutes(locale);
   const noindexToolRoutes = getDirectAccessNoindexToolRoutes(locale);
   validateRoutes([...routes, ...noindexToolRoutes]);

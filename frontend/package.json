@@ -8,6 +8,8 @@
     "build": "npm run build:public",
     "build:public": "node scripts/runBuild.mjs public",
     "build:portal": "node scripts/runBuild.mjs portal",
+    "build:public:cn": "node scripts/runBuild.mjs public cn",
+    "build:portal:cn": "node scripts/runBuild.mjs portal cn",
     "pretest": "npm run build",
     "test": "node --test tests/*.test.mjs",
     "lint": "eslint .",

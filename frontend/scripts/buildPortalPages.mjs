@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 const ROBOTS_META = '<meta name="robots" content="noindex,nofollow,noarchive">';
 
-function renderPortalIndex(template) {
+function renderPortalIndex(template, lang) {
   let html = template.replace(
     /<meta\b(?=[^>]*\bname\s*=\s*["']robots["'])[^>]*>/i,
     ROBOTS_META,
@@ -12,6 +12,12 @@ function renderPortalIndex(template) {
 
   if (!html.includes(ROBOTS_META)) {
     html = html.replace(/<\/head>/i, `  ${ROBOTS_META}\n  </head>`);
+  }
+
+  // The portal is noindex, so its head is not a crawl surface — but the document
+  // language still has to match the market it is built for.
+  if (lang) {
+    html = html.replace(/<html\s+lang=(['"]).*?\1>/i, `<html lang="${lang}">`);
   }
 
   return html.replace(/<link\b[^>]*>/gi, (tag) => {
@@ -30,12 +36,12 @@ function renderRedirects() {
   ].join('\n');
 }
 
-export async function buildPortalPages({ distDir }) {
+export async function buildPortalPages({ distDir, lang }) {
   const indexPath = join(distDir, 'index.html');
   const template = await readFile(indexPath, 'utf8');
 
   await Promise.all([
-    writeFile(indexPath, renderPortalIndex(template)),
+    writeFile(indexPath, renderPortalIndex(template, lang)),
     writeFile(join(distDir, 'robots.txt'), 'User-agent: *\nDisallow: /\n'),
     writeFile(join(distDir, '_redirects'), renderRedirects()),
     rm(join(distDir, 'sitemap.xml'), { force: true }),
