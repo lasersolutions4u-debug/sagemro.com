@@ -100,3 +100,13 @@ test('Worker gate requires shared service-request migrations in CN without relax
   assert.match(cnRequired, /048_service_request_assist_quota/);
   assert.doesNotMatch(cnRequired, /049_nullable_international_customer_phone/);
 });
+
+test('the Cloudflare path always builds the default com market, so CN locale and assets cannot reach sagemro.com', async () => {
+  const workflow = await readFile(workflowUrl, 'utf8');
+
+  // sagemro.com / ai.sagemro.com must never be produced with the explicit cn market:
+  // that would ship Chinese prerender, a sagemro.cn sitemap, and Baiduspider Disallow: /.
+  assert.doesNotMatch(workflow, /SAGEMRO_BUILD_MARKET/);
+  assert.doesNotMatch(workflow, /build:(public|portal):cn/);
+  assert.doesNotMatch(workflow, /public-cn/);
+});
