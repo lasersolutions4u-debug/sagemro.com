@@ -110,7 +110,13 @@ test('international admin switches language without changing API, permissions or
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await page.getByRole('button', { name: 'Internal Staff', exact: true }).click();
   await page.getByRole('button', { name: '中文', exact: true }).click();
+  // The create form now lives in a drawer opened from the header action.
+  await page.getByRole('button', { name: '创建员工账号', exact: true }).click();
+  const drawer = page.getByRole('dialog', { name: '创建员工账号', exact: true });
+  await drawer.waitFor();
   assert.match(await page.locator('#staff-market').inputValue(), /国际|COM/);
+  await drawer.getByRole('button', { name: '关闭', exact: true }).click();
+  await drawer.waitFor({ state: 'detached' });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => { const box = document.querySelector('aside').getBoundingClientRect(); return box.right <= 1; });
   await page.evaluate(() => window.scrollTo(0, 0));

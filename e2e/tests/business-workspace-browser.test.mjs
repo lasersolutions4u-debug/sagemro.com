@@ -78,8 +78,8 @@ test('business workspace and staff organization browser journeys use only local 
           const user = { id: bootstrap ? 'admin' : 'director-fixture', name: bootstrap ? 'Example Administrator' : 'Example Director', staffId: bootstrap ? null : 'director-fixture', staffRole: bootstrap ? 'admin' : 'business_director', businessGrade: bootstrap ? null : 2, mustChangePassword: false };
           let version = 1;
           const staff = [
-            { id: 'director-fixture', display_name: 'Example Director', normalized_login: 'director@example.invalid', role: 'business_director', grade: 2, is_active: 1, market_scope: market, supervisor_staff_id: null, territory_ids: ['territory-fixture'], effective_territory_ids: ['territory-fixture'], revision: 1 },
-            { id: 'manager-fixture', display_name: 'Example Manager', normalized_login: 'manager@example.invalid', role: 'business_manager', grade: 1, is_active: 1, market_scope: market, supervisor_staff_id: 'director-fixture', territory_ids: [], effective_territory_ids: ['territory-fixture'], revision: 1 },
+            { id: 'director-fixture', display_name: 'Example Director', normalized_login: 'director@example.invalid', role: 'business_director', grade: 2, is_active: 1, market_scope: market, supervisor_staff_id: null, territory_ids: ['territory-fixture'], effective_territory_ids: ['territory-fixture'], business_profile_required: 1, revision: 1 },
+            { id: 'manager-fixture', display_name: 'Example Manager', normalized_login: 'manager@example.invalid', role: 'business_manager', grade: 1, is_active: 1, market_scope: market, supervisor_staff_id: 'director-fixture', territory_ids: [], effective_territory_ids: ['territory-fixture'], business_profile_required: 1, revision: 1 },
           ];
           const territories = [{ id: 'territory-fixture', name: 'Example territory', market }];
           if (bootstrap) {
@@ -108,6 +108,24 @@ test('business workspace and staff organization browser journeys use only local 
                 const body = request.postDataJSON(); writes.push({ path: url.pathname, body });
                 if (body.role.startsWith('business_')) assert.equal(body.expected_staff_id, 'admin');
                 return route.fulfill({ json: { staff: { ...body, id: 'created-fixture', is_active: 1 }, temporary_password: 'Local-test-only-123!' } });
+              }
+              if (/\/api\/admin\/staff\/[^/]+\/deactivate$/.test(url.pathname)) {
+                const id = url.pathname.split('/')[4];
+                writes.push({ path: url.pathname, body: null });
+                const row = staff.find(item => item.id === id);
+                if (row) row.is_active = 0;
+                return route.fulfill({ json: { staff: { ...row, is_active: 0 } } });
+              }
+              if (/\/api\/admin\/staff\/[^/]+\/reactivate$/.test(url.pathname)) {
+                const id = url.pathname.split('/')[4];
+                writes.push({ path: url.pathname, body: null });
+                const row = staff.find(item => item.id === id);
+                if (row) row.is_active = 1;
+                return route.fulfill({ json: { staff: { ...row, is_active: 1 } } });
+              }
+              if (/\/api\/admin\/staff\/[^/]+\/reset-password$/.test(url.pathname)) {
+                writes.push({ path: url.pathname, body: null });
+                return route.fulfill({ json: { success: true, temporary_password: 'Local-reset-only-123!' } });
               }
               if (url.pathname.startsWith('/api/admin/business/')) {
                 if (request.method() === 'GET') assert.equal(url.searchParams.get('expected_staff_id'), user.staffId || 'admin');
@@ -176,9 +194,12 @@ test('business workspace and staff organization browser journeys use only local 
           } else {
             if (market === 'cn') await page.getByTitle('菜单', { exact: true }).click();
             await page.getByRole('button', { name: market === 'cn' ? '内部员工账号' : 'Internal Staff', exact: true }).click();
+            // Step 1 happens first on the page, then account creation opens as a drawer from the header action.
             await page.getByLabel(market === 'cn' ? '新增辖区名称' : 'New territory name', { exact: true }).fill('Second example territory');
             await page.getByRole('button', { name: market === 'cn' ? '创建辖区' : 'Create territory', exact: true }).click();
             await page.getByLabel(market === 'cn' ? '新增辖区名称' : 'New territory name', { exact: true }).waitFor();
+            await page.getByRole('button', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).click();
+            await page.getByRole('dialog', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).waitFor();
             await page.locator('#staff-display-name').fill('Example new manager');
             await page.locator('#staff-login').fill('new-manager@example.invalid');
             await page.locator('#staff-role').selectOption('business_manager');
@@ -186,15 +207,42 @@ test('business workspace and staff organization browser journeys use only local 
             assert.equal(await page.locator('#staff-market').getAttribute('readonly'), '');
             assert.equal(await page.locator('#staff-market').inputValue(), market === 'cn' ? '中国版' : 'International');
             assert.equal(await page.getByLabel(market === 'cn' ? '直属上级' : 'Direct supervisor', { exact: true }).locator('option[value="other-market-business_director"]').count(), 0);
+            // Cross-role and cross-market parents are never offered: a specialist may only report to a manager of this market.
+            await page.locator('#staff-role').selectOption('business_specialist');
+            assert.equal(await page.getByLabel(market === 'cn' ? '直属上级' : 'Direct supervisor', { exact: true }).locator('option[value="other-market-business_manager"]').count(), 0);
+            assert.equal(await page.getByLabel(market === 'cn' ? '直属上级' : 'Direct supervisor', { exact: true }).locator('option[value="manager-fixture"]').count(), 1);
+            await page.locator('#staff-role').selectOption('business_director');
+            assert.equal(await page.getByRole('checkbox', { name: /Other market territory/ }).count(), 0);
+            await page.locator('#staff-role').selectOption('business_manager');
             await page.getByLabel(market === 'cn' ? '直属上级' : 'Direct supervisor', { exact: true }).selectOption('director-fixture');
             await page.getByLabel(market === 'cn' ? '档位' : 'Grade', { exact: true }).selectOption('3');
-            await page.getByRole('button', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).click();
+
+            // A rejected create keeps the drawer open with the typed values so the form can be corrected.
+            let failCreate = true;
+            const failingRoute = async route => {
+              if (!failCreate) return route.fallback();
+              failCreate = false;
+              return route.fulfill({ status: 400, json: { error: 'Local fixture rejection' } });
+            };
+            await context.route('**/api/admin/staff', failingRoute);
+            await page.getByRole('button', { name: market === 'cn' ? '创建并生成临时密码' : 'Create account and issue temporary password', exact: true }).click();
+            await page.locator('#staff-login').waitFor();
+            assert.equal(await page.locator('#staff-login').inputValue(), 'new-manager@example.invalid', 'a rejected create keeps the drawer and the typed values');
+            await page.getByTestId('staff-error').waitFor();
+            assert.equal(await page.getByTestId('staff-error').innerText(), `${market === 'cn' ? '操作失败：' : 'Operation failed: '}Local fixture rejection`);
+            await page.unroute('**/api/admin/staff', failingRoute);
+            await page.getByRole('button', { name: market === 'cn' ? '创建并生成临时密码' : 'Create account and issue temporary password', exact: true }).click();
             await page.getByRole('dialog').waitFor();
             const body = writes.find(write => write.path === '/api/admin/staff').body;
             assert.equal(body.market_scope, market);
             assert.equal(body.role, 'business_manager'); assert.equal(body.grade, 3); assert.equal(body.supervisor_staff_id, 'director-fixture'); assert.deepEqual(body.territory_ids, []);
             await page.getByRole('dialog').getByRole('button', { name: market === 'cn' ? '关闭' : 'Close', exact: true }).click();
+            // Closing the temporary password notice must leave no dialog behind: a successful create closes the drawer.
+            await page.getByRole('dialog').waitFor({ state: 'detached' });
+            assert.equal(await page.getByRole('dialog', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).count(), 0);
             for (const role of ['operations', 'warehouse', 'procurement', 'admin', 'business_director', 'business_specialist']) {
+              await page.getByRole('button', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).click();
+              await page.getByRole('dialog', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).waitFor();
               await page.locator('#staff-display-name').fill(`Example ${role}`);
               await page.locator('#staff-login').fill(`${role}@example.invalid`);
               await page.locator('#staff-role').selectOption(role);
@@ -207,7 +255,7 @@ test('business workspace and staff organization browser journeys use only local 
                 assert.equal(await page.getByLabel(market === 'cn' ? '直属上级' : 'Direct supervisor', { exact: true }).locator('option[value="other-market-business_manager"]').count(), 0);
                 await page.getByLabel(market === 'cn' ? '直属上级' : 'Direct supervisor', { exact: true }).selectOption('manager-fixture');
               }
-              await page.getByRole('button', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).click();
+              await page.getByRole('button', { name: market === 'cn' ? '创建并生成临时密码' : 'Create account and issue temporary password', exact: true }).click();
               await page.getByRole('dialog').waitFor();
               const created = writes.filter(write => write.path === '/api/admin/staff').at(-1).body;
               assert.equal(created.role, role);
@@ -217,7 +265,65 @@ test('business workspace and staff organization browser journeys use only local 
               await page.getByRole('dialog').getByRole('button', { name: market === 'cn' ? '关闭' : 'Close', exact: true }).click();
             }
             assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-            if (process.env.SAGEMRO_BUSINESS_SCREENSHOTS) await page.screenshot({ path: `${process.env.SAGEMRO_BUSINESS_SCREENSHOTS}/${market}-organization.png`, fullPage: true });
+            if (process.env.SAGEMRO_BUSINESS_SCREENSHOTS) {
+              // Capture the account drawer before the final close so layout regressions are reviewable.
+              await page.getByRole('button', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).click();
+              await page.getByRole('dialog', { name: market === 'cn' ? '创建员工账号' : 'Create staff account', exact: true }).waitFor();
+              await page.screenshot({ path: `${process.env.SAGEMRO_BUSINESS_SCREENSHOTS}/${market}-staff-drawer.png` });
+              await page.getByRole('button', { name: market === 'cn' ? '关闭' : 'Close', exact: true }).click();
+              await page.screenshot({ path: `${process.env.SAGEMRO_BUSINESS_SCREENSHOTS}/${market}-organization.png`, fullPage: true });
+            }
+
+            // Rows are located by login: display names also appear as supervisor names in the organization column.
+            const deactivateRow = (login) => page.getByRole('row').filter({ hasText: login });
+            await deactivateRow('director@example.invalid').getByRole('button', { name: market === 'cn' ? '停用账号' : 'Deactivate', exact: true }).click();
+            const deactivateDialog = page.getByRole('dialog', { name: market === 'cn' ? '确认操作' : 'Confirm the action', exact: true });
+            await deactivateDialog.waitFor();
+            assert.match(await deactivateDialog.innerText(), market === 'cn' ? /使其 1 名直属下级/ : /1 direct report/);
+            assert.match(await deactivateDialog.innerText(), market === 'cn' ? /其 1 个已授权辖区/ : /1 authorized territory/);
+            await deactivateDialog.getByRole('button', { name: market === 'cn' ? '确认' : 'Confirm', exact: true }).click();
+            await deactivateDialog.waitFor({ state: 'detached' });
+            assert.equal(await deactivateRow('director@example.invalid').getByText(market === 'cn' ? '已停用' : 'Inactive', { exact: true }).count(), 1);
+            // Deactivation is reversible, so the row swaps to a restore action.
+            assert.equal(await deactivateRow('director@example.invalid').getByRole('button', { name: market === 'cn' ? '停用账号' : 'Deactivate', exact: true }).count(), 0);
+
+            // A rejected restore keeps the dialog open with the error so it can be retried.
+            let failRestore = true;
+            const failingRestore = async route => {
+              if (!failRestore) return route.fallback();
+              failRestore = false;
+              return route.fulfill({ status: 400, json: { error: 'Restore rejected' } });
+            };
+            await context.route('**/api/admin/staff/*/reactivate', failingRestore);
+            await deactivateRow('director@example.invalid').getByRole('button', { name: market === 'cn' ? '恢复账号' : 'Restore', exact: true }).click();
+            const restoreDialog = page.getByRole('dialog', { name: market === 'cn' ? '确认操作' : 'Confirm the action', exact: true });
+            await restoreDialog.waitFor();
+            await restoreDialog.getByRole('button', { name: market === 'cn' ? '确认' : 'Confirm', exact: true }).click();
+            await page.getByTestId('staff-confirm-error').waitFor();
+            assert.equal(await restoreDialog.count(), 1, 'a failed restore leaves the dialog open');
+            await page.unroute('**/api/admin/staff/*/reactivate', failingRestore);
+            await restoreDialog.getByRole('button', { name: market === 'cn' ? '确认' : 'Confirm', exact: true }).click();
+            await restoreDialog.waitFor({ state: 'detached' });
+            assert.ok(writes.some(write => write.path.endsWith('/reactivate')), 'restoring calls the reactivate endpoint');
+            assert.equal(await deactivateRow('director@example.invalid').getByText(market === 'cn' ? '启用' : 'Active', { exact: true }).count(), 1);
+            assert.equal(await deactivateRow('director@example.invalid').getByRole('button', { name: market === 'cn' ? '停用账号' : 'Deactivate', exact: true }).count(), 1);
+
+            // Resetting a temporary password goes through the same confirmation dialog.
+            await deactivateRow('manager@example.invalid').getByRole('button', { name: market === 'cn' ? '重置临时密码' : 'Reset temporary password', exact: true }).click();
+            const resetDialog = page.getByRole('dialog', { name: market === 'cn' ? '确认操作' : 'Confirm the action', exact: true });
+            await resetDialog.waitFor();
+            await resetDialog.getByRole('button', { name: market === 'cn' ? '确认' : 'Confirm', exact: true }).click();
+            const passwordDialog = page.getByRole('dialog').filter({ hasText: 'Local-reset-only-123!' });
+            await passwordDialog.waitFor();
+            await passwordDialog.getByRole('button', { name: market === 'cn' ? '关闭' : 'Close', exact: true }).click();
+            await passwordDialog.waitFor({ state: 'detached' });
+            assert.equal(await page.getByRole('dialog', { name: market === 'cn' ? '确认操作' : 'Confirm the action', exact: true }).count(), 0);
+
+            // The organization column renders the resolved relation, not the fallback dash.
+            const orgCell = (login) => page.getByRole('row').filter({ hasText: login }).getByTestId('staff-org');
+            assert.match(await orgCell('manager@example.invalid').innerText(), /Example Director/);
+            assert.match(await orgCell('manager@example.invalid').innerText(), /Example territory/);
+            assert.match(await orgCell('director@example.invalid').innerText(), /Example territory/);
           }
           assert.deepEqual(errors, []);
         } finally { await context.close(); }

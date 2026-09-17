@@ -277,6 +277,10 @@ export async function deactivateAdminStaffAccount(staffId) {
   return request(`/api/admin/staff/${staffId}/deactivate`, { method: 'POST' });
 }
 
+export async function reactivateAdminStaffAccount(staffId) {
+  return request(`/api/admin/staff/${staffId}/reactivate`, { method: 'POST' });
+}
+
 export async function resetAdminStaffPassword(staffId) {
   return request(`/api/admin/staff/${staffId}/reset-password`, { method: 'POST' });
 }

@@ -50,7 +50,7 @@ export function BusinessOrganizationPanel({ organization, onSaved }) {
     setEdit(staff ? { ...staff, grade: staff.grade || 1, territory_ids: staff.territory_ids || [] } : null);
   };
   return <section className="mb-5 space-y-4 border-y border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-    <div><h3 className="font-medium">{cn ? '商务组织与辖区' : 'Business organization and territories'}</h3><p className="mt-1 text-xs text-[var(--color-text-muted)]">{cn ? '总监 → 经理 → 专员，各 3 档。调整上级或辖区会立即改变资料访问范围。' : 'Director → manager → specialist, each with 3 grades. Supervisor and territory changes immediately change record access.'}</p></div>
+    <div><h3 className="font-medium text-[var(--color-text-secondary)]">{cn ? '商务组织与辖区' : 'Business organization and territories'}</h3><p className="mt-1 text-xs text-[var(--color-text-muted)]">{cn ? '总监 → 经理 → 专员，各 3 档。调整上级或辖区会立即改变资料访问范围。' : 'Director → manager → specialist, each with 3 grades. Supervisor and territory changes immediately change record access.'}</p></div>
     {error && <p role="alert" className="text-sm text-amber-300">{error}</p>}
     <form onSubmit={event => submit(event, () => createBusinessTerritory({ expected_staff_id: 'admin', name: territoryName, market: organization.market, scope_version: organization.scope_version }))} className="flex flex-wrap items-end gap-3">
       <label className="min-w-0 flex-1 text-sm">{cn ? '新增辖区名称' : 'New territory name'}<input required maxLength={100} value={territoryName} onChange={event => setTerritoryName(event.target.value)} className={inputClass} /></label>

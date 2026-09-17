@@ -13151,6 +13151,28 @@ async function handleAdminStaffDeactivate(request, env) {
   }
 }
 
+// Deactivation only clears is_active; the business profile and territory grants stay
+// untouched, so restoring the flag brings the account and its access back as it was.
+async function handleAdminStaffReactivate(request, env) {
+  try {
+    if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
+    const staffId = new URL(request.url).pathname.split('/')[4];
+    const staff = await env.DB.prepare('SELECT * FROM admin_staff_accounts WHERE id = ?').bind(staffId).first();
+    if (!staff) return errorResponse('员工账号不存在', 404);
+    const updated = { ...staff, is_active: 1 };
+    const mutation = env.DB.prepare(`
+      UPDATE admin_staff_accounts SET is_active = 1, updated_at = datetime('now') WHERE id = ?
+    `).bind(staffId);
+    await runAuditedWorkflowBatch(env, request, guardedWorkflowMutation(env, mutation), {
+      targetType: 'admin_staff_account', targetId: staffId, action: 'staff_reactivated',
+      beforeState: publicStaffAccount(staff), afterState: publicStaffAccount(updated),
+    });
+    return jsonResponse({ staff: publicStaffAccount(updated) });
+  } catch (error) {
+    return workflowErrorResponse(error);
+  }
+}
+
 async function handleAdminStaffResetPassword(request, env) {
   try {
     if (!isBootstrapAdmin(request._auth)) return errorResponse('仅超级管理员可管理员工账号', 403);
@@ -23216,6 +23238,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path.match(/^\/api\/admin\/staff\/[^/]+\/deactivate$/) && request.method === 'POST') {
         return handleAdminStaffDeactivate(request, env);
+      }
+      if (path.match(/^\/api\/admin\/staff\/[^/]+\/reactivate$/) && request.method === 'POST') {
+        return handleAdminStaffReactivate(request, env);
       }
       if (path.match(/^\/api\/admin\/staff\/[^/]+\/reset-password$/) && request.method === 'POST') {
         return handleAdminStaffResetPassword(request, env);

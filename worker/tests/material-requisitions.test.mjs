@@ -125,6 +125,12 @@ function createStatement(env, sql) {
           updated_at: '2026-07-23 00:00:00',
         });
         changes = 1;
+      } else if (/UPDATE admin_staff_accounts SET is_active = 1/i.test(normalized)) {
+        const staff = env.__staff.find((item) => item.id === this.args[0]);
+        if (staff) {
+          staff.is_active = 1;
+          changes = 1;
+        }
       } else if (/UPDATE admin_staff_accounts SET is_active = 0/i.test(normalized)) {
         const staff = env.__staff.find((item) => item.id === this.args[0]);
         if (staff) {
@@ -669,7 +675,33 @@ test('bootstrap admin creates staff, staff login carries role claims, and only b
   const inactiveSession = await api(env, '/api/auth/session', { auth: temporaryAuth });
   assert.equal(inactiveSession.response.status, 200);
   assert.equal(inactiveSession.json.authenticated, false);
-  assert.equal(env.__auditLogs.length, 4);
+
+  // Deactivation is reversible: restoring the flag brings the account and its access back.
+  const restored = await api(env, `/api/admin/staff/${created.json.staff.id}/reactivate`, { method: 'POST', auth: bootstrap });
+  assert.equal(restored.response.status, 200);
+  assert.equal(restored.json.staff.is_active, 1);
+  assert.equal(restored.json.staff.normalized_login, 'warehouse one');
+  // The password reset happened before deactivation, so the forced-change gate is still the restored state.
+  assert.equal(restored.json.staff.must_change_password, 1);
+  assert.equal((await api(env, '/api/material-requisitions', { auth: temporaryAuth })).response.status, 403, 'the forced password change still gates the session after restoration');
+  const restoredSession = await api(env, '/api/auth/session', { auth: temporaryAuth });
+  assert.equal(restoredSession.json.authenticated, true);
+  const changedAgain = await api(env, '/api/auth/change-password', {
+    method: 'POST',
+    auth: temporaryAuth,
+    body: { oldPassword: reset.json.temporary_password, newPassword: 'restored-password-456' },
+  });
+  assert.equal(changedAgain.response.status, 200);
+  assert.equal((await api(env, '/api/material-requisitions', { auth: temporaryAuth })).response.status, 200, 'restoring the account restores its access');
+
+  const nonBootstrapReactivate = await api(env, `/api/admin/staff/${created.json.staff.id}/reactivate`, { method: 'POST', auth: staffAuth('admin') });
+  assert.equal(nonBootstrapReactivate.response.status, 403);
+  const missing = await api(env, '/api/admin/staff/missing-staff-id/reactivate', { method: 'POST', auth: bootstrap });
+  assert.equal(missing.response.status, 404);
+  assert.equal(env.__auditLogs.length, 6);
+  const restoredAudit = env.__auditLogs.find((entry) => entry.args.includes('staff_reactivated'));
+  assert.ok(restoredAudit, 'restoration is audited');
+  assert.match(JSON.stringify(restoredAudit.args), /\\"is_active\\":0.*\\"is_active\\":1/, 'the audit records the inactive to active transition');
 });
 
 test('requisition number collisions retry without leaving a partial requisition', async () => {
