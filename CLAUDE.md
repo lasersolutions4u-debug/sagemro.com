@@ -65,10 +65,15 @@ market **默认 `com`**，所有现有调用方式行为不变。国内版专属
 
 ⚠️ **但 CN 现在仍由 `china-edition` 分支构建，不是 main。** `aliyun-cn-deploy.yml` 硬校验
 `GITHUB_REF_NAME == china-edition`，构建步骤是 `npm run build:public` / `build:portal`（未加市场开关）。
-这一状态**今天是正确的**，原因是 **`china-edition` 早于市场维度存在**（截至 2026-09-17 落后 main 479 个提交）：
+这一状态**今天是正确的**，原因是 **`china-edition` 早于市场维度存在**：
 该分支没有 `frontend/scripts/markets.mjs`，其 `runBuild` 调用 `buildPublicPages({ distDir })` **不传 locale**，
 于是走模板兜底 `localeFromTemplate()`，读到该分支 `index.html` 的 `lang="zh-CN"` → 中文产物。
 **这份正确性是历史巧合，不是设计保证。**
+
+⚠️ **它与 main 是双向分叉，不是「落后」。** 2026-09-17 核对：共同 merge-base `0edb0cf`，
+CN 独有提交 **479** 个、main 独有提交 **483** 个；CN 分支独有 28 个 `frontend/` 文件
+（含 main 完全没有的 CN 专属特性与 6 个 flywheel 媒体文件），测试文件 66 个 vs main 60 个。
+**因此「把 CN 切到 main」不等于切换开关，而会丢掉 CN 分支独有的内容**——必须先做逐项审计与移植。
 
 🔴 **把阿里云发布入口切到 main 时，三件必须同时改**——只改 ref 校验会静默产出 COM 产物并发到 CN：
 
