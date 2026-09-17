@@ -17,23 +17,23 @@
 - `contact.html` — 自包含的中文联系页（无依赖、移动端优先）。
   - 电话：`186 1558 4520`（`tel:+8618615584520`），已填写。
   - 邮箱：`support@sagemro.com`，已填写。
-  - 微信：**占位框**。刻意做成不可扫描的虚线方框，而不是画一个像二维码的图案——
-    伪造的二维码图案可能被用户误扫，比明显的占位框更糟。上线前请替换为真实二维码图片
-    （建议放同目录 `wechat-qr.png`，然后把占位 `div` 换成 `<img>`）。
+  - 微信：`wechat-qr.png`，从对方提供的**企业微信名片**中**只裁出二维码本身**
+    （不把含个人照片的整张名片提交进仓库）。裁切后 306×306、四角定位完整、白边充足。
+  - 页内引用路径是 `/static/wechat-qr.png`（绝对路径），因此需要下面第 2 步里的 `/static/` 映射。
 
 ## 落地步骤
 
-### 1. 放联系页（ECS 上执行，与发布目录解耦）
+### 1. 放静态文件（ECS 上执行，与发布目录解耦）
 
 ```bash
 sudo mkdir -p /var/www/sagemro-cn/static
-# 把 contact.html 上传到该目录
-sudo cp contact.html /var/www/sagemro-cn/static/contact.html
+# 上传两个文件：contact.html 与 wechat-qr.png
+sudo cp contact.html wechat-qr.png /var/www/sagemro-cn/static/
 ```
 
 > 放在 `static/` 而不是 `current/frontend/`，是为了不被下一次 CN 发布覆盖。
 
-### 2. nginx：给 `sagemro.cn` 增加联系页路由
+### 2. nginx：给 `sagemro.cn` 增加联系页与静态资源映射
 
 在 `sagemro.cn`（含 `www.sagemro.cn`）的 **443 server 块**内加：
 
@@ -42,7 +42,15 @@ location = /contact {
     alias /var/www/sagemro-cn/static/contact.html;
     add_header Cache-Control "public, max-age=300";
 }
+
+# 联系页里的二维码等静态资源（页内引用 /static/wechat-qr.png）
+location /static/ {
+    alias /var/www/sagemro-cn/static/;
+    add_header Cache-Control "public, max-age=300";
+}
 ```
+
+> 以后要换二维码，只需在服务器上替换 `/var/www/sagemro-cn/static/wechat-qr.png`，不必改 HTML。
 
 ### 3. nginx：退役三个子站（各自 443 server 块内）
 

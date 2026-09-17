@@ -30,10 +30,9 @@
   .placeholder { border-style: dashed; border-color: #f59e0b; background: #fffbeb; }
   .placeholder .v { color: #b45309; }
   .qr-slot {
-    width: 132px; height: 132px; margin-top: 6px; border: 2px dashed #f59e0b; border-radius: 10px;
-    display: flex; align-items: center; justify-content: center; text-align: center;
-    font-size: 13px; line-height: 1.4; font-weight: 500; color: #b45309; background: #fffdf7;
+    width: 150px; height: 150px; margin-top: 6px; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff;
   }
+  .qr-hint { margin-top: 6px; font-size: 13px; color: #6b7280; }
   .note { padding: 14px 16px; border-left: 3px solid #f59e0b; background: #fffbeb; color: #7c2d12; font-size: 14px; border-radius: 0 10px 10px 0; }
   footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 14px; color: #6b7280; display: flex; flex-wrap: wrap; gap: 12px; }
   a { color: #b45309; }
@@ -51,9 +50,10 @@
       <div class="k">电话</div>
       <div class="v">186 1558 4520</div>
     </a>
-    <div class="channel placeholder">
+    <div class="channel">
       <div class="k">微信 · 扫码添加</div>
-      <div class="qr-slot">二维码占位<br />上线前替换为真实图片</div>
+      <img class="qr-slot" src="/static/wechat-qr.png" alt="SAGEMRO 企业微信二维码" width="150" height="150" />
+      <div class="qr-hint">扫描二维码，添加企业微信</div>
     </div>
     <a class="channel" href="mailto:support@sagemro.com">
       <div class="k">邮箱</div>
