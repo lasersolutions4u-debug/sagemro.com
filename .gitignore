@@ -43,6 +43,10 @@ Thumbs.db
 # Local AI evaluation output
 worker/.eval-runs/
 
+# 知识库资料加工工作目录（含内部工艺参数表导出、供应商资料、抽取中间产物）
+# 含专有工艺数据，绝不入库。整目录忽略而非逐个列举。
+/artifacts/
+
 # Claude memory backup (synced via 坚果云, not for git)
 /memory/
 .claude/memory/

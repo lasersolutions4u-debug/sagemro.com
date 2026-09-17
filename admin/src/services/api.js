@@ -638,6 +638,14 @@ export async function createAdminKnowledge(article) {
   });
 }
 
+// 批量导入：一行一条知识条目。返回 { total, imported, skipped, failed, results[] }
+export async function importAdminKnowledgeBatch(articles, status) {
+  return request('/api/admin/knowledge/batch', {
+    method: 'POST',
+    body: JSON.stringify({ articles, status }),
+  });
+}
+
 export async function updateAdminKnowledge(articleId, article) {
   return request(`/api/admin/knowledge/${articleId}`, {
     method: 'PATCH',

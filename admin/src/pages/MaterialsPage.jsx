@@ -9,6 +9,7 @@ import {
   updateAdminMaterial,
 } from '../services/api';
 import { useAdminLocale } from '../config/locale';
+import { csvCell, parseCsvRows } from '../utils/csv';
 
 const CATEGORY_KEYS = [
   'laser_cutting',
@@ -283,53 +284,6 @@ const TEXT = {
 function numberOrBlank(value) {
   if (value === null || value === undefined || value === '') return '';
   return Number(value);
-}
-
-function csvCell(value) {
-  const text = String(value ?? '');
-  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-  return text;
-}
-
-function parseCsvRows(text) {
-  const rows = [];
-  let row = [];
-  let cell = '';
-  let quoted = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    const next = text[index + 1];
-    if (quoted) {
-      if (char === '"' && next === '"') {
-        cell += '"';
-        index += 1;
-      } else if (char === '"') {
-        quoted = false;
-      } else {
-        cell += char;
-      }
-    } else if (char === '"') {
-      quoted = true;
-    } else if (char === ',') {
-      row.push(cell);
-      cell = '';
-    } else if (char === '\n') {
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = '';
-    } else if (char !== '\r') {
-      cell += char;
-    }
-  }
-
-  if (cell || row.length) {
-    row.push(cell);
-    rows.push(row);
-  }
-
-  return rows.filter((items) => items.some((item) => item.trim()));
 }
 
 function buildMaterialPreview(text) {

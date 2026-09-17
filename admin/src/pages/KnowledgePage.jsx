@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, FileUp, FileText, HelpCircle, Plus, Search, X } from 'lucide-react';
-import { createAdminKnowledge, getAdminKnowledge, updateAdminKnowledge } from '../services/api';
+import { CheckCircle2, FileUp, FileText, HelpCircle, Plus, Search, Upload, X, XCircle } from 'lucide-react';
+import {
+  createAdminKnowledge,
+  getAdminKnowledge,
+  importAdminKnowledgeBatch,
+  updateAdminKnowledge,
+} from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 import { useAdminLocale } from '../config/locale';
+import { parseCsvRows, stripBom } from '../utils/csv';
 
 const CATEGORIES = [
   'fault',
@@ -30,6 +36,13 @@ const EMPTY_FORM = {
   risk_level: 'medium',
   status: 'draft',
 };
+
+// 批量导入 CSV 的列约定。前三列是必需项，其余可选。
+const BATCH_REQUIRED_COLUMNS = ['category', 'title', 'content'];
+const BATCH_COLUMNS = [
+  'market', 'locale', 'category', 'title', 'content', 'source',
+  'applicable_equipment', 'applicable_brand', 'applicable_model', 'risk_level', 'status',
+];
 
 const TEXT = {
   en: {
@@ -63,6 +76,22 @@ const TEXT = {
     newDraftReady: 'New draft ready. Fill the title and content in the editor.',
     imported: (name) => `Imported ${name} as a draft. Review before saving or publishing.`,
     importFailed: 'Import failed. Please use a UTF-8 text, Markdown, or CSV file.',
+    batchImport: 'Bulk import',
+    batchTitle: 'Bulk import from CSV',
+    batchSubtitle: 'One row per knowledge article, UTF-8 encoded. Nothing is written until you press Start import.',
+    batchPick: 'Choose CSV file',
+    batchNoFile: 'No file selected yet.',
+    batchRows: (count) => `${count} rows detected`,
+    batchMissingColumns: (columns) => `Missing required columns: ${columns}`,
+    batchAsDraft: 'Import as draft (recommended)',
+    batchAsPublished: 'Import and publish',
+    batchPublishWarning: 'Published articles become retrievable by AI immediately. Make sure the content has been checked.',
+    batchStart: 'Start import',
+    batchRunning: 'Importing...',
+    batchDone: (result) => `Imported ${result.imported}, skipped ${result.skipped} duplicate(s), failed ${result.failed}.`,
+    batchRowError: (row, error) => `Row ${row}: ${error}`,
+    batchSkipped: 'Skipped: duplicate title',
+    batchReadFailed: 'Could not read the file. Please use a UTF-8 encoded CSV file.',
     failed: 'Operation failed: ',
     candidateManaged: 'This candidate-derived article is managed by workflow. Please return to the Knowledge Candidates review desk; publishing is not available in the current phase.',
     categoryLabels: {
@@ -139,6 +168,22 @@ const TEXT = {
     newDraftReady: '已进入新建草稿模式，请填写标题和知识内容。',
     imported: (name) => `已将 ${name} 导入为草稿，请审核后再保存或发布。`,
     importFailed: '导入失败。请使用 UTF-8 编码的文本、Markdown 或 CSV 文件。',
+    batchImport: '批量导入',
+    batchTitle: 'CSV 批量导入',
+    batchSubtitle: '一行一条知识条目，UTF-8 编码的 CSV。点击开始导入前不会写入任何数据。',
+    batchPick: '选择 CSV 文件',
+    batchNoFile: '尚未选择文件。',
+    batchRows: (count) => `识别到 ${count} 行数据`,
+    batchMissingColumns: (columns) => `缺少必需列：${columns}`,
+    batchAsDraft: '导入为草稿（推荐）',
+    batchAsPublished: '导入并直接发布',
+    batchPublishWarning: '直接发布后 AI 立即可检索到这些内容，请确认已核对无误。',
+    batchStart: '开始导入',
+    batchRunning: '导入中...',
+    batchDone: (result) => `成功 ${result.imported} 条，跳过重复 ${result.skipped} 条，失败 ${result.failed} 条。`,
+    batchRowError: (row, error) => `第 ${row} 行：${error}`,
+    batchSkipped: '已跳过：标题重复',
+    batchReadFailed: '文件读取失败，请使用 UTF-8 编码的 CSV 文件。',
     failed: '操作失败：',
     candidateManaged: '该候选文章由工作流管理。请返回知识候选工作台处理，当前阶段不能发布。',
     categoryLabels: {
@@ -199,8 +244,16 @@ export function KnowledgePage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [helpOpen, setHelpOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchName, setBatchName] = useState('');
+  const [batchArticles, setBatchArticles] = useState([]);
+  const [batchStatus, setBatchStatus] = useState('draft');
+  const [batchResult, setBatchResult] = useState(null);
+  const [batchError, setBatchError] = useState('');
+  const [batchBusy, setBatchBusy] = useState(false);
   const titleInputRef = useRef(null);
   const fileInputRef = useRef(null);
+  const batchInputRef = useRef(null);
   const pageSize = 50;
 
   const queryFilters = useMemo(() => ({
@@ -251,6 +304,70 @@ export function KnowledgePage() {
     };
     reader.onerror = () => setMessage(t.importFailed);
     reader.readAsText(file, 'UTF-8');
+  };
+
+  const resetBatch = () => {
+    setBatchName('');
+    setBatchArticles([]);
+    setBatchResult(null);
+    setBatchError('');
+    setBatchStatus('draft');
+  };
+
+  const readBatchFile = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const rows = parseCsvRows(stripBom(String(reader.result || '')));
+        setBatchName(file.name);
+        setBatchResult(null);
+        if (!rows.length) {
+          setBatchArticles([]);
+          setBatchError(t.batchReadFailed);
+          return;
+        }
+        const headers = rows[0].map((header) => header.trim());
+        const missing = BATCH_REQUIRED_COLUMNS.filter((column) => !headers.includes(column));
+        if (missing.length) {
+          setBatchArticles([]);
+          setBatchError(t.batchMissingColumns(missing.join(', ')));
+          return;
+        }
+        const articles = rows.slice(1).map((cells) => {
+          const row = {};
+          headers.forEach((header, index) => {
+            if (BATCH_COLUMNS.includes(header)) row[header] = (cells[index] ?? '').trim();
+          });
+          return row;
+        });
+        setBatchArticles(articles);
+        setBatchError('');
+      } catch {
+        setBatchArticles([]);
+        setBatchError(t.batchReadFailed);
+      }
+    };
+    reader.onerror = () => setBatchError(t.batchReadFailed);
+    reader.readAsText(file, 'UTF-8');
+  };
+
+  const runBatchImport = async () => {
+    if (!batchArticles.length) return;
+    setBatchBusy(true);
+    setBatchError('');
+    try {
+      const result = await importAdminKnowledgeBatch(batchArticles, batchStatus);
+      setBatchResult(result);
+      load();
+    } catch (error) {
+      setBatchError(t.failed + error.message);
+    } finally {
+      setBatchBusy(false);
+    }
   };
 
   const editArticle = (article) => {
@@ -315,6 +432,14 @@ export function KnowledgePage() {
           </button>
           <button
             type="button"
+            onClick={() => { resetBatch(); setBatchOpen(true); }}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
+          >
+            <Upload size={16} />
+            {t.batchImport}
+          </button>
+          <button
+            type="button"
             onClick={() => setHelpOpen(true)}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
           >
@@ -323,6 +448,112 @@ export function KnowledgePage() {
           </button>
         </div>
       </div>
+
+      {batchOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">
+          <div role="dialog" aria-modal="true" aria-labelledby="knowledge-batch-title" className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl">
+            <div className="sticky top-0 flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4">
+              <div>
+                <h3 id="knowledge-batch-title" className="text-base font-semibold">{t.batchTitle}</h3>
+                <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">{t.batchSubtitle}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setBatchOpen(false)}
+                aria-label={t.close}
+                className="ml-4 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="grid gap-4 px-5 py-5 text-sm leading-6">
+              <input ref={batchInputRef} type="file" accept=".csv" onChange={readBatchFile} className="hidden" />
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => batchInputRef.current?.click()}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
+                >
+                  <Upload size={16} />
+                  {t.batchPick}
+                </button>
+                <span className="text-[var(--color-text-secondary)]">
+                  {batchName ? `${batchName} · ${t.batchRows(batchArticles.length)}` : t.batchNoFile}
+                </span>
+              </div>
+
+              {batchError && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-red-300">
+                  <XCircle size={16} className="mt-0.5 shrink-0" />
+                  <span>{batchError}</span>
+                </div>
+              )}
+
+              <fieldset className="grid gap-2">
+                <legend className="mb-1 text-[var(--color-text-secondary)]">{t.status}</legend>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="knowledge-batch-status"
+                    checked={batchStatus === 'draft'}
+                    onChange={() => setBatchStatus('draft')}
+                  />
+                  {t.batchAsDraft}
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="knowledge-batch-status"
+                    checked={batchStatus === 'published'}
+                    onChange={() => setBatchStatus('published')}
+                  />
+                  {t.batchAsPublished}
+                </label>
+              </fieldset>
+
+              {batchStatus === 'published' && (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-300">
+                  {t.batchPublishWarning}
+                </div>
+              )}
+
+              {batchResult && (
+                <div className="grid gap-2">
+                  <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-2">
+                    <CheckCircle2 size={16} className="shrink-0 text-green-400" />
+                    <span>{t.batchDone(batchResult)}</span>
+                  </div>
+                  {(batchResult.results || []).some((row) => !row.ok) && (
+                    <ul className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-[var(--color-border)] px-3 py-2 text-[var(--color-text-secondary)]">
+                      {(batchResult.results || []).filter((row) => !row.ok).map((row) => (
+                        <li key={`batch-failed-${row.row}`}>{t.batchRowError(row.row, row.error)}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBatchOpen(false)}
+                  className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
+                >
+                  {t.close}
+                </button>
+                <button
+                  type="button"
+                  onClick={runBatchImport}
+                  disabled={!batchArticles.length || batchBusy}
+                  className="rounded-lg bg-[var(--color-primary)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {batchBusy ? t.batchRunning : t.batchStart}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {helpOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-6">

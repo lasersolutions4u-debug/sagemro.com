@@ -1349,7 +1349,92 @@ const FALLBACK_INSTRUCTIONS = {
 // 参数改为 context 对象，方便 Phase 0.3 多轮 tool call 传递 iteration。
 // 返回值永远是 JSON-safe 对象：正常结果 / { error, fallback_instruction }
 // 导出以供 worker/tests/test-execute-tool.mjs 单元测试直接调用。
-async function toolSearchKnowledgeBase({ args = {}, env, market = 'com' }) {
+// 一条知识检索查询最多拆出的词元数（防止长问句把 SQL 撑爆）
+const KNOWLEDGE_TERM_LIMIT = 12;
+const CJK_CHAR = /[\u4e00-\u9fff]/;
+const TOKEN_SPLIT = /[^\p{L}\p{N}]+/u;
+
+// 疑问词与虚词，单独命中它们没有检索价值，还会把无关条目拉进结果。
+// 只收「问句填充词」，不收领域名词——「参数」「镜片」这类必须保留。
+const KNOWLEDGE_STOPWORDS = new Set([
+  '怎么', '怎样', '如何', '什么', '为什', '哪些', '哪个', '多少', '是否',
+  '可以', '需要', '请问', '一下', '我们', '你们', '这个', '那个', '意思',
+  '情况', '时候', '的话', '还是', '以及', '然后', '就是', '没有', '不能',
+  '应该', '东西', '处理', '解决', '办法', '方法', '帮忙', '求助', '谢谢',
+]);
+
+// 客户说「氧气」，参数表里写「O2」——不做同义扩展就永远对不上。
+// 只收本知识库里确实存在的写法差异，不做泛化词典。
+const KNOWLEDGE_SYNONYMS = new Map([
+  ['氧气', ['o2']],
+  ['氮气', ['n2']],
+  ['空气', ['air']],
+  ['碳钢', ['carbonsteel', 'carbon steel']],
+  ['不锈钢', ['stainless', 'stainlesssteel']],
+  ['铝合金', ['aluminum', 'aluminium', 'aluminumalloy']],
+  ['黄铜', ['brass']],
+  ['紫铜', ['copper']],
+  ['喷嘴', ['nozzle']],
+  ['焦点', ['focus']],
+]);
+
+// 字段权重：标题 > 型号 > 品牌/设备 > 正文。
+// 型号权重高，是因为「BM111」「E053」这类报警码/型号查询一旦命中就该排最前。
+const KNOWLEDGE_FIELDS = [
+  ['title', 6],
+  ['applicable_model', 5],
+  ['applicable_brand', 3],
+  ['applicable_equipment', 3],
+  ['content', 1],
+];
+
+/**
+ * 把用户问句拆成可检索的词元。
+ *
+ * 为什么不能直接用整串：SQLite 的 instr() 是子串匹配，查询词必须**连续且原样**
+ * 出现在字段里才算命中。客户问「激光切割头保护镜片多久换」这种自然问句，
+ * 整串比对几乎必然 0 命中——早期实现就是这样，而且失败是静默的。
+ *
+ * 中文没有词边界，这里对连续中文串额外产出**二元组（bigram）**：
+ * 「激光切割头」→ 激光 / 光切 / 切割 / 割头。这是无分词器条件下召回中文的常用做法。
+ */
+function knowledgeQueryTerms(query) {
+  const text = String(query || '').toLowerCase();
+  const terms = [];
+  const seen = new Set();
+  const add = (raw) => {
+    const term = (raw || '').trim();
+    if (!term || terms.length >= KNOWLEDGE_TERM_LIMIT || seen.has(term)) return;
+    if (KNOWLEDGE_STOPWORDS.has(term)) return;
+    if (term.length < 2 && !CJK_CHAR.test(term)) return;
+    seen.add(term);
+    terms.push(term);
+  };
+
+  const tokens = text.split(TOKEN_SPLIT).filter(Boolean);
+  // 1) 基础词元：拉丁/数字整词 + 中文整串
+  for (const token of tokens) add(token);
+  // 2) 同义扩展：必须排在二元组之前，否则会被长中文串挤掉配额
+  for (const token of tokens) {
+    for (const synonym of KNOWLEDGE_SYNONYMS.get(token) || []) add(synonym);
+  }
+  // 3) 中文二元组兜底（无分词器条件下召回中文的常用做法）
+  for (const token of tokens) {
+    if (!CJK_CHAR.test(token)) continue;
+    for (let i = 0; i + 2 <= token.length; i += 1) add(token.slice(i, i + 2));
+  }
+  return terms;
+}
+
+async function toolSearchKnowledgeBase({
+  args = {},
+  env,
+  market = 'com',
+  ctx = null,
+  conversationId = null,
+  userId = null,
+  userRole = 'guest',
+}) {
   if (!env?.DB) {
     return { count: 0, articles: [] };
   }
@@ -1362,34 +1447,49 @@ async function toolSearchKnowledgeBase({ args = {}, env, market = 'com' }) {
   const category = cleanText(args.category, 80);
   const limit = Math.min(8, Math.max(1, parseInt(args.limit || '5', 10) || 5));
 
+  const terms = knowledgeQueryTerms(search);
+  if (!terms.length) {
+    return { count: 0, articles: [] };
+  }
+
+  // 过滤条件放在 CTE 里，市场永远是**第一个绑定参数**（服务端强制，不信任工具入参）
   let where = "WHERE status = 'published' AND market = ?";
-  const binds = [requestedMarket];
+  const whereBinds = [requestedMarket];
   if (requestedLocale) {
     where += ' AND locale = ?';
-    binds.push(requestedLocale);
+    whereBinds.push(requestedLocale);
   }
   if (category && KNOWLEDGE_CATEGORIES.has(category)) {
     where += ' AND category = ?';
-    binds.push(category);
+    whereBinds.push(category);
   }
-  where += ` AND (
-    instr(lower(COALESCE(title, '')), lower(?)) > 0 OR
-    instr(lower(COALESCE(content, '')), lower(?)) > 0 OR
-    instr(lower(COALESCE(applicable_equipment, '')), lower(?)) > 0 OR
-    instr(lower(COALESCE(applicable_brand, '')), lower(?)) > 0 OR
-    instr(lower(COALESCE(applicable_model, '')), lower(?)) > 0
-  )`;
-  binds.push(search, search, search, search, search);
+
+  const scoreParts = [];
+  const scoreBinds = [];
+  for (const [field, weight] of KNOWLEDGE_FIELDS) {
+    for (const term of terms) {
+      scoreParts.push(
+        `CASE WHEN instr(lower(COALESCE(${field}, '')), ?) > 0 THEN ${weight} ELSE 0 END`
+      );
+      scoreBinds.push(term);
+    }
+  }
 
   const rows = await env.DB.prepare(`
-    SELECT id, market, locale, category, title, content, source,
-           applicable_equipment, applicable_brand, applicable_model,
-           risk_level, version, status, reviewed_by, reviewed_at, updated_at
-    FROM knowledge_articles
-    ${where}
-    ORDER BY updated_at DESC, created_at DESC
+    WITH base AS (
+      SELECT id, market, locale, category, title, content, source,
+             applicable_equipment, applicable_brand, applicable_model,
+             risk_level, version, status, reviewed_by, reviewed_at,
+             created_at, updated_at
+      FROM knowledge_articles
+      ${where}
+    )
+    SELECT * FROM (
+      SELECT *, (${scoreParts.join(' + ')}) AS score FROM base
+    ) WHERE score > 0
+    ORDER BY score DESC, updated_at DESC, created_at DESC
     LIMIT ?
-  `).bind(...binds, limit).all();
+  `).bind(...whereBinds, ...scoreBinds, limit).all();
 
   const articles = (rows.results || []).map((row) => ({
     id: row.id,
@@ -1408,7 +1508,27 @@ async function toolSearchKnowledgeBase({ args = {}, env, market = 'com' }) {
     reviewed_by: row.reviewed_by,
     reviewed_at: row.reviewed_at,
     updated_at: row.updated_at,
+    match_score: Number(row.score || 0),
   }));
+
+  // 检索不到时额外留一条带 error_code 的 trace：args_json 里存着原始问句，
+  // 后台可以直接查「哪些客户问题没找到知识」，作为补内容的选题清单。
+  // 不做这一步的话，「知识库没被用上」在运营端是完全静默的。
+  if (articles.length === 0 && ctx) {
+    logToolCall({
+      env,
+      ctx,
+      conversationId,
+      userId,
+      userRole,
+      toolName: 'search_knowledge_base',
+      args,
+      resultStatus: 'ok',
+      errorCode: 'no_knowledge_match',
+      latencyMs: null,
+      iteration: 0,
+    });
+  }
 
   return {
     count: articles.length,
@@ -1490,7 +1610,15 @@ export async function executeTool(ctxObj) {
 
   // 2. 未知工具
   const executor = {
-    search_knowledge_base: () => toolSearchKnowledgeBase({ args, env, market }),
+    search_knowledge_base: () => toolSearchKnowledgeBase({
+      args,
+      env,
+      market,
+      ctx,
+      conversationId,
+      userId: engineerId || customerId || null,
+      userRole,
+    }),
     get_engineer_profile: () => toolGetEngineerProfile(engineerId, env),
     get_pending_tickets_for_engineer: () => toolGetPendingTickets({ limit: args?.limit || 10, engineerId, env }),
     get_customer_devices: () => toolGetCustomerDevices(customerId, env),
@@ -12559,11 +12687,14 @@ async function handleAdminCreateKnowledge(request, env) {
     const id = generateId();
     const market = payload.market || getRequestMarket(request);
     const locale = payload.locale || (market === 'cn' ? 'zh-CN' : 'en');
+    // 直接发布时必须留下审核人，否则审核链路上会缺一环（手动新建这条路以前是空的）。
+    const reviewerId = payload.status === 'published' ? (request._auth?.userId || 'admin') : null;
     await env.DB.prepare(`
       INSERT INTO knowledge_articles (
         id, market, locale, category, title, content, source,
-        applicable_equipment, applicable_brand, applicable_model, risk_level, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        applicable_equipment, applicable_brand, applicable_model, risk_level, status,
+        reviewed_by, reviewed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'published' THEN datetime('now') ELSE NULL END)
     `).bind(
       id,
       market,
@@ -12576,6 +12707,8 @@ async function handleAdminCreateKnowledge(request, env) {
       payload.applicable_brand,
       payload.applicable_model,
       payload.risk_level,
+      payload.status,
+      reviewerId,
       payload.status
     ).run();
 
@@ -12591,6 +12724,106 @@ async function handleAdminCreateKnowledge(request, env) {
       success: true,
       article: normalizeKnowledgeArticle(article || { id, market, locale, version: 1, ...payload }),
     }, 201);
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
+// 批量导入上限：一次请求最多写入的条目数。CSV 批量导入（一行一条）走这里。
+const KNOWLEDGE_BATCH_LIMIT = 500;
+const KNOWLEDGE_MARKETS = new Set(['com', 'cn']);
+
+// POST /api/admin/knowledge/batch
+// body: { articles: [...], status?: 'draft' | 'published' }
+//   - 逐行校验，失败行返回行号与原因，不静默跳过
+//   - 同市场内标题重复的行会被跳过（重复导入不会产生副本）
+//   - body.status 可覆盖每行状态，用于「导入即发布」
+async function handleAdminBatchImportKnowledge(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const rows = Array.isArray(body?.articles) ? body.articles : null;
+    if (!rows) return errorResponse('invalid_payload', 400);
+    if (rows.length === 0) return errorResponse('empty_import', 400);
+    if (rows.length > KNOWLEDGE_BATCH_LIMIT) return errorResponse('too_many_rows', 400);
+
+    const requestMarket = getRequestMarket(request) === 'cn' ? 'cn' : 'com';
+    const overrideStatus = cleanChoice(body.status, KNOWLEDGE_STATUSES, '');
+    if (body.status !== undefined && body.status !== '' && !overrideStatus) {
+      return errorResponse('invalid_status', 400);
+    }
+    const actorId = request._auth?.userId || 'admin';
+
+    const existing = await env.DB.prepare(
+      'SELECT id, title FROM knowledge_articles WHERE market = ?'
+    ).bind(requestMarket).all();
+    const idByTitle = new Map((existing?.results || []).map((row) => [row.title, row.id]));
+
+    const results = [];
+    const statements = [];
+    const seenTitles = new Set();
+
+    rows.forEach((raw, index) => {
+      const row = index + 1;
+      const payload = readKnowledgePayload(raw || {});
+      if (payload.error) {
+        results.push({ row, ok: false, error: payload.error });
+        return;
+      }
+      const market = cleanChoice(raw?.market, KNOWLEDGE_MARKETS, requestMarket);
+      if (!market) {
+        results.push({ row, ok: false, error: 'invalid_market' });
+        return;
+      }
+      const status = overrideStatus || payload.status;
+      if (!KNOWLEDGE_STATUSES.has(status)) {
+        results.push({ row, ok: false, error: 'invalid_status' });
+        return;
+      }
+      const dedupeKey = `${market}\u0000${payload.title}`;
+      const knownId = idByTitle.get(payload.title);
+      if ((market === requestMarket && knownId) || seenTitles.has(dedupeKey)) {
+        results.push({ row, ok: true, skipped: true, id: knownId || null, reason: 'duplicate_title' });
+        return;
+      }
+      seenTitles.add(dedupeKey);
+
+      const id = generateId();
+      const locale = payload.locale || (market === 'cn' ? 'zh-CN' : 'en');
+      statements.push(env.DB.prepare(`
+        INSERT INTO knowledge_articles (
+          id, market, locale, category, title, content, source,
+          applicable_equipment, applicable_brand, applicable_model, risk_level, status,
+          reviewed_by, reviewed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'published' THEN datetime('now') ELSE NULL END)
+      `).bind(
+        id, market, locale, payload.category, payload.title, payload.content, payload.source,
+        payload.applicable_equipment, payload.applicable_brand, payload.applicable_model,
+        payload.risk_level, status,
+        status === 'published' ? actorId : null, status
+      ));
+      results.push({ row, ok: true, id, status });
+    });
+
+    if (statements.length) {
+      if (typeof env.DB.batch === 'function') {
+        await env.DB.batch(statements);
+      } else {
+        for (const statement of statements) await statement.run();
+      }
+    }
+
+    const imported = results.filter((r) => r.ok && !r.skipped).length;
+    const skipped = results.filter((r) => r.skipped).length;
+    const failed = results.filter((r) => !r.ok).length;
+
+    await writeAuditLog(env, request, {
+      targetType: 'knowledge_article',
+      targetId: `batch:${Date.now()}`,
+      action: 'knowledge_articles_batch_imported',
+      afterState: { market: requestMarket, imported, skipped, failed, total: rows.length, status: overrideStatus || null },
+    });
+
+    return jsonResponse({ success: true, total: rows.length, imported, skipped, failed, results });
   } catch (error) {
     return errorResponse(error.message, 500);
   }
@@ -23292,6 +23525,9 @@ async function routeRequest(request, env, ctx) {
       }
       if (path === '/api/admin/knowledge' && request.method === 'POST') {
         return handleAdminCreateKnowledge(request, env);
+      }
+      if (path === '/api/admin/knowledge/batch' && request.method === 'POST') {
+        return handleAdminBatchImportKnowledge(request, env);
       }
       if (path === '/api/admin/knowledge-candidates' && request.method === 'GET') {
         return handleAdminListKnowledgeCandidates(request, env);

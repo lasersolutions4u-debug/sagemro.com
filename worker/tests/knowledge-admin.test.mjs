@@ -47,6 +47,7 @@ function createStatement(env, sql) {
           applicable_model,
           risk_level,
           status,
+          reviewed_by,
         ] = this.args;
         env.__knowledge.push({
           id,
@@ -62,8 +63,8 @@ function createStatement(env, sql) {
           risk_level,
           version: 1,
           status,
-          reviewed_by: null,
-          reviewed_at: null,
+          reviewed_by: reviewed_by || null,
+          reviewed_at: status === 'published' ? '2026-07-09 00:00:00' : null,
           created_at: '2026-07-09 00:00:00',
           updated_at: '2026-07-09 00:00:00',
         });
@@ -105,6 +106,12 @@ function createEnv() {
     DB: {
       prepare(sql) {
         return createStatement(env, sql);
+      },
+      async batch(statements) {
+        env.__batchCalls = (env.__batchCalls || 0) + 1;
+        const results = [];
+        for (const statement of statements) results.push(await statement.run());
+        return results;
       },
     },
     KV: {
@@ -244,4 +251,125 @@ test('engineer cannot access admin knowledge management', async () => {
 
   assert.equal(result.response.status, 403);
   assert.equal(result.json.error, '需要管理员权限');
+});
+
+// ---------- 批量导入（一行一条） ----------
+
+function batchRow(overrides = {}) {
+  return {
+    category: 'cutting_parameters',
+    title: '6000W 碳钢切割参数（O2）',
+    content: '| 厚度(mm) | 速度(m/min) |\n| --- | --- |\n| 3 | 3.6-4.2 |',
+    source: '3-40kW参数(2023).xlsx / 工作表 6000W',
+    applicable_equipment: '光纤激光切割机',
+    applicable_model: '6000W',
+    risk_level: 'medium',
+    ...overrides,
+  };
+}
+
+test('批量导入按行写入，失败行带上行号与原因，不影响其他行', async () => {
+  const env = createEnv();
+  const result = await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST',
+    body: {
+      articles: [
+        batchRow({ title: '条目一' }),
+        batchRow({ title: '' }),                       // 缺标题 → 该行失败
+        batchRow({ title: '条目二', category: '不存在的分类' }), // 非法分类 → 该行失败
+        batchRow({ title: '条目三' }),
+      ],
+    },
+  });
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.json.total, 4);
+  assert.equal(result.json.imported, 2);
+  assert.equal(result.json.failed, 2);
+  assert.equal(result.json.skipped, 0);
+
+  const failed = result.json.results.filter((row) => !row.ok);
+  assert.deepEqual(failed.map((row) => row.row), [2, 3], '失败行必须回报原始行号');
+  assert.ok(failed.every((row) => typeof row.error === 'string' && row.error.length > 0));
+
+  assert.equal(env.__knowledge.length, 2);
+  assert.equal(env.__batchCalls, 1, '一次请求只应发出一次 batch');
+});
+
+test('批量导入按标题去重：重复导入不会产生副本', async () => {
+  const env = createEnv();
+  const body = { articles: [batchRow({ title: '重复条目' }), batchRow({ title: '另一个条目' })] };
+
+  const first = await api(env, '/api/admin/knowledge/batch', { method: 'POST', body });
+  assert.equal(first.json.imported, 2);
+
+  const second = await api(env, '/api/admin/knowledge/batch', { method: 'POST', body });
+  assert.equal(second.json.imported, 0);
+  assert.equal(second.json.skipped, 2);
+  assert.equal(env.__knowledge.length, 2, '第二次导入不应新增任何条目');
+});
+
+test('同一批次内的重复标题也会被跳过', async () => {
+  const env = createEnv();
+  const result = await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST',
+    body: { articles: [batchRow({ title: '同批重复' }), batchRow({ title: '同批重复' })] },
+  });
+
+  assert.equal(result.json.imported, 1);
+  assert.equal(result.json.skipped, 1);
+  assert.equal(env.__knowledge.length, 1);
+});
+
+test('批量导入可覆盖状态；直接发布时写入审核人', async () => {
+  const env = createEnv();
+  const result = await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST',
+    body: { status: 'published', articles: [batchRow({ title: '已发布条目' })] },
+  });
+
+  assert.equal(result.json.imported, 1);
+  const article = env.__knowledge.at(-1);
+  assert.equal(article.status, 'published');
+  assert.equal(article.reviewed_by, 'admin', '直接发布必须留下审核人');
+  assert.ok(article.reviewed_at);
+});
+
+test('批量导入：空数组、超限、非法状态都会被拒绝', async () => {
+  const env = createEnv();
+  assert.equal((await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST', body: { articles: [] },
+  })).response.status, 400);
+
+  assert.equal((await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST', body: { articles: Array.from({ length: 501 }, (_, i) => batchRow({ title: `t${i}` })) },
+  })).response.status, 400);
+
+  assert.equal((await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST', body: { articles: [batchRow()], status: '不存在的状态' },
+  })).response.status, 400);
+
+  assert.equal((await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST', body: {},
+  })).response.status, 400);
+});
+
+test('批量导入仅限管理员', async () => {
+  const env = createEnv();
+  const result = await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST', body: { articles: [batchRow()] }, userType: 'engineer',
+  });
+  assert.equal(result.response.status, 403);
+  assert.equal(env.__knowledge.length, 0);
+});
+
+test('手动新建并直接发布时也会写入审核人', async () => {
+  const env = createEnv();
+  const created = await api(env, '/api/admin/knowledge', {
+    method: 'POST',
+    body: { ...batchRow({ title: '手动发布条目' }), status: 'published' },
+  });
+  assert.equal(created.response.status, 201);
+  assert.equal(created.json.article.status, 'published');
+  assert.equal(created.json.article.reviewed_by, 'admin');
 });
