@@ -111,6 +111,23 @@ test('the Cloudflare path always builds the default com market, so CN locale and
   assert.doesNotMatch(workflow, /public-cn/);
 });
 
+test('only a main push can target an international Pages project', async () => {
+  const workflow = await readFile(workflowUrl, 'utf8');
+  const international = ['sagemro-com', 'sagemro-admin', 'sagemro-ai'];
+
+  for (const name of ['deploy-frontend', 'deploy-ai-frontend', 'deploy-admin']) {
+    const job = jobBlock(workflow, name);
+    const projects = [...job.matchAll(/--project-name=(\$\{\{[^}]*\}\}|[\w-]+)/g)].map((match) => match[1]);
+
+    if (!projects.some((value) => international.some((project) => value.includes(project)))) continue;
+    assert.match(
+      job,
+      /github\.ref == 'refs\/heads\/main'/,
+      `${name} can publish an international Pages project, so it must be gated on a main push (a CN branch push must never reach sagemro.com / sagemro-ai / sagemro-admin)`,
+    );
+  }
+});
+
 test('no workflow builds one target for both markets into the same artifact directory', async () => {
   const workflows = [
     new URL('../../.github/workflows/deploy.yml', import.meta.url),
