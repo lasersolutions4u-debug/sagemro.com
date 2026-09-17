@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 const readProjectFile = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+const listDir = async (path) => {
+  try {
+    return await readdir(new URL(`../${path}`, import.meta.url));
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+};
 
 test('package scripts make public the default and expose a separate portal build', async () => {
   const pkg = JSON.parse(await readProjectFile('package.json'));
@@ -108,6 +116,22 @@ test('the selected market decides crawl policy, host and document language', asy
   assert.match(com.robots, /User-agent: Baiduspider\nDisallow: \//);
   assert.match(com.robots, /Sitemap: https:\/\/sagemro\.com\/sitemap\.xml/);
   assert.match(com.llms, /- https:\/\/sagemro\.com\//);
+});
+
+test('the shared public directory and the China overlay stay disjoint', async () => {
+  const [shared, china] = await Promise.all([listDir('public'), listDir('public-cn')]);
+
+  const overlap = shared.filter((name) => china.includes(name));
+  assert.deepEqual(overlap, [], 'a name present in both public/ and public-cn/ would feed market-specific content to the international artifact');
+
+  for (const name of shared) {
+    assert.doesNotMatch(name, /[\u4e00-\u9fff]/, `${name} looks China-only; China-only assets belong in public-cn/`);
+  }
+  assert.deepEqual(
+    shared.filter((name) => /baidu_verify/i.test(name)),
+    [],
+    'search-console verification files are market-specific and must live in public-cn/',
+  );
 });
 
 test('market assets overlay only their own market', async (t) => {

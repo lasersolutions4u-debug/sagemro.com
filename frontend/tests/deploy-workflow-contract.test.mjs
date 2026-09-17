@@ -110,3 +110,22 @@ test('the Cloudflare path always builds the default com market, so CN locale and
   assert.doesNotMatch(workflow, /build:(public|portal):cn/);
   assert.doesNotMatch(workflow, /public-cn/);
 });
+
+test('no workflow builds one target for both markets into the same artifact directory', async () => {
+  const workflows = [
+    new URL('../../.github/workflows/deploy.yml', import.meta.url),
+    new URL('../../.github/workflows/aliyun-cn-deploy.yml', import.meta.url),
+  ];
+
+  for (const file of workflows) {
+    const content = await readFile(file, 'utf8');
+    for (const target of ['public', 'portal']) {
+      const defaultMarket = new RegExp(`build:${target}(?!:cn)`).test(content);
+      const cnMarket = new RegExp(`build:${target}:cn`).test(content);
+      assert.ok(
+        !(defaultMarket && cnMarket),
+        `${file.pathname.split('/').pop()}: ${target} must not be built for both markets in one workflow (later build overwrites the artifact directory)`,
+      );
+    }
+  }
+});
