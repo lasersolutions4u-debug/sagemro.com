@@ -50,6 +50,8 @@
 
 所有 deploy job 都声明了 `environment: production`。可在 GitHub repo → Settings → Environments → `production` 里加 required reviewers，作为人工审批门禁。
 
+另有 `deploy-maintenance`（job 名「Pause COM and CN API for approved maintenance」）**只在手动触发时运行**：它把共享 Worker 的入口换成 `worker/src/maintenance.js`，令 `api.sagemro.com` 与 `api.sagemro.cn` **同时**返回维护态。四重守卫与操作步骤见 3.6 节。**push 触发的发布永远不会运行它**——因此它在 push run 里显示为「跳过」是正常状态；若哪天它在 push 上变成了 ✓，那意味着两个市场的 API 已被主动暂停。
+
 ### 1.4 AI 子域名发布顺序与回滚门禁
 
 首次切换及包含结构化服务请求的发布必须按以下顺序执行：
@@ -671,6 +673,37 @@ Each final verification query must return exactly these two rows before the Work
 5. Only then deploy the shared Worker from `main`; `china-edition` does not deploy it.
 
 **Stop condition:** do not deploy Worker code if either database is missing either version. Do not down-migrate; use a new forward migration to correct any schema issue.
+
+### 3.6 API 维护窗口（手动暂停 COM + CN）
+
+`deploy-maintenance` 用于计划内停机：把共享 Worker 的入口换成 `worker/src/maintenance.js`，`api.sagemro.com` 与 `api.sagemro.cn` 同时进入维护态。前端页面仍可打开，但所有 API 调用会失败——因此这是**影响两个市场**的操作。
+
+**四重守卫**（该 job 的 `if`，缺一不跑；这正是普通 push 不会误停 API 的原因）：
+
+```
+github.event_name == 'workflow_dispatch'      # 必须手动触发
+&& github.ref == 'refs/heads/main'            # 必须在 main
+&& inputs.confirmation == 'PAUSE_COM_CN'      # 必须显式输入确认串
+&& inputs.expected_sha == github.sha          # 必须精确匹配审核过的 commit
+```
+
+**进入维护**：
+
+1. Actions → Deploy to Cloudflare → **Run workflow** → 分支选 `main`。
+2. `confirmation` 填 `PAUSE_COM_CN`；`expected_sha` 填**已审核的完整 commit SHA**（与该次 checkout 不一致就不会执行）。
+3. 运行后仍需 `production` 环境的人工审批。
+4. 该 job 会自动断言两个域名都已进入维护态，任一未生效则失败。
+
+**退出维护**：跑一次普通 Worker 部署即可恢复真实入口——push 到 `main`，或在 Actions 里重跑 `Deploy Worker to Cloudflare Workers`。
+
+**验证**：
+
+```bash
+curl -s https://api.sagemro.com/health   # 维护中：{"maintenance":true}
+curl -s https://api.sagemro.cn/health    # 正常：  {"status":"ok"}
+```
+
+**并发注意**：维护 job 与正常发布共用并发组 `sagemro-shared-worker-production`，同一时间只允许一个 run 持有。若已有一个 run 停在 `production` 审批上，新的部署会**一直排队等待（不是失败）**，界面提示为「waiting for ... to complete」。需要腾出位置时，先批准或取消那个 pending run——**取消被后续提交取代的 run 是安全且推荐的做法**（后续 run 已包含它的全部提交）。
 
 ### ⚠️ 不会自动做的事
 
