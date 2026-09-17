@@ -100,3 +100,49 @@ test('Worker gate requires shared service-request migrations in CN without relax
   assert.match(cnRequired, /048_service_request_assist_quota/);
   assert.doesNotMatch(cnRequired, /049_nullable_international_customer_phone/);
 });
+
+test('the Cloudflare path always builds the default com market, so CN locale and assets cannot reach sagemro.com', async () => {
+  const workflow = await readFile(workflowUrl, 'utf8');
+
+  // sagemro.com / ai.sagemro.com must never be produced with the explicit cn market:
+  // that would ship Chinese prerender, a sagemro.cn sitemap, and Baiduspider Disallow: /.
+  assert.doesNotMatch(workflow, /SAGEMRO_BUILD_MARKET/);
+  assert.doesNotMatch(workflow, /build:(public|portal):cn/);
+  assert.doesNotMatch(workflow, /public-cn/);
+});
+
+test('only a main push can target an international Pages project', async () => {
+  const workflow = await readFile(workflowUrl, 'utf8');
+  const international = ['sagemro-com', 'sagemro-admin', 'sagemro-ai'];
+
+  for (const name of ['deploy-frontend', 'deploy-ai-frontend', 'deploy-admin']) {
+    const job = jobBlock(workflow, name);
+    const projects = [...job.matchAll(/--project-name=(\$\{\{[^}]*\}\}|[\w-]+)/g)].map((match) => match[1]);
+
+    if (!projects.some((value) => international.some((project) => value.includes(project)))) continue;
+    assert.match(
+      job,
+      /github\.ref == 'refs\/heads\/main'/,
+      `${name} can publish an international Pages project, so it must be gated on a main push (a CN branch push must never reach sagemro.com / sagemro-ai / sagemro-admin)`,
+    );
+  }
+});
+
+test('no workflow builds one target for both markets into the same artifact directory', async () => {
+  const workflows = [
+    new URL('../../.github/workflows/deploy.yml', import.meta.url),
+    new URL('../../.github/workflows/aliyun-cn-deploy.yml', import.meta.url),
+  ];
+
+  for (const file of workflows) {
+    const content = await readFile(file, 'utf8');
+    for (const target of ['public', 'portal']) {
+      const defaultMarket = new RegExp(`build:${target}(?!:cn)`).test(content);
+      const cnMarket = new RegExp(`build:${target}:cn`).test(content);
+      assert.ok(
+        !(defaultMarket && cnMarket),
+        `${file.pathname.split('/').pop()}: ${target} must not be built for both markets in one workflow (later build overwrites the artifact directory)`,
+      );
+    }
+  }
+});

@@ -51,9 +51,9 @@ Claude Code（本地）
    → 切换 current/{frontend,ai,admin,engineer} 符号链接 → nginx -t → reload nginx
    → 健康检查 sagemro.cn / ai / admin / engineer / api.sagemro.cn/health
 
-### CN 构建方式（2026-09-15 起，与分支解耦）
+### CN 构建方式（构建脚本已支持市场维度，**发布入口尚未切换**）
 
-CN 产物不再依赖 `china-edition` 的模板，改由**同一套 main 代码**用市场开关构建：
+构建脚本已能用市场开关从**同一套 main 代码**产出 CN 产物：
 
 ```
 SAGEMRO_BUILD_MARKET=cn   →   npm run build:public:cn / npm run build:portal:cn
@@ -63,18 +63,35 @@ market 决定 locale，locale 决定**预渲染语言 / sitemap 与 llms.txt 域
 market **默认 `com`**，所有现有调用方式行为不变。国内版专属静态资产放在 `frontend/public-cn/`，
 **只在 market=cn 时叠加**——因此 CN 的文件不可能改变国际版产物的任何一个字节。
 
-⚠️ **把阿里云发布入口切到 main 时，三件必须一起改**。只改 ref 校验会把 COM 产物发到 CN：
+⚠️ **但 CN 现在仍由 `china-edition` 分支构建，不是 main。** `aliyun-cn-deploy.yml` 硬校验
+`GITHUB_REF_NAME == china-edition`，构建步骤是 `npm run build:public` / `build:portal`（未加市场开关）。
+这一状态**今天是正确的**，原因是 **`china-edition` 早于市场维度存在**：
+该分支没有 `frontend/scripts/markets.mjs`，其 `runBuild` 调用 `buildPublicPages({ distDir })` **不传 locale**，
+于是走模板兜底 `localeFromTemplate()`，读到该分支 `index.html` 的 `lang="zh-CN"` → 中文产物。
+**这份正确性是历史巧合，不是设计保证。**
+
+⚠️ **它与 main 是双向分叉，不是「落后」。** 2026-09-17 核对：共同 merge-base `0edb0cf`，
+CN 独有提交 **479** 个、main 独有提交 **483** 个；CN 分支独有 28 个 `frontend/` 文件
+（含 main 完全没有的 CN 专属特性与 6 个 flywheel 媒体文件），测试文件 66 个 vs main 60 个。
+**因此「把 CN 切到 main」不等于切换开关，而会丢掉 CN 分支独有的内容**——必须先做逐项审计与移植。
+
+🔴 **把阿里云发布入口切到 main 时，三件必须同时改**——只改 ref 校验会静默产出 COM 产物并发到 CN：
 
 1. `aliyun-cn-deploy.yml` 的 ref 校验（当前强制 `china-edition`）
 2. 构建步骤加 `SAGEMRO_BUILD_MARKET: cn`，或改用 `build:public:cn` / `build:portal:cn`
-   —— 否则默认 `com` → 英文预渲染 + `Baiduspider: Disallow: /` → **CN 百度收录归零**
 3. `frontend/tests/aliyun-deploy-workflow-contract.test.mjs` 中对应的断言
 
-**`china-edition` 现状：冻结。** 不再同步、不再作为 CN 的唯一发布来源，但保留远端做历史。
+失败机制（已逐行核对代码）：main 上 `runBuild` **总是**把 market 推导出的 locale 显式传给
+`buildPublicPages`（`MARKETS[selected].locale`，默认 `com` → `en`），所以 `buildPublicPages:81` 的
+模板兜底分支**在 main 上是死代码**。在 main 上不加开关构建 CN，会得到英文预渲染 +
+sitemap/llms.txt 指向 `sagemro.com` + `Baiduspider: Disallow: /`，且不叠加 `public-cn/`。
+
+**`china-edition` 现状：冻结、不再同步，但仍是 CN 的唯一构建来源（见上）。**
 CN 的最终形态（继续冻结 / 正式并入 main / 关停）**尚未决定**——在决定前，不要把它当成待同步的分支。
 
 **关键事实**：
-- **CN 生产发布必须手动 dispatch，且只能从 `china-edition` 触发**；不发布就不会更新
+- **CN 生产发布必须手动 dispatch，且只能从 `china-edition` 触发**（ref 硬校验）；不发布就不会更新。
+  切到 main 前必须先完成上一节的三件改动
 - `deploy.yml` 在 `china-edition` 上确实会发布前端与 Admin 到 CF Pages（`sagemro-cn` / `sagemro-admin-cn`），但 CN 线上由阿里云 nginx 提供，两者不是一回事
 - Worker 与 AI 门户**只在 `main` 上部署**
 - COM 侧由 GitHub Actions 调 wrangler 部署，**不使用** Cloudflare 原生 Git 集成

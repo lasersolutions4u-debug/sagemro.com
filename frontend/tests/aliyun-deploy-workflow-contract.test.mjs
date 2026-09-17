@@ -64,3 +64,18 @@ test('Aliyun health checks and summary include the AI portal without dropping ex
   assert.match(workflow, /noindex,nofollow,noarchive/);
   assert.match(workflow, /- AI: https:\/\/ai\.sagemro\.cn\//);
 });
+
+test('the China publish entry never builds with the default com market', () => {
+  // Exactly one of two safe configurations must hold, or a half-switch silently
+  // ships the international artifact to China:
+  //   a) build explicitly for the cn market, or
+  //   b) keep the china-edition ref guard, whose checkout has no market dimension
+  //      and whose index.html is lang="zh-CN" (the template fallback path).
+  const buildsForCnMarket = /SAGEMRO_BUILD_MARKET:\s*cn/.test(workflow) || /build:(public|portal):cn/.test(workflow);
+  const pinnedToCnTemplate = /GITHUB_REF_NAME.*!=.*china-edition/.test(workflow);
+
+  assert.ok(
+    buildsForCnMarket || pinnedToCnTemplate,
+    'either build explicitly for the cn market, or keep the china-edition ref guard whose checkout template is lang="zh-CN"',
+  );
+});
