@@ -157,6 +157,34 @@ const CARBON_N2_ARTICLE = {
   status: 'published',
 };
 
+// 机型数字按子串匹配会串档：查「3000W」时「30000W」里也含「3000」。
+// 线上实测出现过这种情况，用型号开头的数字做精确匹配来区分。
+const MODEL_3000S_ARTICLE = {
+  id: 'kb-model-3000s',
+  market: 'com',
+  locale: 'zh-CN',
+  category: 'cutting_parameters',
+  title: '3000S 碳钢切割参数（N2/Air）',
+  content: '光纤激光切割机 切割参数 参考表',
+  applicable_equipment: '光纤激光切割机',
+  applicable_model: '3000S',
+  risk_level: 'medium',
+  status: 'published',
+};
+
+const MODEL_30000W_ARTICLE = {
+  id: 'kb-model-30000w',
+  market: 'com',
+  locale: 'zh-CN',
+  category: 'cutting_parameters',
+  title: '30000W  (100u) 碳钢切割参数（N2/Air）',
+  content: '光纤激光切割机 切割参数 参考表',
+  applicable_equipment: '光纤激光切割机',
+  applicable_model: '30000W  (100u) ',
+  risk_level: 'medium',
+  status: 'published',
+};
+
 function createEnv() {
   const DB = new TestD1Database();
   DB.sqlite.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
@@ -184,7 +212,7 @@ function createEnv() {
   `);
   for (const article of [
     CUTTING_ARTICLE, PART_ARTICLE, CN_ONLY_ARTICLE, DRAFT_ARTICLE,
-    CARBON_O2_ARTICLE, CARBON_N2_ARTICLE,
+    CARBON_O2_ARTICLE, CARBON_N2_ARTICLE, MODEL_3000S_ARTICLE, MODEL_30000W_ARTICLE,
   ]) {
     insert.run(
       article.id, article.market, article.locale, article.category, article.title,
@@ -328,7 +356,11 @@ test('同义扩展：客户说「氮气」也能命中 N2 条目', async () => {
   const env = createEnv();
   const result = await search(env, { query: '氮气切割 碳钢' });
   assert.ok(result.count >= 1);
-  assert.ok(['kb-carbon-n2', 'kb-carbon-o2'].includes(result.articles[0].id));
+  // 「氮气」扩展成 N2 后必须能召回 N2 条目（首位不保证——其他碳钢条目也会命中「碳钢/切割」）
+  assert.ok(
+    result.articles.some((a) => a.id === CARBON_N2_ARTICLE.id || a.id === CARBON_O2_ARTICLE.id),
+    `应召回碳钢参数条目，实际 ${JSON.stringify(result.articles.map((a) => a.id))}`
+  );
 });
 
 test('同义扩展不会把无关条目拉进来', async () => {
@@ -336,4 +368,46 @@ test('同义扩展不会把无关条目拉进来', async () => {
   // 「氧气」不该让零件类条目命中
   const result = await search(env, { query: '氧气' });
   assert.ok(result.articles.every((article) => article.id !== PART_ARTICLE.id));
+});
+
+// ---- 以下两条来自线上真实失败（2026-09-18 实测 trace）----
+// 模型发的是英文检索词且带 locale="en"，而条目正文是中文。
+// 当时两次都返回 0 命中，AI 只好回答「没有可引用的参数」——知识明明在库里。
+
+test('英文提问 + locale=en 仍能命中中文条目', async () => {
+  const env = createEnv();
+  const result = await search(env, {
+    query: '6000W carbon steel 16mm cutting parameters',
+    args: { locale: 'en', category: 'cutting_parameters' },
+  });
+
+  assert.ok(result.count >= 1, `期望命中中文条目，实际 ${result.count} 条`);
+  assert.ok(
+    result.articles.some((a) => a.id === CARBON_O2_ARTICLE.id || a.id === CARBON_N2_ARTICLE.id),
+    `命中里应包含碳钢参数条目，实际 ${JSON.stringify(result.articles.map((a) => a.id))}`
+  );
+});
+
+test('语言不匹配不再把条目过滤掉（locale 只影响排序）', async () => {
+  const env = createEnv();
+  // 请求 en，条目是 zh-CN：必须仍然返回
+  const asEnglish = await search(env, { query: '碳钢 切割参数', args: { locale: 'en' } });
+  assert.ok(asEnglish.count >= 1, 'locale 不能当过滤器用');
+
+  // 请求 zh-CN 时，同一条目应排在更前（排序偏好生效）
+  const asChinese = await search(env, { query: '碳钢 切割参数', args: { locale: 'zh-CN' } });
+  assert.ok(asChinese.count >= 1);
+  assert.ok(asChinese.articles[0].match_score >= asEnglish.articles[0].match_score);
+});
+
+test('问 3000W 不会把 30000W 排到前面（数字子串不能串档）', async () => {
+  const env = createEnv();
+  const result = await search(env, { query: '3000W carbon steel cutting parameters' });
+
+  assert.ok(result.count >= 2, `应同时召回两个机型，实际 ${result.count} 条`);
+  assert.equal(
+    result.articles[0].id,
+    MODEL_3000S_ARTICLE.id,
+    `精确型号应优先，实际首位是 ${result.articles[0].title}`
+  );
 });

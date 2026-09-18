@@ -206,3 +206,34 @@ for (const query of QUERIES) {
   line(query, detail);
 }
 console.log(`\n命中 ${hit} / ${QUERIES.length}（最后一个问句设计为应无命中）`);
+
+// ---- 6. 线上真实失败回归 ----
+// 2026-09-18 线上实测：模型发英文检索词、并带 locale="en"，而条目正文是中文，
+// 三次调用全部 no_knowledge_match，AI 只好回答「没有可引用的参数」。
+// 这三条查询原样保留在这里，作为回归用例。
+console.log('\n【6】线上真实失败回归（英文提问 + locale 不匹配）');
+const REGRESSION = [
+  ['3000W carbon steel 16mm cutting parameters', { locale: 'en', category: 'cutting_parameters' }],
+  ['3000W laser cutting parameters 10mm carbon steel', { locale: 'en', category: 'cutting_parameters' }],
+  ['3000W 18mm carbon steel cutting parameters oxygen nozzle focus speed', { locale: 'zh-CN', category: 'cutting_parameters' }],
+];
+let recovered = 0;
+for (const [query, args] of REGRESSION) {
+  const pending = [];
+  const result = await worker.executeTool({
+    toolName: 'search_knowledge_base',
+    args: { query, ...args },
+    env: env2,
+    ctx: { waitUntil: (promise) => pending.push(promise) },
+    userRole: 'guest',
+    market: 'com',
+    conversationId: 'regression',
+    iteration: 0,
+  });
+  await Promise.all(pending);
+  if (result.count > 0) recovered += 1;
+  line(query.slice(0, 44), result.count > 0
+    ? `${result.count} 条 | 首位: ${result.articles[0].title}`
+    : '0 条 ❌');
+}
+console.log(`\n恢复命中 ${recovered} / ${REGRESSION.length}`);

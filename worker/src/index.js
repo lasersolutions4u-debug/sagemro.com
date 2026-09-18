@@ -1364,7 +1364,8 @@ const KNOWLEDGE_STOPWORDS = new Set([
 ]);
 
 // 客户说「氧气」，参数表里写「O2」——不做同义扩展就永远对不上。
-// 只收本知识库里确实存在的写法差异，不做泛化词典。
+// 两个方向都要：中文提问要能命中英文写法，**英文提问也必须命中中文条目**
+// （实测线上模型倾向用英文发检索词，而条目正文是中文，只做单向等于检索不到）。
 const KNOWLEDGE_SYNONYMS = new Map([
   ['氧气', ['o2']],
   ['氮气', ['n2']],
@@ -1376,7 +1377,42 @@ const KNOWLEDGE_SYNONYMS = new Map([
   ['紫铜', ['copper']],
   ['喷嘴', ['nozzle']],
   ['焦点', ['focus']],
+  ['切割', ['cutting', 'cut']],
+  ['参数', ['parameter', 'parameters']],
+  ['速度', ['speed']],
+  ['厚度', ['thickness']],
+  ['功率', ['power']],
+  ['气压', ['pressure']],
+  ['激光', ['laser']],
+  ['切割头', ['cutting head']],
+  // 反向：英文写法 → 中文条目用词
+  ['carbon', ['碳钢']],
+  ['steel', ['碳钢']],
+  ['stainless', ['不锈钢']],
+  ['aluminum', ['铝合金']],
+  ['aluminium', ['铝合金']],
+  ['brass', ['黄铜']],
+  ['copper', ['紫铜']],
+  ['oxygen', ['氧气', 'o2']],
+  ['nitrogen', ['氮气', 'n2']],
+  ['nozzle', ['喷嘴']],
+  ['focus', ['焦点']],
+  ['cutting', ['切割']],
+  ['cut', ['切割']],
+  ['parameter', ['参数']],
+  ['parameters', ['参数']],
+  ['speed', ['速度']],
+  ['thickness', ['厚度']],
+  ['power', ['功率']],
+  ['pressure', ['气压']],
+  ['laser', ['激光']],
 ]);
+
+// 带单位的词元额外产出「裸数字」：客户问「3000W」，参数表里写的是「3000」。
+// 只对**功率级数字（≥1000）**去单位：厚度类小数字（10mm / 16mm）几乎每行都有，
+// 放进去只会制造噪声——实测「10mm → 10」会把「3000**10**0u）」这类型号顶到第一。
+const UNIT_SUFFIX = /^(\d+(?:\.\d+)?)(w|kw|mm|m|bar|hz|mpa|%)$/;
+const MIN_POWER_LIKE = 1000;
 
 // 字段权重：标题 > 型号 > 品牌/设备 > 正文。
 // 型号权重高，是因为「BM111」「E053」这类报警码/型号查询一旦命中就该排最前。
@@ -1414,11 +1450,16 @@ function knowledgeQueryTerms(query) {
   const tokens = text.split(TOKEN_SPLIT).filter(Boolean);
   // 1) 基础词元：拉丁/数字整词 + 中文整串
   for (const token of tokens) add(token);
-  // 2) 同义扩展：必须排在二元组之前，否则会被长中文串挤掉配额
+  // 2) 单位后缀去掉后的裸数字（3000W → 3000；厚度类小数字不参与）
+  for (const token of tokens) {
+    const unit = UNIT_SUFFIX.exec(token);
+    if (unit && Number(unit[1]) >= MIN_POWER_LIKE) add(unit[1]);
+  }
+  // 3) 同义扩展：必须排在二元组之前，否则会被长中文串挤掉配额
   for (const token of tokens) {
     for (const synonym of KNOWLEDGE_SYNONYMS.get(token) || []) add(synonym);
   }
-  // 3) 中文二元组兜底（无分词器条件下召回中文的常用做法）
+  // 4) 中文二元组兜底（无分词器条件下召回中文的常用做法）
   for (const token of tokens) {
     if (!CJK_CHAR.test(token)) continue;
     for (let i = 0; i + 2 <= token.length; i += 1) add(token.slice(i, i + 2));
@@ -1452,13 +1493,16 @@ async function toolSearchKnowledgeBase({
     return { count: 0, articles: [] };
   }
 
+  // 纯数字词元（来自 3000W / 16mm 这类写法）。
+  // 子串匹配会把「3000」同时命中「30000W」，实测出现过「问 3000W 却把 30000W 排第一」。
+  // 用 CAST 取型号开头的数字做**精确**匹配，命中者额外加权。
+  const numericTerms = [...new Set(
+    terms.map((term) => Number(term)).filter((value) => Number.isInteger(value) && value > 0)
+  )].slice(0, 4);
+
   // 过滤条件放在 CTE 里，市场永远是**第一个绑定参数**（服务端强制，不信任工具入参）
   let where = "WHERE status = 'published' AND market = ?";
   const whereBinds = [requestedMarket];
-  if (requestedLocale) {
-    where += ' AND locale = ?';
-    whereBinds.push(requestedLocale);
-  }
   if (category && KNOWLEDGE_CATEGORIES.has(category)) {
     where += ' AND category = ?';
     whereBinds.push(category);
@@ -1466,6 +1510,17 @@ async function toolSearchKnowledgeBase({
 
   const scoreParts = [];
   const scoreBinds = [];
+  // 语言只做**排序偏好，不做过滤**。
+  // 线上实测：条目正文是中文，而模型发检索词时常带 locale=en，
+  // 原来的 `AND locale = ?` 会把所有中文条目挡掉，导致「知识库明明有答案却检索不到」。
+  if (requestedLocale) {
+    scoreParts.push('CASE WHEN locale = ? THEN 4 ELSE 0 END');
+    scoreBinds.push(requestedLocale);
+  }
+  for (const value of numericTerms) {
+    scoreParts.push('CASE WHEN CAST(applicable_model AS INTEGER) = ? THEN 12 ELSE 0 END');
+    scoreBinds.push(value);
+  }
   for (const [field, weight] of KNOWLEDGE_FIELDS) {
     for (const term of terms) {
       scoreParts.push(
