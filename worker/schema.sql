@@ -1193,7 +1193,9 @@ CREATE TABLE IF NOT EXISTS business_staff_profiles (
   revision INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK(staff_id <> supervisor_staff_id),
-  CHECK((role = 'business_director' AND supervisor_staff_id IS NULL) OR (role <> 'business_director' AND supervisor_staff_id IS NOT NULL))
+  -- 顶层账号（没有上级）可以是任意级别；有上级时只能是经理或专员。
+  -- 见 migrations/056_business_flat_start.sql：允许「一开始只有专员」的扁平起步。
+  CHECK(supervisor_staff_id IS NULL OR role IN ('business_manager','business_specialist'))
 );
 CREATE TABLE IF NOT EXISTS business_territories (
   id TEXT PRIMARY KEY,

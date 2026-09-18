@@ -7,6 +7,10 @@ export async function resolveBusinessHierarchy(profile, load, market) {
   const valid = (p) => p?.is_active && p.business_profile_required === 1 && p.raw_role === 'operations'
     && BUSINESS_ROLES.has(p.role) && [1, 2, 3].includes(p.grade) && (!market || marketAllows(p, market));
   if (!valid(profile)) return null;
+  // 顶层账号：没有上级的人就是自己这条线的顶端。
+  // 以前只允许「总监且无上级」，但实际业务常常是先有专员、之后再设经理和总监，
+  // 所以任何商务级别都可以是顶端。
+  if (!profile.supervisor_staff_id) return profile;
   let current = profile;
   const seen = new Set([profile.staff_id]);
   for (const expected of profile.role === 'business_specialist' ? ['business_manager', 'business_director']
@@ -16,7 +20,7 @@ export async function resolveBusinessHierarchy(profile, load, market) {
     current = await load(current.supervisor_staff_id);
     if (!valid(current) || current.role !== expected) return null;
   }
-  return current.role === 'business_director' && current.supervisor_staff_id === null ? current : null;
+  return current.supervisor_staff_id === null ? current : null;
 }
 
 export async function resolveStaffIdentity(env, staffOrId, market) {

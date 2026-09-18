@@ -23,7 +23,7 @@ test('knowledge page offers CSV bulk import that posts to the batch endpoint', a
   // 入口与文件选择
   assert.match(source, /batchImport: 'Bulk import'/);
   assert.match(source, /batchImport: '批量导入'/);
-  assert.match(source, /accept="\.csv"/);
+  assert.match(source, /accept="\.csv,\.xlsx"/);
   assert.match(source, /parseCsvRows/);
   assert.match(source, /stripBom/);
 
@@ -70,4 +70,20 @@ test('business staff can reach the knowledge base from the sidebar', async () =>
   // 商务专员/经理/总监除了商务记录，还应能看到知识库
   assert.match(app, /BUSINESS_RECORD_NAV_KEYS\.has\(item\.key\) \|\| item\.key === 'knowledge'/);
   assert.match(app, /商务角色（专员\/经理\/总监）/);
+});
+
+test('Excel 直传：浏览器端解析，一个工作表一条知识', async () => {
+  const source = await readFile(new URL('./KnowledgePage.jsx', import.meta.url), 'utf8');
+
+  // 在浏览器里解析，不把文件传到服务端
+  assert.match(source, /import \{ readXlsx \} from '\.\.\/utils\/xlsx'/);
+  assert.match(source, /import \{ xlsxToArticles \} from '\.\.\/utils\/xlsxToArticles'/);
+  assert.match(source, /const isExcel = \/\\\.xlsx\$\/i\.test\(file\.name\)/);
+  assert.match(source, /reader\.readAsArrayBuffer\(file\)/);
+
+  // 工作表数、跳过空表、老浏览器兜底提示都要有
+  assert.match(source, /batchSheets: \(count\) =>/);
+  assert.match(source, /batchSkippedSheets/);
+  assert.match(source, /batchUnsupportedBrowser/);
+  assert.match(source, /xlsx_unsupported_browser/);
 });

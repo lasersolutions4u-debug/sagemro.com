@@ -37,10 +37,12 @@ export async function prepareBusinessProfile(env, account, body) {
   const territoryIds = body.territory_ids ?? [];
   if (!isBusinessRole(role) || ![1, 2, 3].includes(grade) || !Array.isArray(territoryIds)
     || territoryIds.length > 200 || territoryIds.some(id => !textId(id)) || new Set(territoryIds).size !== territoryIds.length) fail('Invalid business role, grade or territories');
-  if (role === 'business_director') {
-    if (supervisor !== null) fail('A director cannot have a supervisor');
+  if (supervisor === null) {
+    // 顶层账号：任意商务级别都可以是自己这条线的顶端（现实中常常先有专员，之后再设经理/总监）。
+    // 区域授权只挂在顶层账号上，层级下面的人通过上级继承区域。
   } else {
-    if (!textId(supervisor) || supervisor === account.id || territoryIds.length) fail('A manager or specialist requires a valid supervisor and no direct territory grants');
+    if (!textId(supervisor) || supervisor === account.id) fail('A staff account requires a valid supervisor');
+    if (territoryIds.length) fail('Only a top-level account can hold direct territory grants');
     const parent = await resolveStaffIdentity(env, supervisor);
     if (!parent || parent.role !== (role === 'business_manager' ? 'business_director' : 'business_manager')) fail('Invalid or inactive supervisor');
     const markets = account.market_scope === 'all' ? ['com', 'cn'] : [account.market_scope];
@@ -98,8 +100,9 @@ export async function scope(env, auth, market) {
   }));
   return { actor, role, epoch, version, owners: allowed.map(row => row.id), territories,
     organization: { actor_staff_id: auth.staffId || 'admin', market, role, grade: actor?.businessGrade ?? null,
-      can_configure: isRoot, can_assign: role !== 'business_specialist', staff: projected,
-      territories: isRoot ? allTerritories : territories, scope_version: version } };
+      // 顶层账号（没有上级）即使是专员也要能分派/归属记录，否则他在 CRM 里永远看不到东西
+      can_configure: isRoot, can_assign: role !== 'business_specialist' || !actor?.supervisorStaffId,
+      staff: projected, territories: isRoot ? allTerritories : territories, scope_version: version } };
 }
 
 const recordTypes = {

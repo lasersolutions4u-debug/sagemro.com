@@ -9,6 +9,8 @@ import {
 import { runtimeConfig } from '../config/runtime';
 import { useAdminLocale } from '../config/locale';
 import { parseCsvRows, stripBom, csvCell } from '../utils/csv';
+import { readXlsx } from '../utils/xlsx';
+import { xlsxToArticles } from '../utils/xlsxToArticles';
 
 const CATEGORIES = [
   'fault',
@@ -78,10 +80,14 @@ const TEXT = {
     importFailed: 'Import failed. Please use a UTF-8 text, Markdown, or CSV file.',
     batchImport: 'Bulk import',
     batchTitle: 'Bulk import from CSV',
-    batchSubtitle: 'One row per knowledge article, UTF-8 encoded. Nothing is written until you press Start import.',
-    batchPick: 'Choose CSV file',
+    batchSubtitle: 'Upload a CSV (one row per article) or an Excel workbook (one worksheet per article). Nothing is written until you press Start import.',
+    batchPick: 'Choose CSV or Excel file',
     batchNoFile: 'No file selected yet.',
     batchRows: (count) => `${count} rows detected`,
+    batchSheets: (count) => `${count} worksheets → ${count} articles`,
+    batchSkippedSheets: (names) => `Skipped worksheets without data: ${names}`,
+    batchNoSheets: 'No worksheet with data was found in this file.',
+    batchUnsupportedBrowser: 'This browser cannot unpack .xlsx. Use a newer Chrome / Edge / Safari, or save the file as CSV.',
     batchMissingColumns: (columns) => `Missing required columns: ${columns}`,
     batchAsDraft: 'Import as draft',
     batchAsPublished: 'Import and publish (recommended)',
@@ -171,10 +177,14 @@ const TEXT = {
     importFailed: '导入失败。请使用 UTF-8 编码的文本、Markdown 或 CSV 文件。',
     batchImport: '批量导入',
     batchTitle: 'CSV 批量导入',
-    batchSubtitle: '一行一条知识条目，UTF-8 编码的 CSV。点击开始导入前不会写入任何数据。',
-    batchPick: '选择 CSV 文件',
+    batchSubtitle: '可以上传 CSV（一行一条知识）或 Excel（一个工作表一条知识）。点击开始导入前不会写入任何数据。',
+    batchPick: '选择 CSV 或 Excel 文件',
     batchNoFile: '尚未选择文件。',
     batchRows: (count) => `识别到 ${count} 行数据`,
+    batchSheets: (count) => `${count} 个工作表 → ${count} 条知识`,
+    batchSkippedSheets: (names) => `已跳过没有数据的工作表：${names}`,
+    batchNoSheets: '这个文件里没有找到含数据的工作表。',
+    batchUnsupportedBrowser: '当前浏览器无法解析 .xlsx。请使用较新的 Chrome / Edge / Safari，或把文件另存为 CSV。',
     batchMissingColumns: (columns) => `缺少必需列：${columns}`,
     batchAsDraft: '导入为草稿',
     batchAsPublished: '导入并发布（推荐）',
@@ -249,6 +259,8 @@ export function KnowledgePage() {
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchName, setBatchName] = useState('');
   const [batchArticles, setBatchArticles] = useState([]);
+  const [batchIsExcel, setBatchIsExcel] = useState(false);
+  const [batchSkippedSheets, setBatchSkippedSheets] = useState([]);
   const [batchStatus, setBatchStatus] = useState('published');
   const [batchResult, setBatchResult] = useState(null);
   const [batchError, setBatchError] = useState('');
@@ -311,6 +323,8 @@ export function KnowledgePage() {
   const resetBatch = () => {
     setBatchName('');
     setBatchArticles([]);
+    setBatchIsExcel(false);
+    setBatchSkippedSheets([]);
     setBatchResult(null);
     setBatchError('');
     setBatchStatus('published');
@@ -321,12 +335,32 @@ export function KnowledgePage() {
     event.target.value = '';
     if (!file) return;
 
+    const isExcel = /\.xlsx$/i.test(file.name);
+    setBatchName(file.name);
+    setBatchIsExcel(isExcel);
+    setBatchResult(null);
+    setBatchSkippedSheets([]);
+
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
+        if (isExcel) {
+          // Excel：一个工作表 = 一条知识。合并单元格与红字标记在浏览器端解析，
+          // 不把文件传到服务端，也不引入第三方解析库。
+          const workbook = await readXlsx(reader.result);
+          const { articles, skipped } = xlsxToArticles(workbook, {
+            market: defaultMarket,
+            locale: defaultLocale,
+            category: 'cutting_parameters',
+            source: file.name,
+            status: batchStatus,
+          });
+          setBatchArticles(articles);
+          setBatchSkippedSheets(skipped);
+          setBatchError(articles.length ? '' : t.batchNoSheets);
+          return;
+        }
         const rows = parseCsvRows(stripBom(String(reader.result || '')));
-        setBatchName(file.name);
-        setBatchResult(null);
         if (!rows.length) {
           setBatchArticles([]);
           setBatchError(t.batchReadFailed);
@@ -348,13 +382,14 @@ export function KnowledgePage() {
         });
         setBatchArticles(articles);
         setBatchError('');
-      } catch {
+      } catch (error) {
         setBatchArticles([]);
-        setBatchError(t.batchReadFailed);
+        setBatchError(error?.message === 'xlsx_unsupported_browser' ? t.batchUnsupportedBrowser : t.batchReadFailed);
       }
     };
     reader.onerror = () => setBatchError(t.batchReadFailed);
-    reader.readAsText(file, 'UTF-8');
+    if (isExcel) reader.readAsArrayBuffer(file);
+    else reader.readAsText(file, 'UTF-8');
   };
 
   const downloadBatchTemplate = () => {
@@ -496,7 +531,7 @@ export function KnowledgePage() {
               </button>
             </div>
             <div className="grid gap-4 px-5 py-5 text-sm leading-6">
-              <input ref={batchInputRef} type="file" accept=".csv" onChange={readBatchFile} className="hidden" />
+              <input ref={batchInputRef} type="file" accept=".csv,.xlsx" onChange={readBatchFile} className="hidden" />
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
@@ -507,7 +542,9 @@ export function KnowledgePage() {
                   {t.batchPick}
                 </button>
                 <span className="text-[var(--color-text-secondary)]">
-                  {batchName ? `${batchName} · ${t.batchRows(batchArticles.length)}` : t.batchNoFile}
+                  {batchName
+                    ? `${batchName} · ${batchIsExcel ? t.batchSheets(batchArticles.length) : t.batchRows(batchArticles.length)}`
+                    : t.batchNoFile}
                 </span>
                 <button
                   type="button"
@@ -518,6 +555,10 @@ export function KnowledgePage() {
                   {t.batchTemplate}
                 </button>
               </div>
+
+              {batchSkippedSheets.length > 0 && (
+                <div className="text-[var(--color-text-muted)]">{t.batchSkippedSheets(batchSkippedSheets.join('、'))}</div>
+              )}
 
               {batchError && (
                 <div className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-red-300">

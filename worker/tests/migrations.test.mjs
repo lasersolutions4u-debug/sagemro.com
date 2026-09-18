@@ -18,6 +18,86 @@ const nullableInternationalCustomerPhoneMigrationUrl = new URL(
 );
 const schemaUrl = new URL('../schema.sql', import.meta.url);
 
+test('056 lets a business account start top-level and preserves every existing profile', async () => {
+  const schema = await readFile(schemaUrl, 'utf8');
+  const migration = await readFile(new URL('../migrations/056_business_flat_start.sql', import.meta.url), 'utf8');
+  const legacy = new DatabaseSync(':memory:');
+  const fresh = new DatabaseSync(':memory:');
+  try {
+    // 旧结构：CHECK 写死「只有总监可以没有上级」
+    legacy.exec(`
+      PRAGMA foreign_keys = ON;
+      CREATE TABLE admin_staff_accounts (id TEXT PRIMARY KEY, is_active INTEGER NOT NULL DEFAULT 1);
+      CREATE TABLE business_scope_version (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL DEFAULT 0);
+      INSERT INTO business_scope_version(id) VALUES (1);
+      CREATE TABLE business_staff_profiles (
+        staff_id TEXT PRIMARY KEY REFERENCES admin_staff_accounts(id),
+        role TEXT NOT NULL CHECK(role IN ('business_director','business_manager','business_specialist')),
+        grade INTEGER NOT NULL CHECK(grade IN (1,2,3)),
+        supervisor_staff_id TEXT REFERENCES admin_staff_accounts(id),
+        revision INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CHECK(staff_id <> supervisor_staff_id),
+        CHECK((role = 'business_director' AND supervisor_staff_id IS NULL) OR (role <> 'business_director' AND supervisor_staff_id IS NOT NULL))
+      );
+      CREATE TABLE business_director_territories (
+        staff_id TEXT NOT NULL REFERENCES business_staff_profiles(staff_id),
+        territory_id TEXT NOT NULL,
+        PRIMARY KEY(staff_id,territory_id)
+      );
+      INSERT INTO admin_staff_accounts(id) VALUES ('director-1'),('manager-1'),('specialist-1');
+      INSERT INTO business_staff_profiles(staff_id,role,grade,supervisor_staff_id) VALUES
+        ('director-1','business_director',3,NULL),
+        ('manager-1','business_manager',2,'director-1'),
+        ('specialist-1','business_specialist',1,'manager-1');
+      INSERT INTO business_director_territories(staff_id,territory_id) VALUES ('director-1','t1');
+    `);
+    assert.throws(
+      () => legacy.exec("INSERT INTO admin_staff_accounts(id) VALUES ('solo-0'); INSERT INTO business_staff_profiles(staff_id,role,grade,supervisor_staff_id) VALUES ('solo-0','business_specialist',1,NULL)"),
+      /CHECK constraint failed/,
+      '旧结构下顶层专员必须建不出来'
+    );
+    const before = legacy.prepare('SELECT * FROM business_staff_profiles ORDER BY staff_id').all();
+
+    legacy.exec(migration);
+
+    // 既有数据一条不变，外键关系完好
+    assert.deepEqual(legacy.prepare('SELECT * FROM business_staff_profiles ORDER BY staff_id').all(), before);
+    // 外键关系完好（node:sqlite 返回 null-prototype 对象，比较前先摊平）
+    assert.deepEqual(
+      legacy.prepare('SELECT * FROM business_director_territories').all().map((row) => ({ ...row })),
+      [{ staff_id: 'director-1', territory_id: 't1' }]
+    );
+
+    // 现在允许顶层专员
+    legacy.prepare("INSERT INTO admin_staff_accounts(id) VALUES ('solo-1')").run();
+    legacy.prepare("INSERT INTO business_staff_profiles(staff_id,role,grade,supervisor_staff_id) VALUES ('solo-1','business_specialist',1,NULL)").run();
+    assert.equal(legacy.prepare("SELECT supervisor_staff_id FROM business_staff_profiles WHERE staff_id='solo-1'").get().supervisor_staff_id, null);
+    // 总监仍然不能有上级
+    assert.throws(
+      () => legacy.prepare("INSERT INTO business_staff_profiles(staff_id,role,grade,supervisor_staff_id) VALUES ('solo-1','business_director',1,'manager-1')").run(),
+      /CHECK constraint failed/
+    );
+
+    // 触发器必须随表重建，否则 scope_version 不再递增（并发失效会失灵）
+    const versionBefore = legacy.prepare('SELECT revision FROM business_scope_version WHERE id=1').get().revision;
+    legacy.prepare("UPDATE business_staff_profiles SET grade = 2 WHERE staff_id = 'solo-1'").run();
+    assert.equal(legacy.prepare('SELECT revision FROM business_scope_version WHERE id=1').get().revision, versionBefore + 1);
+
+    fresh.exec(schema);
+    for (const pragma of ['table_info', 'foreign_key_list']) {
+      assert.deepEqual(
+        legacy.prepare(`PRAGMA ${pragma}(business_staff_profiles)`).all(),
+        fresh.prepare(`PRAGMA ${pragma}(business_staff_profiles)`).all(),
+        pragma
+      );
+    }
+  } finally {
+    legacy.close();
+    fresh.close();
+  }
+});
+
 test('050 adds private engineer service profiles idempotently without changing existing records', async () => {
   const schema = await readFile(schemaUrl, 'utf8');
   const migrationPath = new URL('../migrations/050_engineer_service_profiles.sql', import.meta.url);

@@ -78,6 +78,51 @@ test('authoritative staff identity defeats spoofed bearer/cookie roles and all l
   assert.notEqual((await api(env,'/api/admin/business/organization',{id:'manager-a'})).status,200);
 });
 
+test('a business account may start top-level without a director or manager',async(t)=>{
+  const env=fixture(t); seed(env);
+  const db=env.DB.__sqlite;
+  db.prepare('INSERT INTO business_territories(id,name,market) VALUES (?,?,?)').run('c','Territory C','com');
+  // 先建区域再取 scope_version：建区域会通过触发器递增版本号，先取的会过期
+  const preview=await api(env,'/api/admin/business/organization');
+  // 现实场景：一开始只有专员，没有总监也没有经理
+  const created=await api(env,'/api/admin/staff',{method:'POST',body:{scope_version:preview.data.scope_version,
+    login:'solo-specialist@example.invalid',display_name:'Solo Specialist',role:'business_specialist',
+    grade:1,market_scope:'com',supervisor_staff_id:null,territory_ids:['c']}});
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  const id=created.data.staff.id;
+  db.prepare('UPDATE admin_staff_accounts SET must_change_password=0 WHERE id=?').run(id);
+
+  // 身份必须能解析出来；以前会变成 invalid_staff，所有接口 403
+  const session=await api(env,'/api/auth/session',{id});
+  assert.equal(session.status,200);
+  assert.equal(session.data.user.staffRole,'business_specialist');
+
+  // 顶层专员自己就是这条线的顶端：持有区域，并且能分派记录（否则 CRM 里永远是空的）
+  const org=await api(env,'/api/admin/business/organization',{id});
+  assert.equal(org.status,200,JSON.stringify(org.data));
+  assert.equal(org.data.can_assign,true);
+  assert.deepEqual(org.data.territories.map(x=>x.id),['c']);
+
+  // 知识库也要能用 —— 这才是这次放开商务角色的目的
+  assert.equal((await api(env,'/api/admin/knowledge',{id})).status,200);
+
+  // 以后招了经理：把专员重新挂到经理下面，账号本身不动
+  // 注意：scope_version 是按「当前身份+市场+版本号」算的哈希，
+  // 建号要拿**发起人自己**的版本，不能拿专员视角的。
+  const adminOrg=await api(env,'/api/admin/business/organization');
+  const manager=await api(env,'/api/admin/staff',{method:'POST',body:{scope_version:adminOrg.data.scope_version,
+    login:'later-manager@example.invalid',display_name:'Later Manager',role:'business_manager',
+    grade:2,market_scope:'com',supervisor_staff_id:null,territory_ids:[]}});
+  assert.equal(manager.status,201,JSON.stringify(manager.data));
+  const reparent=await api(env,`/api/admin/business/staff/${id}`,{method:'PUT',body:{revision:0,
+    role:'business_specialist',grade:1,supervisor_staff_id:manager.data.staff.id,territory_ids:[]}});
+  assert.equal(reparent.status,200,JSON.stringify(reparent.data));
+  assert.equal(db.prepare('SELECT supervisor_staff_id FROM business_staff_profiles WHERE staff_id=?').get(id).supervisor_staff_id,manager.data.staff.id);
+  // 登录凭据没有被换掉
+  assert.equal(db.prepare('SELECT count(*) n FROM admin_staff_accounts WHERE id=?').get(id).n,1);
+});
+
+
 test('assignment checks both ends, revision, identity and invalidated pagination',async(t)=>{
   const env=fixture(t); seed(env);
   const path='/api/admin/business/records/customer/specialist-a/assignment';
@@ -118,7 +163,9 @@ test('bootstrap configures territories and creates audited business accounts wit
   assert.equal(env.DB.__sqlite.prepare('SELECT count(*) n FROM audit_logs WHERE target_id=?').get(created.data.staff.id).n,1);
   const login=await worker.fetch(new Request('https://api.sagemro.com/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://admin.sagemro.com'},body:JSON.stringify({phone:'new-specialist@example.invalid',password:created.data.temporary_password})}),env,{});
   assert.equal(login.status,200); assert.equal((await login.json()).user.staffRole,'business_specialist');
-  for(const body of [{supervisor_staff_id:'specialist-a'},{supervisor_staff_id:null},{market_scope:'cn'},{grade:4}]) {
+  // 注意：{supervisor_staff_id:null} 不再属于非法输入——扁平起步允许任意级别做顶层
+  // （见下方 'a business account may start top-level' 用例）。其余非法输入仍然必须被拒。
+  for(const body of [{supervisor_staff_id:'specialist-a'},{market_scope:'cn'},{grade:4}]) {
     const preview=await api(env,'/api/admin/business/organization');
     const denied=await api(env,'/api/admin/staff',{method:'POST',body:{scope_version:preview.data.scope_version,login:'invalid@example.invalid',display_name:'Invalid Fixture',role:'business_manager',grade:1,market_scope:'com',supervisor_staff_id:'director-a',...body}});
     assert.equal(denied.status,400,JSON.stringify(denied.data));
