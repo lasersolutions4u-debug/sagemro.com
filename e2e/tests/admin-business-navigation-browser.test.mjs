@@ -102,7 +102,10 @@ test('international shared record menus keep business roles scoped and administr
       await page.locator('nav').waitFor();
       await page.waitForLoadState('networkidle');
       assert.equal(await page.locator('nav').getByRole('button', { name: 'Business workspace', exact: true }).count(), 0);
-      if (!root) assert.deepEqual((await page.locator('nav button').allTextContents()).sort(), ['Customers', 'Leads', 'Service Orders'].sort());
+      // 商务角色的可见菜单：三个商务记录页 + 知识库。
+      // 知识库是 2026-09-17 业务方要求新放开的（商务同事自行上传知识内容）；
+      // 其余 legacy 管理页对商务角色仍然不可见。
+      if (!root) assert.deepEqual((await page.locator('nav button').allTextContents()).sort(), ['Customers', 'Leads', 'Service Orders', 'Knowledge Base'].sort());
       for (const [label, kind] of [['Customers', 'customer'], ['Leads', 'lead'], ['Service Orders', 'work_order']]) {
         await page.locator('nav').getByRole('button', { name: label, exact: true }).click();
         if (root) {

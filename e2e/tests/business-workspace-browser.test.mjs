@@ -155,7 +155,9 @@ test('business workspace and staff organization browser journeys use only local 
             if (market === 'com') await page.locator('nav').getByRole('button', { name: 'Customers', exact: true }).click();
             await page.getByRole('heading', { name: market === 'cn' ? '商务工作台' : 'Customers', exact: true }).waitFor();
             await page.getByText('Example Customer', { exact: true }).waitFor();
-            assert.equal(await page.locator('nav button').count(), market === 'cn' ? 1 : 3);
+            // COM 商务角色：三个商务记录页 + 知识库（2026-09-17 起放开给商务上传内容）；
+            // CN 仍然只有商务工作台一个入口。
+            assert.equal(await page.locator('nav button').count(), market === 'cn' ? 1 : 4);
             assert.ok(calls.every(path => path === '/api/auth/session' || path.startsWith('/api/admin/business/')));
             await page.getByRole('button', { name: market === 'cn' ? '查看详情' : 'View details', exact: true }).click();
             const dialog = page.getByRole('dialog');
