@@ -8,7 +8,7 @@ import {
 } from '../services/api';
 import { runtimeConfig } from '../config/runtime';
 import { useAdminLocale } from '../config/locale';
-import { parseCsvRows, stripBom } from '../utils/csv';
+import { parseCsvRows, stripBom, csvCell } from '../utils/csv';
 
 const CATEGORIES = [
   'fault',
@@ -83,9 +83,10 @@ const TEXT = {
     batchNoFile: 'No file selected yet.',
     batchRows: (count) => `${count} rows detected`,
     batchMissingColumns: (columns) => `Missing required columns: ${columns}`,
-    batchAsDraft: 'Import as draft (recommended)',
-    batchAsPublished: 'Import and publish',
+    batchAsDraft: 'Import as draft',
+    batchAsPublished: 'Import and publish (recommended)',
     batchPublishWarning: 'Published articles become retrievable by AI immediately. Make sure the content has been checked.',
+    batchTemplate: 'Download CSV template',
     batchStart: 'Start import',
     batchRunning: 'Importing...',
     batchDone: (result) => `Imported ${result.imported}, skipped ${result.skipped} duplicate(s), failed ${result.failed}.`,
@@ -175,9 +176,10 @@ const TEXT = {
     batchNoFile: '尚未选择文件。',
     batchRows: (count) => `识别到 ${count} 行数据`,
     batchMissingColumns: (columns) => `缺少必需列：${columns}`,
-    batchAsDraft: '导入为草稿（推荐）',
-    batchAsPublished: '导入并直接发布',
+    batchAsDraft: '导入为草稿',
+    batchAsPublished: '导入并发布（推荐）',
     batchPublishWarning: '直接发布后 AI 立即可检索到这些内容，请确认已核对无误。',
+    batchTemplate: '下载 CSV 模板',
     batchStart: '开始导入',
     batchRunning: '导入中...',
     batchDone: (result) => `成功 ${result.imported} 条，跳过重复 ${result.skipped} 条，失败 ${result.failed} 条。`,
@@ -247,7 +249,7 @@ export function KnowledgePage() {
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchName, setBatchName] = useState('');
   const [batchArticles, setBatchArticles] = useState([]);
-  const [batchStatus, setBatchStatus] = useState('draft');
+  const [batchStatus, setBatchStatus] = useState('published');
   const [batchResult, setBatchResult] = useState(null);
   const [batchError, setBatchError] = useState('');
   const [batchBusy, setBatchBusy] = useState(false);
@@ -311,7 +313,7 @@ export function KnowledgePage() {
     setBatchArticles([]);
     setBatchResult(null);
     setBatchError('');
-    setBatchStatus('draft');
+    setBatchStatus('published');
   };
 
   const readBatchFile = (event) => {
@@ -353,6 +355,33 @@ export function KnowledgePage() {
     };
     reader.onerror = () => setBatchError(t.batchReadFailed);
     reader.readAsText(file, 'UTF-8');
+  };
+
+  const downloadBatchTemplate = () => {
+    const sample = {
+      market: defaultMarket,
+      locale: defaultLocale,
+      category: 'cutting_parameters',
+      title: '示例：6000W 碳钢切割参数（O2）—— 请整行替换或删除',
+      content: '| 厚度(mm) | 速度(m/min) |\n| --- | --- |\n| 3 | 3.6-4.2 |',
+      source: '厂商手册 第3章',
+      applicable_equipment: '光纤激光切割机',
+      applicable_brand: '',
+      applicable_model: '6000W',
+      risk_level: 'medium',
+      status: 'published',
+    };
+    const rows = [BATCH_COLUMNS, BATCH_COLUMNS.map((column) => sample[column] ?? '')];
+    const csv = rows.map((row) => row.map(csvCell).join(',')).join('\n');
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'sagemro-knowledge-template.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   const runBatchImport = async () => {
@@ -480,6 +509,14 @@ export function KnowledgePage() {
                 <span className="text-[var(--color-text-secondary)]">
                   {batchName ? `${batchName} · ${t.batchRows(batchArticles.length)}` : t.batchNoFile}
                 </span>
+                <button
+                  type="button"
+                  onClick={downloadBatchTemplate}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] hover:text-[var(--color-text)]"
+                >
+                  <FileText size={16} />
+                  {t.batchTemplate}
+                </button>
               </div>
 
               {batchError && (
@@ -495,19 +532,19 @@ export function KnowledgePage() {
                   <input
                     type="radio"
                     name="knowledge-batch-status"
-                    checked={batchStatus === 'draft'}
-                    onChange={() => setBatchStatus('draft')}
+                    checked={batchStatus === 'published'}
+                    onChange={() => setBatchStatus('published')}
                   />
-                  {t.batchAsDraft}
+                  {t.batchAsPublished}
                 </label>
                 <label className="flex items-center gap-2">
                   <input
                     type="radio"
                     name="knowledge-batch-status"
-                    checked={batchStatus === 'published'}
-                    onChange={() => setBatchStatus('published')}
+                    checked={batchStatus === 'draft'}
+                    onChange={() => setBatchStatus('draft')}
                   />
-                  {t.batchAsPublished}
+                  {t.batchAsDraft}
                 </label>
               </fieldset>
 

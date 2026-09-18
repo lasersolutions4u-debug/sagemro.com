@@ -23306,7 +23306,12 @@ async function routeRequest(request, env, ctx) {
     request._ctx = ctx;
 
     let earlyAuth;
-    if (request.method !== 'OPTIONS' && !path.startsWith('/api/admin/business/') && ![
+    // 知识库路径要和 /api/admin/business/ 一样绕过这道早退门禁：
+    // 商务角色（专员/经理/总监）需要能进知识库上传内容，
+    // 真正的角色判定在下面 /api/admin/ 的分支里做。
+    // 同样用带尾斜杠的匹配，避免连带放行 knowledge-candidates。
+    const knowledgePath = path === '/api/admin/knowledge' || path.startsWith('/api/admin/knowledge/');
+    if (request.method !== 'OPTIONS' && !path.startsWith('/api/admin/business/') && !knowledgePath && ![
       '/api/auth/session', '/api/auth/logout', '/api/auth/change-password', '/api/admin/login',
     ].includes(path)) {
       earlyAuth = await authenticateRequest(request, env);
@@ -23435,7 +23440,15 @@ async function routeRequest(request, env, ctx) {
         || path === '/api/auth/change-password'
         || (staff.role === 'operations' && isOperationsReadRoute(path, request.method));
       const businessRoute = path.startsWith('/api/admin/business/') || path === '/api/auth/change-password';
-      if (isBusinessRole(staff.role) ? !businessRoute : staff.role !== 'admin' && !operationalRoute) {
+      // 知识库：商务角色（商务专员/经理/总监）可以上传与维护知识内容。
+      // 必须写成带尾斜杠的 '/api/admin/knowledge/'，否则会把
+      // /api/admin/knowledge-candidates（候选审核工作流）一并放行。
+      const knowledgeRoute = path === '/api/admin/knowledge'
+        || path.startsWith('/api/admin/knowledge/');
+      const permitted = isBusinessRole(staff.role)
+        ? (businessRoute || knowledgeRoute)
+        : (staff.role === 'admin' || operationalRoute);
+      if (!permitted) {
         return errorResponse('当前员工角色无权访问该管理接口', 403);
       }
     }

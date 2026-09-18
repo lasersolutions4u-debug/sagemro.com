@@ -102,7 +102,11 @@ test('admin navigation resets and guards privileged pages across identity change
   assert.match(app, /visibleNavItems\.some\(\(item\) => item\.key === activePage\)/);
   assert.match(app, /const currentPage = visibleNavItems\.some\(\(item\) => item\.key === activePage\) \? activePage : visibleNavItems\[0\]\?\.key \|\| 'dashboard'/);
   assert.match(app, /if \(isBusinessStaff\) return item\.key === 'businessWorkspace'/);
-  assert.match(app, /if \(runtimeConfig\.market === 'com'\) \{\s*if \(item\.key === 'businessWorkspace'\) return false;\s*if \(isBusinessStaff\) return BUSINESS_RECORD_NAV_KEYS\.has\(item\.key\)/);
+  // COM 下商务角色：屏蔽 businessWorkspace，但保留商务记录 + 知识库。
+  // 知识库是 2026-09-17 业务方要求新放开的（商务同事自行上传内容）；
+  // 其余 legacy 管理页对商务角色仍然不可见。
+  assert.match(app, /if \(item\.key === 'businessWorkspace'\) return false;/);
+  assert.match(app, /if \(isBusinessStaff\) return BUSINESS_RECORD_NAV_KEYS\.has\(item\.key\) \|\| item\.key === 'knowledge'/);
   assert.match(app, /BUSINESS_RECORD_NAV_KEYS = new Set\(\['users', 'leads', 'workorders'\]\)/);
   for (const kind of ['customer', 'lead', 'work_order']) {
     assert.ok(app.includes(`key={\x60\x24{user.staffId}:\x24{user.staffRole}:${kind}\x60}`));

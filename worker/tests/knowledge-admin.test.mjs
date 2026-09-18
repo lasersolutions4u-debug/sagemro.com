@@ -119,22 +119,33 @@ function createEnv() {
       async put() {},
     },
   };
-  return withFixtureAccounts(env, { customers: [{ id: 'customer-1' }, { id: 'customer-2' }], engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }] });
+  return withFixtureAccounts(env, {
+    customers: [{ id: 'customer-1' }, { id: 'customer-2' }],
+    engineers: [{ id: 'engineer-1' }, { id: 'engineer-2' }, { id: 'lead-1', engineer_role: 'regional_lead' }],
+    // 商务角色：business_profile_required=0 让 resolveStaffIdentity 直接返回该行，
+    // 这样测试聚焦在「路由权限」本身，不需要搭完整的商务组织层级。
+    admin_staff_accounts: [
+      { id: 'specialist-1', role: 'business_specialist', is_active: 1, market_scope: 'all', must_change_password: 0, business_profile_required: 0 },
+      { id: 'manager-1', role: 'business_manager', is_active: 1, market_scope: 'all', must_change_password: 0, business_profile_required: 0 },
+      { id: 'ops-1', role: 'operations', is_active: 1, market_scope: 'all', must_change_password: 0, business_profile_required: 0 },
+    ],
+  });
 }
 
-async function token(env, userType = 'admin') {
+async function token(env, userType = 'admin', staff = null) {
   return signEnvSession({
-    userId: userType === 'admin' ? 'admin' : `${userType}-1`,
+    userId: staff ? staff.id : (userType === 'admin' ? 'admin' : `${userType}-1`),
     userType,
     market: 'cn',
     phone: '13800000000',
     iat: 1,
     exp: Math.floor(Date.now() / 1000) + 3600,
+    ...(staff ? { staffId: staff.id, staffRole: staff.role } : {}),
   }, env);
 }
 
-async function api(env, path, { method = 'GET', body, userType = 'admin' } = {}) {
-  const jwt = await token(env, userType);
+async function api(env, path, { method = 'GET', body, userType = 'admin', staff = null } = {}) {
+  const jwt = await token(env, userType, staff);
   const response = await worker.fetch(new Request(`https://api.sagemro.cn${path}`, {
     method,
     headers: {
@@ -372,4 +383,61 @@ test('手动新建并直接发布时也会写入审核人', async () => {
   assert.equal(created.response.status, 201);
   assert.equal(created.json.article.status, 'published');
   assert.equal(created.json.article.reviewed_by, 'admin');
+});
+
+// ---------- 角色权限：商务角色可以用知识库 ----------
+
+const SPECIALIST = { id: 'specialist-1', role: 'business_specialist' };
+const MANAGER = { id: 'manager-1', role: 'business_manager' };
+const OPERATIONS = { id: 'ops-1', role: 'operations' };
+
+test('商务专员可以查看知识库列表并批量导入', async () => {
+  const env = createEnv();
+
+  const listed = await api(env, '/api/admin/knowledge', { staff: SPECIALIST });
+  assert.equal(listed.response.status, 200);
+
+  const imported = await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST',
+    staff: SPECIALIST,
+    body: { status: 'published', articles: [batchRow({ title: '商务专员上传的条目' })] },
+  });
+  assert.equal(imported.response.status, 200);
+  assert.equal(imported.json.imported, 1);
+  assert.equal(env.__knowledge.at(-1).status, 'published');
+  assert.equal(env.__knowledge.at(-1).reviewed_by, 'specialist-1', '审核人应是上传者本人');
+});
+
+test('商务经理同样可以导入', async () => {
+  const env = createEnv();
+  const imported = await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST', staff: MANAGER, body: { articles: [batchRow({ title: '经理上传' })] },
+  });
+  assert.equal(imported.response.status, 200);
+  assert.equal(imported.json.imported, 1);
+});
+
+test('商务角色不能进入知识候选审核工作流', async () => {
+  const env = createEnv();
+  const result = await api(env, '/api/admin/knowledge-candidates', { staff: SPECIALIST });
+  assert.equal(result.response.status, 403, '放开的是知识库，不是候选审核');
+});
+
+test('运营 / 仓库 / 采购仍然不能访问知识库', async () => {
+  const env = createEnv();
+  const listed = await api(env, '/api/admin/knowledge', { staff: OPERATIONS });
+  assert.equal(listed.response.status, 403, '本次只给商务角色授权，运营不动');
+
+  const imported = await api(env, '/api/admin/knowledge/batch', {
+    method: 'POST', staff: OPERATIONS, body: { articles: [batchRow()] },
+  });
+  assert.equal(imported.response.status, 403);
+  assert.equal(env.__knowledge.length, 0);
+});
+
+test('商务角色仍可正常使用商务工作台接口', async () => {
+  const env = createEnv();
+  // 权限改为白名单拼接后，原有商务路由不能被打断
+  const result = await api(env, '/api/admin/business/work-orders', { staff: SPECIALIST });
+  assert.notEqual(result.response.status, 403);
 });

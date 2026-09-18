@@ -200,7 +200,8 @@ export default function App() {
     return getNavItems(t).filter((item) => {
       if (runtimeConfig.market === 'com') {
         if (item.key === 'businessWorkspace') return false;
-        if (isBusinessStaff) return BUSINESS_RECORD_NAV_KEYS.has(item.key);
+        // 商务角色（专员/经理/总监）除了客户、线索、工单，还可以进知识库上传与维护内容
+        if (isBusinessStaff) return BUSINESS_RECORD_NAV_KEYS.has(item.key) || item.key === 'knowledge';
       }
       if (isBusinessStaff) return item.key === 'businessWorkspace';
       if (item.key === 'businessWorkspace') return user.staffRole === 'admin';

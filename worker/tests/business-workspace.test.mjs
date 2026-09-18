@@ -95,7 +95,11 @@ test('assignment checks both ends, revision, identity and invalidated pagination
 test('unified business menus never grant legacy management or deferred modules to any business role', async t => {
   const env = fixture(t); seed(env);
   for (const id of ['director-a', 'manager-a', 'specialist-a']) {
-    for (const path of ['/api/admin/users', '/api/admin/leads', '/api/admin/workorders', '/api/admin/staff', '/api/admin/knowledge', '/api/admin/ratings', '/api/admin/materials']) {
+    // 注意：/api/admin/knowledge 已从这份「禁止清单」移出。
+    // 2026-09-17 业务方要求商务角色能自行上传知识内容，因此知识库被显式放开
+    // （对应用例见 knowledge-admin.test.mjs 的商务角色部分）。
+    // 其余 legacy 管理接口仍然一律禁止。
+    for (const path of ['/api/admin/users', '/api/admin/leads', '/api/admin/workorders', '/api/admin/staff', '/api/admin/ratings', '/api/admin/materials']) {
       const result = await api(env, path, { id });
       assert.equal(result.status, 403, `${id}: ${path}`);
     }
