@@ -42,7 +42,7 @@ export function normalizeWorkOrderShortTitle(value) {
     .replace(UNPREFIXED_INTERNATIONAL_PHONE, (match, offset, text) => (
       TECHNICAL_IDENTIFIER_LABEL.test(text.slice(0, offset)) ? match : ' '
     ))
-    .replace(/\[(?:手机号|身份证|邮箱|银行卡|车牌|URL)\]/g, ' ')
+    .replace(/\[(?:手机号|电话|身份证|邮箱|银行卡|车牌|URL)\]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, TITLE_LIMIT)

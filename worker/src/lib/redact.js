@@ -21,6 +21,7 @@
 
 const PLACEHOLDERS = {
   phone_cn: '[手机号]',
+  phone_intl: '[电话]',
   id_card_cn: '[身份证]',
   email: '[邮箱]',
   bank_card: '[银行卡]',
@@ -32,6 +33,18 @@ const PLACEHOLDERS = {
 // 前后用负向断言避免吃掉 13 位订单号尾部 / 设备序列号里嵌的 11 位子串
 // （\b 对中文边界不敏感，用 (?<!\d) / (?!\d) 更可靠）
 const RE_PHONE_CN = /(?<!\d)1[3-9]\d{9}(?!\d)/g;
+
+// ============ 国际号码（COM / 海外市场）============
+// 背景：上面所有规则都是中国本土标识，对海外客户留的号码一律不命中——
+// 而 SAGEMRO 国际版的客户全在海外。下面三条是给 COM 补的，刻意保守：
+// 只认「+ 国家码」「00 国家码 + 分隔符」「北美 3-3-4 分组」三种明确格式，
+// 不认裸的连续数字，否则会吃掉订单号 / 设备序列号。
+const RE_PHONE_INTL_PLUS = /(?<![\w+])\+\d{1,3}(?:[\s.\-]?\(?\d{1,4}\)?){2,5}(?![\w])/g;
+// 00 前缀必须紧跟分隔符：否则 `001380013800090` 这类长编号串会被整段吃掉
+// （该用例已在 redact.test.mjs 里作为负样本锁定）
+const RE_PHONE_INTL_00 = /(?<![\w\d])00\d{1,3}[\s.\-](?:\(?\d{1,4}\)?[\s.\-]?){1,4}\d(?![\w])/g;
+// 区号首位不能是 0/1（与 NANP 一致），可挡掉 100.200.3000 这类版本号形状
+const RE_PHONE_NANP = /(?<![\w\d])(?:\([2-9]\d{2}\)|[2-9]\d{2})[\s.\-]\d{3}[\s.\-]\d{4}(?![\w\d])/g;
 
 // 中国身份证：18 位（老 15 位已基本淘汰，不处理以免误伤订单号）
 // 最后一位可为数字或 X/x
@@ -66,6 +79,17 @@ const DEFAULT_CATEGORIES = [
   'url_with_credentials',
 ];
 
+// 国际号码**不进默认集**：在技术语境里它们和别的东西完全同形，而且已有测试锁定
+// 这些字符串不得被改 ——
+//   `+1 234 5678`       校准偏移（+ 是正号）
+//   `+44 7700 900123`   零件号
+//   `+1.2345678 V`      电压修正值
+//   `Part 415-555-0123` 零件号（见 workOrderTitles.js:6,42-44 的上下文门控）
+// 没有任何正则能把 `+1 415 555 0132` 和 `+1 234 5678` 区分开——只有语境能。
+// 因此只在"客户直接写给我们的话"这类明确场景，由调用方显式开启。
+export const PHONE_INTL_CATEGORY = 'phone_intl';
+export const CHAT_PII_CATEGORIES = Object.freeze([...DEFAULT_CATEGORIES, PHONE_INTL_CATEGORY]);
+
 /**
  * 对单条文本做脱敏。
  * @param {string} text
@@ -99,6 +123,17 @@ export function redactPII(text, opts = {}) {
   if (categories.includes('id_card_cn')) {
     out = out.replace(RE_ID_CARD_CN, PLACEHOLDERS.id_card_cn);
   }
+  if (categories.includes(PHONE_INTL_CATEGORY)) {
+    // 用数字总数兜底（E.164 是 7-15 位），避免 `+1 2 3` 这类短表达式
+    // 和超长编号串被误当成号码。
+    const keepIfPhoneLength = (m) => {
+      const digits = m.replace(/\D/g, '');
+      return digits.length >= 7 && digits.length <= 15 ? PLACEHOLDERS.phone_intl : m;
+    };
+    out = out.replace(RE_PHONE_INTL_PLUS, keepIfPhoneLength);
+    out = out.replace(RE_PHONE_INTL_00, keepIfPhoneLength);
+    out = out.replace(RE_PHONE_NANP, PLACEHOLDERS.phone_intl);
+  }
   if (categories.includes('phone_cn')) {
     out = out.replace(RE_PHONE_CN, PLACEHOLDERS.phone_cn);
   }
@@ -126,6 +161,10 @@ export function countPII(text) {
   if (typeof text !== 'string' || text.length === 0) {
     return Object.fromEntries(DEFAULT_CATEGORIES.map((c) => [c, 0]));
   }
+  // 注意：countPII 的输出会被当作"默认集是否命中"的检测向量使用
+  // （见 knowledge-candidate-workflow.js 的 Object.values(countPII(...)).some(...)），
+  // 所以这里**只能**统计默认集里的类别，不能加入 opt-in 的国际号码，
+  // 否则 `+1 234 5678` 这类技术值会被判成敏感内容。
   return {
     phone_cn: (text.match(RE_PHONE_CN) || []).length,
     id_card_cn: (text.match(RE_ID_CARD_CN) || []).length,

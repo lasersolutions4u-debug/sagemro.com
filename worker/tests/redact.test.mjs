@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { redactPII, countPII, redactFields } from '../src/lib/redact.js';
+import { redactPII, countPII, redactFields, CHAT_PII_CATEGORIES } from '../src/lib/redact.js';
 
 // ============ 正样本：必须命中 ============
 
@@ -223,4 +223,141 @@ test('null / undefined / 非字符串原样返回，不抛错', () => {
 test('没有 PII 的纯技术描述原样返回', () => {
   const t = '3000W 光纤激光切割机 G3015H 挂渣严重，建议检查保护镜片';
   assert.equal(redactPII(t), t);
+});
+
+// ============ 国际号码（COM / 海外市场）============
+// 背景：SAGEMRO 国际版客户全在海外，而原有规则全是中国本土标识
+// （phone_cn / id_card_cn / license_plate_cn / bank_card 中文关键词），
+// 对海外号码一律不命中。
+//
+// **国际号码不在默认集里**：技术语境下 `+1 234 5678`（校准偏移，+ 是正号）、
+// `+44 7700 900123`（零件号）、`+1.2345678 V`（电压值）、`Part 415-555-0123`
+// （零件号）与电话完全同形，而这几个字符串已被 knowledge-candidate-workflow
+// 的用例锁定为"不得被改"。没有任何正则能区分它们——只有语境能。
+// 因此只在"客户直接写给我们的话"（chat / 服务单整理）里用 CHAT_PII_CATEGORIES 显式开启。
+
+const CHAT = { categories: CHAT_PII_CATEGORIES };
+
+// ---- 正样本：显式开启后必须命中 ----
+
+test('+1 带空格分组的美加号码被替换', () => {
+  assert.equal(redactPII('Call me at +1 415 555 0132 tomorrow', CHAT), 'Call me at [电话] tomorrow');
+});
+
+test('+1 无分隔的连续号码被替换', () => {
+  assert.equal(redactPII('+14155550132', CHAT), '[电话]');
+});
+
+test('(区号) 555-xxxx 北美格式被替换', () => {
+  assert.equal(redactPII('Phone: (415) 555-0132', CHAT), 'Phone: [电话]');
+});
+
+test('415-555-0132 短横线格式被替换', () => {
+  assert.equal(redactPII('415-555-0132', CHAT), '[电话]');
+});
+
+test('415.555.0132 点分格式被替换', () => {
+  assert.equal(redactPII('415.555.0132', CHAT), '[电话]');
+});
+
+test('+49 德国号码（含 8 位尾号）被替换', () => {
+  assert.equal(redactPII('+49 30 12345678', CHAT), '[电话]');
+});
+
+test('00 国际前缀带分隔符的号码被替换', () => {
+  assert.equal(redactPII('Dial 0044 20 7946 0958', CHAT), 'Dial [电话]');
+});
+
+test('+86 中国号码带国家码时按国际号处理', () => {
+  assert.equal(redactPII('+86 138 0013 8000', CHAT), '[电话]');
+});
+
+test('海外客户消息里的号码被脱敏而技术内容保留', () => {
+  const input = 'Customer at +1 415 555 0132 reported 6000W cutting 16mm carbon steel with E053 alarm';
+  const output = redactPII(input, CHAT);
+  assert.ok(output.includes('[电话]'), '号码被脱敏');
+  assert.ok(output.includes('6000W'), '功率保留');
+  assert.ok(output.includes('16mm'), '厚度保留');
+  assert.ok(output.includes('E053'), '报警码保留');
+  assert.ok(!output.includes('415 555 0132'));
+});
+
+// ---- 负样本：即使开启国际类别也不能误伤 ----
+
+test('开启后仍不脱中国长编号串（00 前缀必须带分隔符）', () => {
+  // 原有负样本，锁住 RE_PHONE_INTL_00 必须要求分隔符
+  const t = '001380013800090';
+  assert.equal(redactPII(t, CHAT), t);
+});
+
+test('开启后仍不脱日期', () => {
+  const t = '工单创建于 2026-09-18';
+  assert.equal(redactPII(t, CHAT), t);
+});
+
+test('开启后仍不脱三段版本号形状（区号首位不能是 1）', () => {
+  const t = '控制器固件 100.200.3000';
+  assert.equal(redactPII(t, CHAT), t);
+});
+
+test('开启后仍不脱尺寸三元组', () => {
+  const t = '厚度组合 16-20-30 均可切';
+  assert.equal(redactPII(t, CHAT), t);
+});
+
+test('开启后仍不脱 + 开头的短表达式（数字总数不足 7）', () => {
+  const t = '公差 +1 2 3';
+  assert.equal(redactPII(t, CHAT), t);
+});
+
+test('开启后仍不脱超过 15 位的 + 开头编号串', () => {
+  const t = '+12345678901234567890';
+  assert.equal(redactPII(t, CHAT), t);
+});
+
+test('设备型号 / 报警码 / 工单号在海外文本里也不被误伤', () => {
+  const t = 'F3015 SV0401 WO-20260422-001 ALM-920';
+  assert.equal(redactPII(t, CHAT), t);
+});
+
+// ---- 关键设计约束：默认集一个国际号码都不脱 ----
+
+test('默认不脱 + 开头号码（技术语境里 + 是正号）', () => {
+  const t = 'Power correction +1.2345678 V stayed stable.';
+  assert.equal(redactPII(t), t);
+});
+
+test('默认不脱零件号形状 +44 7700 900123', () => {
+  const t = 'Part code +44 7700 900123 remains on the replacement label.';
+  assert.equal(redactPII(t), t);
+});
+
+test('默认不脱裸的 3-3-4 分组（可能是零件号）', () => {
+  const t = 'Part 415-555-0123 triggered alarm E001.';
+  assert.equal(redactPII(t), t);
+});
+
+// ---- countPII / categories ----
+
+test('countPII 只统计默认集，不把 opt-in 的国际号码算进去', () => {
+  // countPII 的输出被当作"默认集是否命中"的检测向量使用，
+  // 加入 opt-in 类别会让 `+1 234 5678` 这类技术值被判成敏感内容。
+  const counts = countPII('+1 415 555 0132 和 (415) 555-0133');
+  assert.equal(counts.phone_intl, undefined);
+  assert.equal(counts.phone_cn, 0);
+  assert.equal(Object.values(counts).some((n) => n > 0), false, '不得触发敏感检测');
+});
+
+test('categories 只含 phone_cn 时不脱国际号码（可单独关闭）', () => {
+  const input = '电话 13812345678，海外 +1 415 555 0132';
+  const cnOnly = redactPII(input, { categories: ['phone_cn'] });
+  assert.ok(cnOnly.includes('[手机号]'));
+  assert.ok(cnOnly.includes('+1 415 555 0132'), '未指定 phone_intl → 国际号码保留');
+});
+
+test('categories 只含 phone_intl 时不脱中国手机号', () => {
+  const input = '电话 13812345678，海外 +1 415 555 0132';
+  const intlOnly = redactPII(input, { categories: ['phone_intl'] });
+  assert.ok(intlOnly.includes('13812345678'), '未指定 phone_cn → 中国号码保留');
+  assert.ok(intlOnly.includes('[电话]'));
 });

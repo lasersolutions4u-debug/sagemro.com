@@ -156,7 +156,7 @@ import {
 import { logToolCall, measureAndLogToolCall, PermissionError } from './lib/trace.js';
 
 // PII 脱敏（Phase 0.5，Phase 1 摘要生成前也复用）
-import { hasSensitiveText, redactPII } from './lib/redact.js';
+import { hasSensitiveText, redactPII, CHAT_PII_CATEGORIES } from './lib/redact.js';
 
 // SummaryProtocol v1 — 跨会话摘要管线（Phase 1.2 / 1.3）
 import {
@@ -4020,8 +4020,12 @@ async function generateCustomerContext(customerId, env) {
 
   try {
     // 获取客户信息
+    // 只取展示所需字段：刻意不查 phone 与 name。
+    // 这段上下文会原样拼进 system prompt 并发往第三方 LLM。
+    //   - phone：隐私政策明确承诺「不会发送您的手机号」
+    //   - name：个性化称呼已按合规要求移除（2026-09-18）
     const customer = await env.DB.prepare(
-      'SELECT name, phone, region FROM customers WHERE id = ?'
+      'SELECT region FROM customers WHERE id = ?'
     ).bind(customerId).first();
 
     // 获取客户设备列表
@@ -4037,8 +4041,8 @@ async function generateCustomerContext(customerId, env) {
     // 构建上下文文本
     let contextParts = [];
 
-    if (customer) {
-      contextParts.push(`【客户信息】${customer.name || '未知'}（${customer.phone || '无电话'}）${customer.region ? `，位于${customer.region}` : ''}`);
+    if (customer?.region) {
+      contextParts.push(`【客户信息】位于${customer.region}`);
     }
 
     if (devices.results && devices.results.length > 0) {
@@ -4661,6 +4665,9 @@ export async function handleChat(request, env) {
       );
 
       messages = history.results.map(m => {
+        // 出境前脱敏：历史消息同样不能把 PII 发往第三方 LLM（入库原文不变）。
+        // 用 CHAT_PII_CATEGORIES：客户直接写给我们的话里，裸的 3-3-4 分组就是电话。
+        const safeContent = redactPII(m.content, { categories: CHAT_PII_CATEGORIES });
         // 有图片的消息使用多模态格式
         let imgs = null;
         try { imgs = m.image_urls ? JSON.parse(m.image_urls) : null; } catch { imgs = null; }
@@ -4668,12 +4675,12 @@ export async function handleChat(request, env) {
           return {
             role: m.role,
             content: [
-              { type: 'text', text: m.content },
+              { type: 'text', text: safeContent },
               ...imgs.map(url => ({ type: 'image_url', image_url: { url } })),
             ],
           };
         }
-        return { role: m.role, content: m.content };
+        return { role: m.role, content: safeContent };
       });
     }
 
@@ -4783,6 +4790,10 @@ This conversation helps the customer prepare a service request for repair, maint
       customerId: trustedCustomerId,
     });
 
+    // 出境前脱敏：本次用户消息发往第三方 LLM 前过 redactPII。
+    // 只影响发给模型的内容；上面入库的那条与前端展示仍是原文。
+    const promptMessage = redactPII(message, { categories: CHAT_PII_CATEGORIES });
+
     // 流式返回响应（Phase 0.3：多轮 tool call while 循环）
     // 每轮都带 tools 参数，允许 AI 链式调多个工具；最后一轮强制不带 tools，逼 LLM 产出文本。
     const encoder = new TextEncoder();
@@ -4795,10 +4806,10 @@ This conversation helps the customer prepare a service request for repair, maint
         // 当前用户消息：有图片时使用多模态格式
         const userMessageContent = imageUrls.length > 0
           ? [
-              { type: 'text', text: message },
+              { type: 'text', text: promptMessage },
               ...imageUrls.map(i => ({ type: 'image_url', image_url: { url: i.url } })),
             ]
-          : message;
+          : promptMessage;
 
         let currentMessages = [
           { role: 'system', content: fullSystemPrompt },

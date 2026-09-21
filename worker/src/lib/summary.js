@@ -21,7 +21,7 @@
 //   - 失败全部静默 console.warn，trace 记录 resultStatus='error'
 //   - 不修改已存摘要（in-place 修改违反协议 §7.3），每次都 INSERT 新记录
 
-import { redactPII } from './redact.js';
+import { redactPII, CHAT_PII_CATEGORIES } from './redact.js';
 import { logToolCall } from './trace.js';
 
 export const SUMMARY_PROTOCOL_VERSION = 1;
@@ -370,9 +370,11 @@ export async function generateSummaryForConversation({
   const sourceMessageCount = messages.length;
 
   // ------- 2. 脱敏（决议 4：生成前清洗）-------
+  // 摘要素材是客户对话原文，与 chat 同属"客户直接写给我们的话"，
+  // 因此用 CHAT_PII_CATEGORIES（含国际号码）。
   const safeMessages = messages.map((m) => ({
     ...m,
-    content: redactPII(m.content || ''),
+    content: redactPII(m.content || '', { categories: CHAT_PII_CATEGORIES }),
   }));
 
   // ------- 3. 生成 prompt -------

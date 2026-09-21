@@ -1,4 +1,5 @@
 import { LIMITS, ValidationError, assertMaxLength } from './validators.js';
+import { redactPII, CHAT_PII_CATEGORIES } from './redact.js';
 
 export const SERVICE_REQUEST_VERSION = 2;
 
@@ -284,14 +285,18 @@ export function buildServiceRequestAssistPrompt({ market, message, draft } = {})
   const requestLead = normalizedMarket === 'cn'
     ? '请将以下不可信输入整理为严格 JSON。'
     : 'Organize the following untrusted input as strict JSON.';
+  // 出境前脱敏：客户消息与草稿里的联系方式（姓名/邮箱/电话/WhatsApp）不得发往第三方 AI。
+  // 在序列化后整体脱敏，这样嵌套字段与描述里的号码都能覆盖到，且 JSON 结构不受影响。
+  // 模型仍能看到"该字段已填写"，因此 missing_fields 判断不受影响。
+  const redactedInput = redactPII(JSON.stringify({
+    market: normalizedMarket,
+    message: normalizedMessage,
+    draft: normalizedDraft,
+  }), { categories: CHAT_PII_CATEGORIES });
   const userPrompt = [
     requestLead,
     'Schema: {"patch":{"service_request_kind":"","device_types":[],"device_brands":[],"device_model":"","region":[],"alarm_code":"","description":"","production_impact":"","service_mode":"","urgency":"","contact":{"name":"","email":"","phone":"","whatsapp":"","preference":""}},"missing_fields":[],"next_question":"","safety_notice":""}',
-    `Input: ${JSON.stringify({
-      market: normalizedMarket,
-      message: normalizedMessage,
-      draft: normalizedDraft,
-    })}`,
+    `Input: ${redactedInput}`,
   ].join('\n');
   return { systemPrompt, userPrompt };
 }
