@@ -21,6 +21,26 @@
 
 > 中国版前台、后台、工程师端当前实际生产发布必须走阿里云 ECS workflow。普通 Cloudflare Pages 部署成功不等于 `.cn` 线上已经更新。
 
+### 系统范围（2026-09-24 裁剪：只保留四类站点）
+
+本分支已按与 `main` 同一套方案完成裁剪（保留 `china-edition` 自身的形态：中文单语后台、无 LocaleSwitch、
+无 staff reactivate、无知识批量导入）：
+
+| 站点 | 保留的功能 | 说明 |
+| --- | --- | --- |
+| sagemro.cn（及国际版 sagemro.com） | **宣传推广落地页** + 咨询线索表单 + Store 链接 + AI 助手入口（跳 ai 站） | 咨询表单写入 `leads`（`POST /api/contact`），不创建工单 |
+| ai.sagemro.cn | **AI 门户**：AI 对话 + 会话历史 | 客户登录/注册保留 |
+| admin.sagemro.cn | **知识中枢**：登录 + 用户统计 + 注册用户 + 知识库 + 知识候选 + 内部员工账号 | 其余后台页面已删除；非 admin 内部员工只有知识库 |
+| engineer.sagemro.cn | **工程师招募落地页 + 申请表单** | 工程师工作台、工单、派工、定价、服务资料全部下线 |
+
+**已从系统中移除**（前端入口、admin 页面、worker 路由三层都去掉，命中即 404）：
+工单与服务请求、物料与领料、商务工作台、推广分析、评价管理、设备档案、通知与推送订阅、
+工程师工作台与激活、工程师服务资料与 AI 服务前核查。
+
+- **D1 表与数据一律保留**，migration 文件不删：历史数据仍可查询与备份，只是没有 API 入口。
+- 下架工具已固化在 `worker/scripts/system-trim-routes.mjs` 与 `worker/scripts/system-trim-dead-code.mjs`。
+- `worker/tests/d1-operations.test.mjs` 有 5 个用例在 Windows 上因路径分隔符差异失败（脚本与测试都未改动，CI 为 Linux 不受影响）。
+
 ## 三、部署流程
 
 Codex（本地）
