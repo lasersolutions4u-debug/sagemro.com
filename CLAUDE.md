@@ -21,6 +21,24 @@
 > **平台口径以实测为准（2026-09-15 复核）**：`sagemro.cn`、`www.sagemro.cn`、`ai.sagemro.cn`、`admin.sagemro.cn`、`engineer.sagemro.cn`、`api.sagemro.cn` 的响应头全部是 `nginx/1.18.0 (Ubuntu)`；COM 侧全部是 `cloudflare`。**CN 目前不在 Cloudflare 上服务。**
 > 国际版与中国版**共用同一个 Worker**，分别绑定 COM / CN 两套 D1。中国版源码走独立分支 `china-edition`。
 
+### 系统范围（2026-09-24 裁剪：只保留四类站点）
+
+| 站点 | 保留的功能 | 说明 |
+| --- | --- | --- |
+| sagemro.com / sagemro.cn | **宣传推广落地页** + 咨询线索表单 + Store 链接 + AI 助手入口（跳 ai 站） | 营销页：首页 / 服务 / 品牌 / 工具 / 技术洞察；咨询表单写入 `leads`（`POST /api/contact`），不创建工单 |
+| ai.sagemro.com / ai.sagemro.cn | **AI 门户**：AI 对话 + 会话历史 | 客户登录/注册保留（由 AI 门户与主站共用） |
+| admin.sagemro.com / admin.sagemro.cn | **知识中枢**：登录 + 知识库 + 知识候选 + 内部员工账号 + 注册用户统计与管理 | 其余 9 个后台页面已删除；非 admin 内部员工（含商务角色）登录后只有知识库 |
+| engineer.sagemro.com / engineer.sagemro.cn | **工程师招募落地页 + 申请表单** | 工程师工作台、工单、派工、定价、服务资料全部下线 |
+
+**已从系统中移除**（前端入口、admin 页面、worker 路由三层都去掉，命中即 404）：
+工单与服务请求、物料与领料、客户档案管理之外的客户业务、商务工作台（辖区/报价/回款/执行）、推广分析、
+评价管理、设备档案、通知与推送订阅、工程师工作台与激活、工程师服务资料与 AI 服务前核查。
+
+- **D1 表与数据一律保留**，migration 文件不删：历史工单/物料/客户数据仍可查询与备份，只是没有 API 入口。
+- `worker/src/index.js` 里被下架路由的 handler 函数暂时仍是**不可达死代码**，后续可单独做一轮清理。
+- 删除是把功能下线，不是迁移：需要恢复某个功能时，参考 git 历史而不是从记忆里重写。
+- **CN 侧尚未同步这次裁剪**：`china-edition` 分支仍带着完整旧功能，CN 的裁剪是紧接的第二步。
+
 ## 三、部署流程
 
 ### 国际版（COM）：push `main` 自动部署
@@ -143,5 +161,8 @@ CN 的最终形态（继续冻结 / 正式并入 main / 关停）**尚未决定*
 - 避免把客户端描述成单纯的“设备服务平台”“工单入口”或“公开资源集合”。这些可以存在，但不能盖过 AI 核心体验。
 
 ## 九、Current Handoff (2026-07-27)
+
+> ⚠️ **2026-09-24 已下线**：本节指向的 Engineer AI Service Readiness Review（工程师服务就绪核查 / 服务资料 / 服务标准）
+> 随系统裁剪一并移除（前端入口、admin 页面、worker 路由三层）。文档仅作历史记录，不要再据此开工。
 
 - Before implementing Engineer AI Service Readiness Review, read [the Claude Code handoff](docs/superpowers/handoffs/2026-07-27-engineer-ai-service-readiness-claude-code-handoff.md), its linked approved design, and its executable plan. The handoff contains the authoritative feature-specific access, privacy, cache, migration, and COM/CN release constraints.
