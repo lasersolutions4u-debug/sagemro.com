@@ -96,7 +96,7 @@ test('public pages define SEO metadata and structured data', async () => {
   assert.match(app, /setSeoMetadata\(/);
   assert.match(app, /noindex,nofollow,noarchive/);
   assert.match(seo, /application\/ld\+json/);
-  assert.match(recruiting, /Industrial Service Partner Program/);
+  assert.match(recruiting, /Service Engineer Brand Program/);
   assert.match(recruiting, /setSeoMetadata\(/);
   assert.match(tools, /setSeoMetadata\(/);
   assert.match(insights, /setSeoMetadata\(/);
