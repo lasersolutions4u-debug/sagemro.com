@@ -107,13 +107,10 @@ test('E2E Chromium bypasses system proxies for the loopback nip.io topology', ()
   assert.match(playwrightConfig, /--no-proxy-server/);
 });
 
-test('regional lead E2E covers the approved team workspace boundaries', () => {
-  const source = readFileSync(new URL('./regional-lead-workspace.spec.mjs', import.meta.url), 'utf8');
-  assert.match(source, /Team metrics/);
-  assert.match(source, /Regional team work orders/);
-  assert.match(source, /firstMemberGroup\.click\(\)/);
-  assert.match(source, /Assign \/ Reassign/);
-  assert.match(source, /Team progress view/);
-  assert.match(source, /Open calendar/);
-  assert.match(source, /SAGEMRO Engineer Profile/);
+test('retired regional lead workspace journey stays deleted', () => {
+  assert.equal(
+    existsSync(new URL('./regional-lead-workspace.spec.mjs', import.meta.url)),
+    false,
+    '工程师区域负责人工作台已下线，对应 E2E 旅程应删除',
+  );
 });

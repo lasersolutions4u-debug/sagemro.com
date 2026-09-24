@@ -9,39 +9,10 @@ function read(relativePath) {
   return readFileSync(path.join(root, relativePath), 'utf8');
 }
 
-test('material requisition lifecycle E2E covers the browser workflow and seeded stock', () => {
-  const specPath = path.join(root, 'e2e/tests/material-requisition-lifecycle.spec.mjs');
-  assert.equal(existsSync(specPath), true, 'material requisition lifecycle spec should exist');
-
-  const spec = read('e2e/tests/material-requisition-lifecycle.spec.mjs');
-  const prepare = read('e2e/scripts/prepare-local-env.mjs');
-
-  for (const milestone of [
-    'Material Requisition',
-    'Create draft',
-    'Submit draft',
-    'Material Requisitions',
-    'Approve',
-    'Allocate',
-    'Order',
-    'Receive purchase',
-    'Issue',
-    'Confirm receipt',
-    'Close',
-  ]) {
-    assert.match(spec, new RegExp(milestone), `lifecycle should cover ${milestone}`);
-  }
-  assert.match(spec, /Submitted/);
-  assert.match(spec, /Approved/);
-  assert.match(spec, /Ready/);
-  assert.match(spec, /Issued/);
-  assert.match(spec, /Received/);
-  assert.match(spec, /Closed/);
-  assert.match(prepare, /E2E-STOCK-001/);
-  assert.match(prepare, /stock_quantity/);
-});
-
-test('Cloudflare test job runs Admin and full E2E gates before deploy jobs', () => {
+// 系统已裁剪为主站（营销页）/ AI 门户 / 知识中枢 / 工程师招募页。
+// 工单、物料领用、商务报价/回款、工程师工作台等浏览器 E2E 旅程已随业务下线，
+// 对应 spec 也已删除，这里只保留部署流水线契约。
+test('Cloudflare test job runs Admin and E2E gates before deploy jobs', () => {
   const workflow = read('.github/workflows/deploy.yml');
   const testJob = workflow.slice(workflow.indexOf('  test:'), workflow.indexOf('  deploy-frontend:'));
 
@@ -51,7 +22,6 @@ test('Cloudflare test job runs Admin and full E2E gates before deploy jobs', () 
     'Admin tests should run before Admin build',
   );
   assert.match(testJob, /name: E2E install\s+working-directory: e2e\s+run: npm install --no-audit --no-fund/);
-  assert.match(testJob, /name: Install Playwright Chromium\s+working-directory: e2e\s+run: npx playwright install --with-deps chromium/);
   assert.match(testJob, /name: Full E2E tests\s+working-directory: e2e\s+run: npm test/);
   assert.ok(
     testJob.indexOf('name: Full E2E tests') > testJob.indexOf('name: Admin build'),
@@ -59,78 +29,31 @@ test('Cloudflare test job runs Admin and full E2E gates before deploy jobs', () 
   );
 });
 
-test('engineer onboarding journey follows the current recruitment CTA', () => {
-  const recruitingPage = read('frontend/src/components/Engineer/EngineerRecruitingPage.jsx');
-  const journeys = read('e2e/support/journeys.mjs');
-
-  assert.match(recruitingPage, /applyNow: 'Submit Service Interest'/);
-  assert.match(journeys, /name: 'Submit Service Interest'/);
-  assert.doesNotMatch(journeys, /name: 'Apply to Join'/);
-  assert.match(
-    journeys,
-    /getByLabel\('Equipment specialties'\)\.locator\('xpath=\.\.\/\.\.\/\.\.'\)\.getByRole\('button', \{ name: 'Laser cutting machine', exact: true \}\)/,
-  );
-  assert.match(
-    journeys,
-    /getByLabel\('Service items'\)\.locator\('xpath=\.\.\/\.\.\/\.\.'\)\.getByRole\('button', \{ name: 'Maintenance', exact: true \}\)/,
-  );
-  assert.match(journeys, /getByLabel\('Field service experience'\)/);
-  assert.doesNotMatch(journeys, /getByLabel\('Individual \/ team capability'\)/);
+test('the E2E command runs the deployment contracts', () => {
+  const { scripts } = JSON.parse(read('e2e/package.json'));
+  assert.equal(scripts.test, 'npm run test:contracts');
+  const args = scripts['test:contracts'].split(/\s+/);
+  assert.deepEqual(args.slice(0, 3), ['node', '--test', 'tests/*-contract.test.mjs']);
+  assert.equal(scripts['test:business-browser'], undefined, 'business browser suite is retired');
 });
 
-test('engineer approval waits for the saved status badge instead of a select option', () => {
-  const journeys = read('e2e/support/journeys.mjs');
-
-  assert.ok(journeys.includes("await expect(dialog.locator('span').filter({ hasText: /^Approved$/ })).toBeVisible();"));
-  assert.doesNotMatch(journeys, /getByText\('Approved', \{ exact: true \}\)\.first\(\)/);
-});
-
-test('customer work-order journeys use the unified four-step service request flow', () => {
-  const serviceRequestFlow = read('frontend/src/components/ServiceRequest/ServiceRequestFlow.jsx');
-  const journeys = read('e2e/support/journeys.mjs');
-  const lifecycle = read('e2e/tests/service-order-lifecycle.spec.mjs');
-
-  assert.match(serviceRequestFlow, /serviceTitle: 'What do you need help with\?'/);
-  assert.match(serviceRequestFlow, /submit: 'Send service request'/);
-  assert.match(journeys, /export async function submitCustomerServiceRequest/);
-  for (const currentControl of [
-    "getByText('Repair & diagnostics', { exact: true }).click()",
-    "getByPlaceholder('Select or enter the equipment type…')",
-    "getByLabel('Problem or service request · Required')",
-    "getByPlaceholder('Enter country, state / province or city, then press Enter…')",
-    "getByLabel('Contact name · Required')",
-    "name: 'Send service request'",
-    "name: 'Done'",
+test('retired browser journeys stay deleted', () => {
+  for (const spec of [
+    'business-execution-browser.test.mjs',
+    'business-payments-browser.test.mjs',
+    'business-quote-browser.test.mjs',
+    'business-service-browser.test.mjs',
+    'business-workspace-browser.test.mjs',
+    'engineer-onboarding.spec.mjs',
+    'engineer-service-readiness.spec.mjs',
+    'material-requisition-lifecycle.spec.mjs',
+    'onsite-multiday-lifecycle.spec.mjs',
+    'quote-execution-visual.spec.mjs',
+    'regional-lead-workspace.spec.mjs',
+    'service-order-lifecycle.spec.mjs',
   ]) {
-    assert.match(journeys, new RegExp(currentControl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.equal(existsSync(path.join(root, 'e2e/tests', spec)), false, `${spec} should be deleted`);
   }
-  assert.doesNotMatch(journeys, /getByRole\('radio',[\s\S]*Repair & diagnostics[\s\S]*\)\.check\(\)/);
-  for (const retiredControl of [
-    'Request Type',
-    'Equipment Model / Part No.',
-    'Request Details',
-    'Contact Method',
-    'submit-work-order-button',
-    'Got it',
-  ]) {
-    assert.doesNotMatch(journeys, new RegExp(retiredControl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-    assert.doesNotMatch(lifecycle, new RegExp(retiredControl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  }
-  assert.match(lifecycle, /submitCustomerServiceRequest/);
-});
-
-test('AI-home E2E starts the portal target and avoids phone-like message fixtures', () => {
-  const playwrightConfig = read('e2e/playwright.config.mjs');
-  const visual = read('e2e/tests/quote-execution-visual.spec.mjs');
-  const lifecycle = read('e2e/tests/service-order-lifecycle.spec.mjs');
-
-  const runner = read('e2e/scripts/run-local-e2e.mjs');
-  assert.match(runner, /SAGEMRO_BUILD_TARGET = 'portal'/);
-  assert.match(runner, /VITE_API_BASE = runtime.apiBase/);
-  assert.match(playwrightConfig, /run-local-e2e\.mjs server frontend/);
-  assert.match(visual, /url: 'http:\/\/ai\.sagemro\.cn:4273'/);
-  assert.match(lifecycle, /customer\.runId\.slice\(-6\)/);
-  assert.doesNotMatch(lifecycle, /manualMessage = `E2E manual update \$\{customer\.runId\}`/);
 });
 
 test('Cloudflare test workflow covers pull requests to both protected branches', () => {
@@ -212,6 +135,7 @@ test('Worker deployment blocks on migrations for both production D1 databases', 
 
   assert.match(workerJob, /wrangler d1 execute sagemro-db --env production --remote/);
   assert.match(workerJob, /wrangler d1 execute sagemro-db-cn --env production --remote/);
+  // migration 只增不删：历史表照旧保留在生产 D1 上。
   for (const version of [
     '038_material_requisitions_and_staff',
     '039_field_workdays',
@@ -251,31 +175,5 @@ for (const workflowPath of ['.github/workflows/deploy.yml', '.github/workflows/a
     const failure = guard.indexOf('exit 1');
     const deploy = guard.search(/wrangler deploy --env production|name: Build frontend/);
     assert.ok(failure >= 0 && deploy > failure, 'missing migrations must stop before deployment');
-  });
-}
-
-test('the regular E2E command runs all business and engineer profile browser suites serially', () => {
-  const { scripts } = JSON.parse(read('e2e/package.json'));
-  assert.match(scripts.test, /npm run test:contracts && npm run test:business-browser &&/);
-  const args = scripts['test:business-browser'].split(/\s+/);
-  assert.deepEqual(args.slice(0, 3), ['node', '--test', '--test-concurrency=1']);
-  const expected = [
-    'tests/business-execution-browser.test.mjs',
-    'tests/business-payments-browser.test.mjs',
-    'tests/business-quote-browser.test.mjs',
-    'tests/business-service-browser.test.mjs',
-    'tests/business-workspace-browser.test.mjs',
-    'tests/engineer-pricing-boundary-browser.test.mjs',
-    'tests/engineer-service-profile-browser.test.mjs',
-  ];
-  assert.deepEqual(args.slice(3).sort(), expected.sort());
-  for (const file of expected) assert.ok(existsSync(path.join(root, 'e2e', file)));
-});
-
-for (const suite of ['business-workspace', 'engineer-service-profile']) {
-  test(`${suite} browser suite uses the browser installed on each test platform`, () => {
-    const source = read(`e2e/tests/${suite}-browser.test.mjs`);
-    assert.match(source, /channel: process\.platform === 'win32' \? 'chrome' : 'chromium'/);
-    assert.match(source, /headless: true/);
   });
 }
