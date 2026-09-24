@@ -1,6 +1,7 @@
 import { getPublicHomeContent } from '../../data/publicHomeContent';
 import { getLocalizedTool, industryTools } from '../../data/industryTools';
 import { PublicSiteShell } from './PublicSiteShell';
+import { HomeChatPanel } from './HomeChatPanel';
 import { openConsultationForm } from '../../utils/consultation';
 
 const serviceRoutes = {
@@ -140,18 +141,22 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
                 {copy.aiCta}
               </a>
             </div>
+
+            <div className="mt-10 border-l-4 border-[#ea580c] bg-[#fffdf8] p-5">
+              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[#c2410c]">{isCn ? '提交前准备' : 'Before submitting'}</p>
+              <ul className="mt-4 grid gap-3 text-sm leading-6 text-[#6b5a48] sm:grid-cols-3">
+                {(isCn
+                  ? ['设备品牌与型号', '完整报警代码与故障现象', '现场地区、停机影响与联系方式']
+                  : ['Equipment brand and model', 'Complete alarm code and symptom', 'Site region, production impact, and contact details']
+                ).map((item, index) => (
+                  <li key={item} className="flex gap-2"><span className="font-mono font-bold text-[#d97706]">0{index + 1}</span><span>{item}</span></li>
+                ))}
+              </ul>
+            </div>
           </div>
-          <aside className="self-end border-l-4 border-[#ea580c] bg-[#fffdf8] p-6 shadow-[0_18px_50px_rgba(45,33,22,0.10)]">
-            <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[#c2410c]">{isCn ? '提交前准备' : 'Before submitting'}</p>
-            <ul className="mt-5 space-y-4 text-sm leading-6 text-[#6b5a48]">
-              {(isCn
-                ? ['设备品牌与型号', '完整报警代码与故障现象', '现场地区、停机影响与联系方式']
-                : ['Equipment brand and model', 'Complete alarm code and symptom', 'Site region, production impact, and contact details']
-              ).map((item, index) => (
-                <li key={item} className="flex gap-3"><span className="font-mono font-bold text-[#d97706]">0{index + 1}</span><span>{item}</span></li>
-              ))}
-            </ul>
-          </aside>
+          <div className="lg:pt-2">
+            <HomeChatPanel isCn={isCn} onOpenLegal={onOpenLegal} />
+          </div>
         </div>
       </section>
 

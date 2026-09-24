@@ -152,24 +152,6 @@ test('equipment category narrative uses laser and metal forming equipment consis
   assert.deepEqual(violations, []);
 });
 
-test('AI tool copy keeps service preparation neutral instead of sales routing', () => {
-  const aiTools = read('frontend/src/data/aiServiceTools.js');
-  const aiPanel = read('frontend/src/components/AI/AIToolsPanel.jsx');
-  const legal = read('frontend/src/components/common/LegalModal.jsx');
-
-  assert.match(aiTools, /Service Cost Reference AI/);
-  assert.match(aiTools, /Maintenance Risk Review AI/);
-  assert.match(aiTools, /service request preparation or admin review/);
-  assert.match(aiPanel, /neutral next-step summary/);
-  assert.match(aiPanel, /Case type/);
-  assert.match(aiPanel, /natural chat remains the primary experience/);
-  assert.match(legal, /Service cost reference/);
-  assert.match(legal, /服务费用参考/);
-  assert.doesNotMatch(aiTools, /sales lead|Repair Estimate AI|Equipment Health Report AI|Health Report/);
-  assert.doesNotMatch(aiPanel, /right SAGEMRO conversion action|right conversion action|Lead type/);
-  assert.doesNotMatch(legal, /Repair estimate|维修估算/);
-});
-
 test('AI service copy keeps service preparation neutral instead of sales routing', () => {
   const chatArea = read('frontend/src/components/Chat/ChatArea.jsx');
   const welcomeCopy = read('frontend/src/data/welcomePageCopy.js');

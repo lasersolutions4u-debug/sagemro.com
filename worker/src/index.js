@@ -6286,21 +6286,7 @@ function isBootstrapAdmin(auth) {
 }
 
 
-export function isOperationsReadRoute(path, method) {
-  if (method !== 'GET') return false;
-  return path === '/api/admin/workorders'
-    || path === '/api/admin/materials'
-    || path === '/api/admin/analytics/overview'
-    || path === '/api/admin/analytics/channels'
-    || path === '/api/admin/analytics/organic-acquisition'
-    || path === '/api/notifications'
-    || path === '/api/notifications/unread-count'
-    || /^\/api\/workorders\/[^/]+$/.test(path)
-    || /^\/api\/workorders\/[^/]+\/service-standard$/.test(path)
-    || /^\/api\/workorders\/[^/]+\/messages$/.test(path)
-    || /^\/api\/workorders\/[^/]+\/field-media\/[^/]+$/.test(path)
-    || /^\/api\/workorders\/[^/]+\/receipt-evidence\/[^/]+$/.test(path);
-}
+
 
 
 

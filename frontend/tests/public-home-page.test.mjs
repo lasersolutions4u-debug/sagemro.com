@@ -60,6 +60,12 @@ test('public home renders the approved service-first section order and real navi
   assert.doesNotMatch(html, /service-request/);
   assert.match(html, /<button[^>]*>提交咨询需求<\/button>/);
   assert.match(html, /href="mailto:support@sagemro\.com"/);
+  // 首屏直接嵌入 AI 对话框：输入框 + 发送按钮 + 问题建议都在 hero 区。
+  assert.match(html, /data-home-chat="panel"/);
+  assert.match(html, /id="home-chat-input"/);
+  assert.match(html, /data-home-chat="send"/);
+  assert.match(html, /向 SAGEMRO AI 提问/);
+  assert.match(html, /报警代码含义/);
   for (const [title, href] of [
     ['激光切割速度参考', '/tools/laser-cutting-speed-reference/'],
     ['冷水机和除尘器选型参考', '/tools/laser-chiller-dust-collector-sizing-checklist/'],
