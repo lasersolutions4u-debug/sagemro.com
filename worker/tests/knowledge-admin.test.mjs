@@ -423,21 +423,28 @@ test('商务角色不能进入知识候选审核工作流', async () => {
   assert.equal(result.response.status, 403, '放开的是知识库，不是候选审核');
 });
 
-test('运营 / 仓库 / 采购仍然不能访问知识库', async () => {
+test('运营 / 仓库 / 采购同样只能维护知识库', async () => {
   const env = createEnv();
+  // 后台裁剪为知识中枢后：非 admin 的内部员工（含运营/仓库/采购）都只保留知识库维护，
+  // 但它们同样不能进入知识候选审核工作流。
   const listed = await api(env, '/api/admin/knowledge', { staff: OPERATIONS });
-  assert.equal(listed.response.status, 403, '本次只给商务角色授权，运营不动');
+  assert.equal(listed.response.status, 200);
 
   const imported = await api(env, '/api/admin/knowledge/batch', {
     method: 'POST', staff: OPERATIONS, body: { articles: [batchRow()] },
   });
-  assert.equal(imported.response.status, 403);
-  assert.equal(env.__knowledge.length, 0);
+  assert.equal(imported.response.status, 200);
+  assert.equal(env.__knowledge.length, 1);
+
+  const candidates = await api(env, '/api/admin/knowledge-candidates', { staff: OPERATIONS });
+  assert.equal(candidates.response.status, 403, '候选审核只对管理员开放');
+
+  const staffList = await api(env, '/api/admin/staff', { staff: OPERATIONS });
+  assert.equal(staffList.response.status, 403, '员工账号管理只对超级管理员开放');
 });
 
-test('商务角色仍可正常使用商务工作台接口', async () => {
+test('退役的商务工作台接口已下架', async () => {
   const env = createEnv();
-  // 权限改为白名单拼接后，原有商务路由不能被打断
   const result = await api(env, '/api/admin/business/work-orders', { staff: SPECIALIST });
-  assert.notEqual(result.response.status, 403);
+  assert.equal(result.response.status, 403, '商务工作台随商务模块一并下线');
 });

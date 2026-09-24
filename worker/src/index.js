@@ -11598,6 +11598,49 @@ async function handleSubmitLead(request, env) {
   }
 }
 
+// 主站咨询线索表单（sagemro.com / sagemro.cn 落地页的转化入口）。
+// 工单体系已下线：这里只把线索写进 leads 等待人工跟进，不创建任何工单。
+async function handleSubmitConsultation(request, env) {
+  try {
+    const isCn = getRequestMarket(request) === 'cn';
+    const body = await request.json().catch(() => ({}));
+    const name = cleanText(body.name, 120);
+    const email = cleanText(body.email, 160);
+    const phone = cleanText(body.phone, 60);
+    const company = cleanText(body.company, 160);
+    const message = cleanText(body.message, 3000);
+    const source = cleanText(body.source, 60) || 'website_contact';
+
+    if (!name) return errorResponse(isCn ? '请提供姓名' : 'Please provide your name', 400);
+    if (!email && !phone) {
+      return errorResponse(isCn ? '请提供邮箱或手机号' : 'Please provide an email or a phone number', 400);
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return errorResponse(isCn ? '邮箱格式不正确' : 'Please provide a valid email address', 400);
+    }
+
+    const id = generateId();
+    const interest = company ? `${company} · website consultation` : 'website consultation';
+    await env.DB.prepare(`
+      INSERT INTO leads (
+        id, name, email, phone, source, interest, message, source_type, assignment_status, region
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'website_consultation', 'unassigned', '')
+    `).bind(
+      id,
+      name,
+      email || null,
+      phone || null,
+      source,
+      interest,
+      message || null,
+    ).run();
+
+    return jsonResponse({ success: true, lead_id: id });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
+
 const BEND_SIMULATION_MATERIALS = new Map([
   ['carbon_steel', 'carbon_steel'],
   ['carbon steel', 'carbon_steel'],
@@ -23372,42 +23415,35 @@ async function routeRequest(request, env, ctx) {
     request._ctx = ctx;
 
     let earlyAuth;
-    // 知识库路径要和 /api/admin/business/ 一样绕过这道早退门禁：
-    // 商务角色（专员/经理/总监）需要能进知识库上传内容，
+    // 知识库路径要绕过这道早退门禁：非 admin 的内部员工（含商务角色）需要能进知识库上传内容，
     // 真正的角色判定在下面 /api/admin/ 的分支里做。
-    // 同样用带尾斜杠的匹配，避免连带放行 knowledge-candidates。
+    // 用带尾斜杠的匹配，避免连带放行 knowledge-candidates。
     const knowledgePath = path === '/api/admin/knowledge' || path.startsWith('/api/admin/knowledge/');
-    if (request.method !== 'OPTIONS' && !path.startsWith('/api/admin/business/') && !knowledgePath && ![
+    if (request.method !== 'OPTIONS' && !knowledgePath && ![
       '/api/auth/session', '/api/auth/logout', '/api/auth/change-password', '/api/admin/login',
     ].includes(path)) {
       earlyAuth = await authenticateRequest(request, env);
-      if (isBusinessRole(earlyAuth?.staffRole) || earlyAuth?.invalidStaff) return errorResponse('当前商务角色无权使用此接口', 403);
+      if (earlyAuth?.invalidStaff) return errorResponse('当前员工账号已失效', 403);
     }
 
-    if (path === '/api/service-request-assist' && request.method === 'POST') {
-      return handleServiceRequestAssist(request, env);
-    }
 
     const publicResponse = await handlePublicRoute(request, env, ctx, {
       handleOptions,
       handleE2EActivationMailbox,
       handleSendCode,
       handleRegisterCustomer,
-      handlePublicEngineerRegistrationClosed: (publicRequest) => (
-        localizedErrorResponse('public_engineer_registration_closed', publicRequest, 410)
-      ),
       handleLogin,
       handleAuthSession,
       handleLogout: (publicRequest) => (
         clearPortalSession(jsonResponse({ success: true }), publicRequest, env)
       ),
-      handleEngineerActivation,
       handleResetPassword,
       handleSendResetCode,
       handleChatUploadImage,
       handleChatTranscribe,
       handleChat,
       handleSubmitLead,
+      handleSubmitConsultation,
       handleSubmitBendSimulationReview,
       handleSubmitEngineerApplication,
       handleFunnelEvent,
@@ -23501,19 +23537,14 @@ async function routeRequest(request, env, ctx) {
       if (staff.must_change_password && path !== '/api/auth/change-password') {
         return errorResponse('请先修改临时密码', 403);
       }
-      const operationalRoute = path === '/api/material-requisitions'
-        || path.startsWith('/api/material-requisitions/')
-        || path === '/api/auth/change-password'
-        || (staff.role === 'operations' && isOperationsReadRoute(path, request.method));
-      const businessRoute = path.startsWith('/api/admin/business/') || path === '/api/auth/change-password';
-      // 知识库：商务角色（商务专员/经理/总监）可以上传与维护知识内容。
-      // 必须写成带尾斜杠的 '/api/admin/knowledge/'，否则会把
-      // /api/admin/knowledge-candidates（候选审核工作流）一并放行。
+      // 后台已裁剪为知识中枢：非 admin 的内部员工（商务 / 运营 / 仓储 / 采购）
+      // 仍然只能维护知识库，管理员保留用户统计、注册用户与员工账号管理。
       const knowledgeRoute = path === '/api/admin/knowledge'
         || path.startsWith('/api/admin/knowledge/');
+      const selfServiceRoute = path === '/api/auth/change-password';
       const permitted = isBusinessRole(staff.role)
-        ? (businessRoute || knowledgeRoute)
-        : (staff.role === 'admin' || operationalRoute);
+        ? (knowledgeRoute || selfServiceRoute)
+        : (staff.role === 'admin' || knowledgeRoute || selfServiceRoute);
       if (!permitted) {
         return errorResponse('当前员工角色无权访问该管理接口', 403);
       }
@@ -23523,24 +23554,6 @@ async function routeRequest(request, env, ctx) {
     if (path.startsWith('/api/admin/')) {
       if (auth.userType !== 'admin') {
         return errorResponse('需要管理员权限', 403);
-      }
-      if (/^\/api\/admin\/business\/work-orders\/[^/]+\/quote(?:\/submit|\/costs)?$/.test(path)) return handleBusinessQuote(request, env, getRequestMarket(request));
-      if (/^\/api\/admin\/business\/work-orders\/[^/]+\/(?:payments|installments\/[^/]+\/(?:collection\/start|receipt-claims)|receipt-evidence\/[^/]+)$/.test(path)) return handleBusinessPayments(request, env);
-      if (/^\/api\/admin\/business\/work-orders\/[^/]+\/execution(?:\/assign)?$/.test(path)) return handleBusinessExecution(request, env);
-      if (/^\/api\/admin\/business\/work-orders\/[^/]+\/service(?:\/.*)?$/.test(path)) {
-        const response = await handleBusinessService(request, env);
-        response.headers.set('Cache-Control', 'private, no-store');
-        return response;
-      }
-      if (path.startsWith('/api/admin/business/')) return handleBusinessWorkspace(request, env, getRequestMarket(request));
-      if (path === '/api/admin/analytics/overview' && request.method === 'GET') {
-        return handlePromotionAnalytics(request, env, 'overview');
-      }
-      if (path === '/api/admin/analytics/channels' && request.method === 'GET') {
-        return handlePromotionAnalytics(request, env, 'channels');
-      }
-      if (path === '/api/admin/analytics/organic-acquisition' && request.method === 'GET') {
-        return handlePromotionAnalytics(request, env, 'organic-acquisition');
       }
       if (path === '/api/admin/staff' && request.method === 'GET') {
         return handleAdminStaffList(request, env);
@@ -23565,39 +23578,6 @@ async function routeRequest(request, env, ctx) {
       }
       if (path === '/api/admin/users' && request.method === 'POST') {
         return handleAdminCreateUser(request, env);
-      }
-      if (path.match(/^\/api\/admin\/engineers\/[^/]+$/) && request.method === 'GET') {
-        return handleAdminEngineerDetail(request, env);
-      }
-      if (path.match(/^\/api\/admin\/engineers\/[^/]+$/) && request.method === 'PATCH') {
-        return handleAdminUpdateEngineer(request, env);
-      }
-      if (path === '/api/admin/engineer-applications' && request.method === 'GET') {
-        return handleAdminEngineerApplications(request, env);
-      }
-      if (path.match(/^\/api\/admin\/engineer-applications\/[^/]+\/open-account$/) && request.method === 'POST') {
-        return handleAdminOpenEngineerAccount(request, env);
-      }
-      if (path.match(/^\/api\/admin\/engineer-applications\/[^/]+\/resend-activation$/) && request.method === 'POST') {
-        return handleAdminResendEngineerActivation(request, env);
-      }
-      if (path.startsWith('/api/admin/engineer-applications/') && request.method === 'PATCH') {
-        return handleAdminUpdateEngineerApplication(request, env);
-      }
-      if (path === '/api/admin/material-requests' && request.method === 'GET') {
-        return handleListMaterialRequests(request, env, { admin: true });
-      }
-      if (path.startsWith('/api/admin/material-requests/') && request.method === 'PATCH') {
-        return handleAdminReviewMaterialRequest(request, env);
-      }
-      if (path === '/api/admin/upsell-requests' && request.method === 'GET') {
-        return handleAdminListUpsellRequests(request, env);
-      }
-      if (path.match(/^\/api\/admin\/upsell-requests\/[^/]+$/) && request.method === 'GET') {
-        return handleAdminGetUpsellRequest(request, env);
-      }
-      if (path.match(/^\/api\/admin\/upsell-requests\/[^/]+$/) && request.method === 'PATCH') {
-        return handleAdminUpdateUpsellRequest(request, env);
       }
       if (path === '/api/admin/knowledge' && request.method === 'GET') {
         return handleAdminKnowledge(request, env);
@@ -23632,129 +23612,12 @@ async function routeRequest(request, env, ctx) {
       if (path.match(/^\/api\/admin\/knowledge\/[^/]+$/) && request.method === 'PATCH') {
         return handleAdminUpdateKnowledge(request, env);
       }
-      if (path === '/api/admin/materials' && request.method === 'GET') {
-        return handleAdminMaterials(request, env);
-      }
-      if (path === '/api/admin/materials' && request.method === 'POST') {
-        return handleAdminCreateMaterial(request, env);
-      }
-      if (path.match(/^\/api\/admin\/materials\/[^/]+$/) && request.method === 'PATCH') {
-        return handleAdminUpdateMaterial(request, env);
-      }
-      if (path.match(/^\/api\/admin\/materials\/[^/]+\/inventory-adjustments$/) && request.method === 'POST') {
-        return handleAdminMaterialInventoryAdjustment(request, env);
-      }
       if (path.startsWith('/api/admin/users/') && request.method === 'DELETE') {
         return handleAdminDeleteUser(request, env);
-      }
-      if (path === '/api/admin/workorders' && request.method === 'GET') {
-        return handleAdminWorkOrders(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/short-title$/) && request.method === 'PATCH') {
-        return handleAdminUpdateWorkOrderTitle(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/field-plan$/) && request.method === 'PATCH') {
-        return handleAdminFieldPlan(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/extension-requests\/[^/]+\/decision$/) && request.method === 'POST') {
-        return handleAdminExtensionDecision(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/field-days\/override$/) && request.method === 'POST') {
-        return handleAdminFieldDayOverride(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/field-days\/[^/]+\/report$/) && request.method === 'PATCH') {
-        return handleAdminCorrectFieldDayReport(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/evidence-holds$/) && request.method === 'POST') {
-        return handleAdminOpenEvidenceHold(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/evidence-holds\/[^/]+\/resolve$/) && request.method === 'POST') {
-        return handleAdminResolveEvidenceHold(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/onsite-conversion\/confirm$/) && request.method === 'POST') {
-        return handleConfirmOnsiteConversion(request, env, { admin: true });
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/service-standard\/override$/) && request.method === 'POST') {
-        return handleAdminOverrideServiceStandardGate(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/arrival-override$/) && request.method === 'POST') {
-        return handleAdminArrivalOverride(request, env);
-      }
-      if (path.startsWith('/api/admin/workorders/') && path.endsWith('/assign-regional-lead') && request.method === 'PATCH') {
-        return handleAdminAssignRegionalLead(request, env);
-      }
-      if (path.startsWith('/api/admin/workorders/') && path.endsWith('/assign') && request.method === 'PATCH') {
-        return handleAdminAssignWorkOrder(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/pricing\/(approve|reject)$/) && request.method === 'PATCH') {
-        return handleAdminReviewWorkOrderPricing(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/installments\/[^/]+\/receipt-claims\/[^/]+\/decision$/) && request.method === 'POST') {
-        return handleAdminDecideReceiptClaim(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payment\/approve-start$/) && request.method === 'POST') {
-        return handleAdminApprovePaymentStart(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payment\/approve-balance$/) && request.method === 'POST') {
-        return handleAdminApproveWorkOrderBalance(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/payout$/) && request.method === 'PATCH') {
-        return handleAdminUpdateWorkOrderPayout(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/invoice-request\/process$/) && request.method === 'POST') {
-        return handleAdminProcessInvoiceRequest(request, env);
-      }
-      if (path.startsWith('/api/admin/workorders/') && path.endsWith('/archive') && request.method === 'PATCH') {
-        return handleAdminArchiveWorkOrder(request, env);
-      }
-      if (path.match(/^\/api\/admin\/workorders\/[^/]+\/knowledge-candidate$/) && request.method === 'POST') {
-        return handleAdminCreateKnowledgeCandidate(request, env);
-      }
-      if (path === '/api/admin/ratings' && request.method === 'GET') {
-        return handleAdminRatings(request, env);
-      }
-      if (path === '/api/admin/leads' && request.method === 'GET') {
-        return handleAdminLeads(request, env);
-      }
-      if (path.startsWith('/api/admin/leads/') && path.endsWith('/convert-workorder') && request.method === 'POST') {
-        return errorResponse('整机线索由 Admin 负责销售流转，不转为服务申请', 400);
-      }
-      if (path.startsWith('/api/admin/leads/') && request.method === 'PATCH') {
-        return handleAdminUpdateLead(request, env);
-      }
-      if (path.startsWith('/api/admin/ratings/') && path.endsWith('/reply') && request.method === 'POST') {
-        return handleAdminReplyRating(request, env);
-      }
-      if (path === '/api/admin/platform-ratings' && request.method === 'GET') {
-        return handleAdminPlatformRatings(request, env);
-      }
-      if (path === '/api/admin/customer-ratings' && request.method === 'GET') {
-        return handleAdminCustomerRatings(request, env);
       }
     }
 
     // 对话管理
-    if (path === '/api/inbox/contacts' && request.method === 'GET') {
-      return handleInboxContacts(request, env);
-    }
-    if (path === '/api/inbox/conversations' && request.method === 'POST') {
-      return handleCreateInboxConversation(request, env);
-    }
-    if (path.match(/^\/api\/inbox\/conversations\/[^/]+$/) && request.method === 'GET') {
-      return handleGetInboxConversation(request, env);
-    }
-    if (path.match(/^\/api\/inbox\/conversations\/[^/]+\/messages$/) && request.method === 'POST') {
-      return handlePostInboxMessage(request, env);
-    }
-    if (path.match(/^\/api\/inbox\/conversations\/[^/]+\/read$/) && request.method === 'POST') {
-      return handleMarkInboxRead(request, env);
-    }
-    if (path.match(/^\/api\/inbox\/work-orders\/[^/]+$/) && request.method === 'POST') {
-      return handleCreateWorkOrderInboxConversation(request, env);
-    }
-    if (path === '/api/inbox' && request.method === 'GET') {
-      return handleGetInbox(request, env);
-    }
     if (path === '/api/conversations' && request.method === 'GET') {
       return handleGetConversations(request, env);
     }
@@ -23768,334 +23631,16 @@ async function routeRequest(request, env, ctx) {
       return handleRenameConversation(request, env);
     }
 
-    // 物料搜索：工程师/Admin 可用，只返回协作所需字段
-    if (path === '/api/materials' && request.method === 'GET') {
-      return handleSearchMaterials(request, env);
-    }
-    if (path === '/api/material-requests' && request.method === 'GET') {
-      return handleListMaterialRequests(request, env);
-    }
-    if (path === '/api/material-requests' && request.method === 'POST') {
-      return handleCreateMaterialRequest(request, env);
-    }
-    if (path === '/api/material-requisitions' && request.method === 'GET') {
-      return handleListMaterialRequisitions(request, env);
-    }
-    if (path === '/api/material-requisitions' && request.method === 'POST') {
-      return handleCreateMaterialRequisition(request, env);
-    }
-    if (path === '/api/material-requisitions/metrics' && request.method === 'GET') {
-      return handleMaterialRequisitionMetrics(request, env);
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+$/) && request.method === 'GET') {
-      return handleGetMaterialRequisition(request, env);
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/submit$/) && request.method === 'POST') {
-      return handleSubmitMaterialRequisition(request, env);
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/approve$/) && request.method === 'POST') {
-      return handleRequisitionDecision(request, env, 'approve');
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/reject$/) && request.method === 'POST') {
-      return handleRequisitionDecision(request, env, 'reject');
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/cancel$/) && request.method === 'POST') {
-      return handleRequisitionDecision(request, env, 'cancel');
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/items\/[^/]+\/cancel$/) && request.method === 'POST') {
-      return handleCancelRequisitionItem(request, env);
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/stock-allocation$/) && request.method === 'POST') {
-      return handleRequisitionLineAction(request, env, 'allocate_stock');
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement$/) && request.method === 'POST') {
-      return handleRequisitionLineAction(request, env, 'record_purchase');
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement$/) && request.method === 'PATCH') {
-      return handleUpdateRequisitionProcurement(request, env);
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/procurement-receipt$/) && request.method === 'POST') {
-      return handleRequisitionLineAction(request, env, 'receive_purchase');
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/issue$/) && request.method === 'POST') {
-      return handleRequisitionLineAction(request, env, 'issue');
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/return$/) && request.method === 'POST') {
-      return handleRequisitionLineAction(request, env, 'return');
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/engineer-receipt$/) && request.method === 'POST') {
-      return handleEngineerRequisitionReceipt(request, env);
-    }
-    if (path.match(/^\/api\/material-requisitions\/[^/]+\/close$/) && request.method === 'POST') {
-      return handleCloseMaterialRequisition(request, env);
-    }
-    if (path === '/api/upsell-requests' && request.method === 'POST') {
-      return handleCreateUpsellRequest(request, env);
-    }
-    if (path === '/api/upsell-requests/mine' && request.method === 'GET') {
-      return handleListMyUpsellRequests(request, env);
-    }
-    if (path === '/api/leads/machine' && request.method === 'POST') {
-      return handleCreateMachineLead(request, env);
-    }
-    // 工单相关
-    if (path === '/api/location/search' && request.method === 'GET') {
-      return handleLocationSearch(request, env);
-    }
-    if (path === '/api/workorders' && request.method === 'POST') {
-      return handleCreateWorkOrder(request, env);
-    }
-    if (path === '/api/workorders' && request.method === 'GET') {
-      return handleGetWorkOrders(request, env);
-    }
-    // 工程师评价客户（必须在 catch-all GET 之前）
-    if (path.match(/^\/api\/workorders\/[^/]+\/engineer-review$/) && request.method === 'POST') {
-      return handleSubmitEngineerReview(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/engineer-review$/) && request.method === 'GET') {
-      return handleGetEngineerReview(request, env);
-    }
-    // 维修记录（必须在 catch-all GET 之前）
-    if (path.match(/^\/api\/workorders\/[^/]+\/repair-record$/) && request.method === 'GET') {
-      return handleGetRepairRecord(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/repair-record$/) && request.method === 'POST') {
-      return handleSaveRepairRecord(request, env);
-    }
-    // 工单物料引用（必须在 catch-all GET 之前）
-    if (path.match(/^\/api\/workorders\/[^/]+\/material-items$/) && request.method === 'GET') {
-      return handleGetWorkOrderMaterialItems(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/material-items$/) && request.method === 'POST') {
-      return handleCreateWorkOrderMaterialItem(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/material-items\/[^/]+$/) && request.method === 'PATCH') {
-      return handleUpdateWorkOrderMaterialItem(request, env);
-    }
-    if (path === '/api/workorders/rating' && request.method === 'POST') {
-      return handleSubmitRating(request, env);
-    }
-    // 工单附件（必须在 catch-all GET 之前）
-    if (path.match(/^\/api\/workorders\/[^/]+\/field-days\/check-in$/) && request.method === 'POST') {
-      return handleFieldDayCheckIn(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/field-days\/[^/]+\/report$/) && request.method === 'POST') {
-      return handleSubmitFieldDayReport(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/extension-requests$/) && request.method === 'POST') {
-      return handleCreateExtensionRequest(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/field-days$/) && request.method === 'GET') {
-      return handleGetFieldDays(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/field-media\/[^/]+$/) && request.method === 'GET') {
-      return handleGetFieldMedia(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/receipt-evidence\/[^/]+$/) && request.method === 'GET') {
-      return handleGetReceiptEvidence(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/installments\/[^/]+\/collect$/) && request.method === 'POST') {
-      return handleStartInstallmentCollection(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/installments\/[^/]+\/payment-method$/) && request.method === 'POST') {
-      return handleSelectInstallmentPaymentMethod(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/installments\/[^/]+\/receipt-claims$/) && request.method === 'POST') {
-      return handleSubmitReceiptClaim(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/attachments\/[^/]+$/) && request.method === 'DELETE') {
-      return handleDeleteAttachment(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/attachments$/) && request.method === 'POST') {
-      return handleUploadAttachment(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/attachments$/) && request.method === 'GET') {
-      return handleGetAttachments(request, env);
-    }
-    // 工程师 AI 服务前核查（必须在 catch-all GET 之前）
-    if (path.match(/^\/api\/workorders\/[^/]+\/service-readiness$/) && request.method === 'GET') {
-      return handleGetWorkOrderServiceReadiness(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/service-readiness\/refresh$/) && request.method === 'POST') {
-      return handleRefreshWorkOrderServiceReadiness(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/service-guidance$/) && request.method === 'GET') {
-      return handleGetWorkOrderServiceGuidance(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/service-guidance\/refresh$/)
-      && request.method === 'POST') {
-      return handleRefreshWorkOrderServiceGuidance(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/service-guidance\/feedback$/)
-      && request.method === 'POST') {
-      return handleServiceGuidanceFeedback(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/service-standard$/) && request.method === 'GET') {
-      return handleGetWorkOrderServiceStandard(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/service-standard\/items\/[^/]+\/confirm$/)
-      && request.method === 'POST') {
-      return handleConfirmWorkOrderServiceStandardItem(request, env);
-    }
-    // 工单详情 catch-all（必须在所有子路由之后）
-    if (path.match(/^\/api\/workorders\/[^/]+$/) && request.method === 'GET') {
-      return handleGetWorkOrder(request, env);
-    }
-    if (path.match(/^\/api\/customers\/[^/]+\/reviews$/) && request.method === 'GET') {
-      return handleGetCustomerReviews(request, env);
-    }
-    // 工单消息
-    if (path.match(/^\/api\/workorders\/[^/]+\/messages$/) && request.method === 'GET') {
-      return handleGetWorkOrderMessages(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/messages$/) && request.method === 'POST') {
-      return handlePostWorkOrderMessage(request, env);
-    }
-    // 工单核价
-    if (path.match(/^\/api\/workorders\/[^/]+\/pricing\/confirm$/) && request.method === 'POST') {
-      return handleConfirmWorkOrderPricing(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/pricing\/reject$/) && request.method === 'POST') {
-      return handleRejectWorkOrderPricing(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/pricing$/) && request.method === 'GET') {
-      return handleGetWorkOrderPricing(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/pricing$/) && request.method === 'POST') {
-      return handleSubmitWorkOrderPricing(request, env);
-    }
-    // 工程师到场定位核验
-    if (path.match(/^\/api\/workorders\/[^/]+\/arrival-check$/) && request.method === 'POST') {
-      return handleWorkOrderArrivalCheck(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/onsite-conversion\/request$/) && request.method === 'POST') {
-      return handleRequestOnsiteConversion(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/onsite-conversion\/confirm$/) && request.method === 'POST') {
-      return handleConfirmOnsiteConversion(request, env);
-    }
-    // 工程师标记服务完成
-    if (path.match(/^\/api\/workorders\/[^/]+\/resolve$/) && request.method === 'POST') {
-      return handleResolveWorkOrder(request, env);
-    }
-    // 客户取消工单
-    if (path.match(/^\/api\/workorders\/[^/]+\/cancel$/) && request.method === 'POST') {
-      return handleCancelWorkOrder(request, env);
-    }
-    if (path === '/api/platform-ratings' && request.method === 'POST') {
-      return handleSubmitPlatformRating(request, env);
-    }
-    if (path === '/api/customer-ratings' && request.method === 'POST') {
-      return handleSubmitCustomerRating(request, env);
-    }
-
-    // 设备管理
-    if (path === '/api/devices' && request.method === 'GET') {
-      return handleGetDevices(request, env);
-    }
-    if (path === '/api/devices' && request.method === 'POST') {
-      return handleCreateDevice(request, env);
-    }
-    if (path.startsWith('/api/devices/') && request.method === 'GET') {
-      return handleGetDevice(request, env);
-    }
-    if (path.startsWith('/api/devices/') && request.method === 'PATCH') {
-      return handleUpdateDevice(request, env);
-    }
-    if (path.startsWith('/api/devices/') && request.method === 'DELETE') {
-      return handleDeleteDevice(request, env);
-    }
-
-    // 通知相关
-    if (path === '/api/notifications' && request.method === 'GET') {
-      return handleGetNotifications(request, env);
-    }
-    if (path === '/api/notifications/unread-count' && request.method === 'GET') {
-      return handleGetUnreadNotificationCount(request, env);
-    }
-    if (path.match(/^\/api\/notifications\/[^/]+\/read$/) && request.method === 'PATCH') {
-      return handleMarkNotificationRead(request, env);
-    }
-    if (path === '/api/notifications/read-all' && request.method === 'POST') {
-      return handleMarkAllNotificationsRead(request, env);
-    }
-
-    // 工程师相关
-    if (path === '/api/engineers/tickets' && request.method === 'GET') {
-      return handleGetEngineerTickets(request, env);
-    }
-    if (path === '/api/engineers/calendar-events' && request.method === 'GET') {
-      return handleGetEngineerCalendarEvents(request, env);
-    }
-    if (path === '/api/engineers/calendar-events' && request.method === 'POST') {
-      return handleCreateEngineerCalendarEvent(request, env);
-    }
-    if (path.startsWith('/api/engineers/calendar-events/') && request.method === 'PATCH') {
-      return handleUpdateEngineerCalendarEvent(request, env);
-    }
-    if (path.startsWith('/api/engineers/calendar-events/') && request.method === 'DELETE') {
-      return handleDeleteEngineerCalendarEvent(request, env);
-    }
-    if (path === '/api/engineers/team' && request.method === 'GET') {
-      return handleGetEngineerTeam(request, env);
-    }
-    if (path === '/api/engineers/assign-engineer' && request.method === 'POST') {
-      return handleRegionalLeadAssignEngineer(request, env);
-    }
-    if (path === '/api/engineers/tickets/accept' && request.method === 'POST') {
-      return handleAcceptTicket(request, env);
-    }
-    if (path === '/api/engineers/tickets/reject' && request.method === 'POST') {
-      return handleRejectTicket(request, env);
-    }
-    if (path === '/api/engineers/status' && request.method === 'PATCH') {
-      return handleUpdateEngineerStatus(request, env);
-    }
-    if (path === '/api/engineers/recommend' && request.method === 'GET') {
-      return handleRecommendEngineers(request, env);
-    }
-    if (path === '/api/engineers/service-profile' && ['GET', 'PUT'].includes(request.method)) {
-      return handleEngineerServiceProfile(request, env, { jsonResponse, isCn: getRequestMarket(request) === 'cn' });
-    }
-    if (path === '/api/engineers/profile' && request.method === 'GET') {
-      return handleGetEngineerProfile(request, env);
-    }
-    if (path === '/api/engineers/profile' && request.method === 'PATCH') {
-      return handleUpdateEngineerProfile(request, env);
-    }
-    if (path === '/api/customers/profile' && request.method === 'PATCH') {
-      return handleUpdateCustomerProfile(request, env);
-    }
+    // 客户自助改密（管理员强制改密也走这里）
     if (path === '/api/auth/change-password' && request.method === 'POST') {
       return handleChangePassword(request, env);
     }
     // 工程师钱包信息（免费模式已停用）
-    if (path === '/api/engineers/wallet' && request.method === 'GET') {
-      return errorResponse('平台已转为免费模式，支付功能已停用', 410);
-    }
     // 工程师提现申请（免费模式已停用）
-    if (path === '/api/engineers/wallet/withdraw' && request.method === 'POST') {
-      return errorResponse('平台已转为免费模式，支付功能已停用', 410);
-    }
     // 客户付款（记录客户-工程师之间的交易）
-    if (path.match(/^\/api\/workorders\/[^/]+\/pay$/) && request.method === 'POST') {
-      return handlePayWorkOrder(request, env);
-    }
-    if (path.match(/^\/api\/workorders\/[^/]+\/payment\/start-request$/) && request.method === 'POST') {
-      return handleEngineerRequestPaymentStart(request, env);
-    }
     // 获取付款记录
-    if (path.match(/^\/api\/workorders\/[^/]+\/payment$/) && request.method === 'GET') {
-      return handleGetWorkOrderPayment(request, env);
-    }
     // 发票申请（客户提交）
-    if (path.match(/^\/api\/workorders\/[^/]+\/invoice-request$/) && request.method === 'POST') {
-      return handleSubmitInvoiceRequest(request, env);
-    }
     // 获取发票申请状态
-    if (path.match(/^\/api\/workorders\/[^/]+\/invoice-request$/) && request.method === 'GET') {
-      return handleGetInvoiceRequest(request, env);
-    }
     // 推送订阅（OneSignal Player ID）- 客户和工程师共用同一处理器，按 auth.userType 分发
     if (
       (path === '/api/engineers/push-subscription' ||

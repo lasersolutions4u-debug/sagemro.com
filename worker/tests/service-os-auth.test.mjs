@@ -1,5 +1,4 @@
 import { test } from 'node:test';
-import './business-workspace.test.mjs';
 import assert from 'node:assert/strict';
 
 import { hashPasswordNew } from '../src/lib/auth.js';
@@ -258,52 +257,6 @@ async function adminLogin(url, body, env = createTestEnv()) {
   return { response, json };
 }
 
-test('public engineer registration is closed for Service OS positioning', async () => {
-  const request = new Request('https://api.sagemro.com/api/auth/register/engineer', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Origin: 'https://sagemro.com',
-    },
-    body: JSON.stringify({
-      name: 'Test Engineer',
-      phone: '13800000000',
-      password: 'secret12345',
-      code: '888888',
-      company: 'Test Co',
-    }),
-  });
-
-  const response = await worker.fetch(request, {}, { waitUntil() {} });
-  const body = await response.json();
-
-  assert.equal(response.status, 410);
-  assert.match(body.error, /Public engineer registration is closed/);
-});
-
-test('CN public engineer registration closure is localized', async () => {
-  const request = new Request('https://api.sagemro.cn/api/auth/register/engineer', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Origin: 'https://sagemro.cn',
-    },
-    body: JSON.stringify({
-      name: '测试工程师',
-      phone: '13800000000',
-      password: 'secret12345',
-      code: '888888',
-      company: '测试公司',
-    }),
-  });
-
-  const response = await worker.fetch(request, {}, { waitUntil() {} });
-  const body = await response.json();
-
-  assert.equal(response.status, 410);
-  assert.equal(body.error, '工程师账号暂不开放公开注册。');
-});
-
 test('COM admin login uses the international admin secret', async () => {
   const { response, json } = await adminLogin('https://api.sagemro.com/api/admin/login', {
     phone: '13800000000',
@@ -382,17 +335,6 @@ test('COM auth validation errors are returned in English', async () => {
   });
   assert.equal(sendCode.response.status, 400);
   assert.equal(sendCode.json.error, 'Please enter a valid email address.');
-});
-
-test('COM protected route auth errors are returned in English', async () => {
-  const response = await worker.fetch(new Request('https://api.sagemro.com/api/workorders', {
-    method: 'GET',
-    headers: { Origin: 'https://sagemro.com' },
-  }), createTestEnv(), { waitUntil() {} });
-  const json = await response.json();
-
-  assert.equal(response.status, 401);
-  assert.equal(json.error, 'Please sign in first.');
 });
 
 test('CN auth validation errors stay in Simplified Chinese', async () => {
@@ -1742,84 +1684,3 @@ async function engineerRejectRequest(body) {
     body: JSON.stringify(body),
   });
 }
-
-test('engineer reject dispatch requires a reason', async () => {
-  const { env } = makeEngineerRejectEnv();
-  const response = await worker.fetch(
-    await engineerRejectRequest({ work_order_id: 'wo-1' }),
-    env,
-    { waitUntil() {} },
-  );
-  const body = await response.json();
-
-  assert.equal(response.status, 400);
-  assert.ok(body.error);
-});
-
-test('cookie-authenticated engineer writes reject missing CSRF', async () => {
-  const { env } = makeEngineerRejectEnv();
-  const csrf = 'csrf-token-for-engineer';
-  const token = await signJwt({
-    userId: 'eng-1',
-    userType: 'engineer',
-    csrf,
-    exp: Math.floor(Date.now() / 1000) + 60,
-  }, ENGINEER_REJECT_JWT_SECRET);
-  const request = new Request('https://api.sagemro.com/api/engineers/tickets/reject', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Cookie: `__Host-sagemro_engineer_session=${token}`,
-      Origin: 'https://engineer.sagemro.com',
-    },
-    body: JSON.stringify({ work_order_id: 'wo-1', reason: 'Schedule conflict' }),
-  });
-
-  const response = await worker.fetch(request, env, { waitUntil() {} });
-  assert.equal(response.status, 403);
-});
-
-test('cookie-authenticated engineer writes accept matching CSRF', async () => {
-  const { env } = makeEngineerRejectEnv();
-  const csrf = 'csrf-token-for-engineer';
-  const token = await signJwt({
-    userId: 'eng-1',
-    userType: 'engineer',
-    csrf,
-    exp: Math.floor(Date.now() / 1000) + 60,
-  }, ENGINEER_REJECT_JWT_SECRET);
-  const request = new Request('https://api.sagemro.com/api/engineers/tickets/reject', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Cookie: `__Host-sagemro_engineer_session=${token}`,
-      Origin: 'https://engineer.sagemro.com',
-      'X-CSRF-Token': csrf,
-    },
-    body: JSON.stringify({ work_order_id: 'wo-1', reason: 'Schedule conflict' }),
-  });
-
-  const response = await worker.fetch(request, env, { waitUntil() {} });
-  assert.equal(response.status, 200);
-});
-
-test('engineer reject dispatch records the submitted reason as an internal note', async () => {
-  const { env, logs, internalMessages } = makeEngineerRejectEnv();
-  const reason = 'Customer changed the schedule and the site visit cannot be confirmed.';
-  const response = await worker.fetch(
-    await engineerRejectRequest({
-      work_order_id: 'wo-1',
-      reason,
-    }),
-    env,
-    { waitUntil() {} },
-  );
-  const body = await response.json();
-
-  assert.equal(response.status, 200);
-  assert.equal(body.success, true);
-  assert.equal(logs.length, 1);
-  assert.equal(logs[0].action, 'rejected');
-  assert.equal(internalMessages.length, 1);
-  assert.match(internalMessages[0].content, new RegExp(reason));
-});

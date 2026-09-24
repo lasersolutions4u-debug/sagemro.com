@@ -1,66 +1,57 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isKnownProtectedRoute, isTestRoute } from '../src/lib/routes.js';
-import { isOperationsReadRoute } from '../src/index.js';
 
+// 系统已裁剪为主站（营销页）/ AI 门户 / 知识中枢 / 工程师招募页，
+// 白名单只保留仍存在的已登录接口。
 test('test route classifier covers development-only diagnostics', () => {
   assert.equal(isTestRoute('/api/test-full-flow'), true);
   assert.equal(isTestRoute('/api/debug-engineers'), true);
   assert.equal(isTestRoute('/api/init-test-data'), true);
   assert.equal(isTestRoute('/api/init-db'), true);
   assert.equal(isTestRoute('/api/clear-test-data'), true);
-  assert.equal(isTestRoute('/api/workorders'), false);
+  assert.equal(isTestRoute('/api/conversations'), false);
 });
 
-test('protected route classifier covers exact and parameterized authenticated paths', () => {
+test('protected route classifier covers exactly the kept authenticated paths', () => {
   assert.equal(isKnownProtectedRoute('/api/admin/stats'), true);
-  assert.equal(isKnownProtectedRoute('/api/material-requisitions/metrics'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/staff'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/users'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/users/user-1'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/knowledge'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/knowledge/article-1'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/knowledge-candidates'), true);
+  assert.equal(isKnownProtectedRoute('/api/admin/knowledge-candidates/candidate-1/approve'), true);
   assert.equal(isKnownProtectedRoute('/api/conversations'), true);
   assert.equal(isKnownProtectedRoute('/api/conversations/conversation-1'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/messages'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/field-days'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/field-days/check-in'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/field-days/day-1/report'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/extension-requests'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/field-media/media-1'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/installments/installment-1/collect'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/installments/installment-1/payment-method'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/installments/installment-1/receipt-claims'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/receipt-evidence/evidence-1'), true);
-  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/field-plan'), true);
-  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/installments/installment-1/receipt-claims/claim-1/decision'), true);
-  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/extension-requests/request-1/decision'), true);
-  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/field-days/override'), true);
-  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/field-days/day-1/report'), true);
-  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/evidence-holds'), true);
-  assert.equal(isKnownProtectedRoute('/api/admin/workorders/work-order-1/evidence-holds/hold-1/resolve'), true);
-  assert.equal(isKnownProtectedRoute('/api/customers/customer-1/reviews'), true);
   assert.equal(isKnownProtectedRoute('/api/auth/change-password'), true);
-  assert.equal(isKnownProtectedRoute('/api/chat'), false);
-  assert.equal(isKnownProtectedRoute('/api/not-a-route'), false);
 });
 
-test('engineer service readiness endpoints are protected work-order subroutes', () => {
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/service-readiness'), true);
-  assert.equal(isKnownProtectedRoute('/api/workorders/work-order-1/service-readiness/refresh'), true);
-});
-
-test('operations read gateway allows only the exact receipt evidence GET route', () => {
-  const path = '/api/workorders/work-order-1/receipt-evidence/evidence-1';
-  assert.equal(isOperationsReadRoute(path, 'GET'), true);
-  assert.equal(isOperationsReadRoute(path, 'POST'), false);
-  assert.equal(isOperationsReadRoute(`${path}/extra`, 'GET'), false);
-  assert.equal(isOperationsReadRoute('/api/workorders/work-order-1/installments/installment-1/collect', 'GET'), false);
-});
-
-test('operations read gateway allows only exact GET promotion analytics routes', () => {
+test('retired feature routes are no longer protected because they no longer exist', () => {
   for (const path of [
-    '/api/admin/analytics/overview',
-    '/api/admin/analytics/channels',
-    '/api/admin/analytics/organic-acquisition',
+    '/api/workorders',
+    '/api/workorders/work-order-1/messages',
+    '/api/material-requisitions/metrics',
+    '/api/devices',
+    '/api/notifications',
+    '/api/inbox',
+    '/api/customers/customer-1/reviews',
+    '/api/chat',
+    '/api/not-a-route',
   ]) {
-    assert.equal(isOperationsReadRoute(path, 'GET'), true);
-    assert.equal(isOperationsReadRoute(path, 'POST'), false);
-    assert.equal(isOperationsReadRoute(`${path}/extra`, 'GET'), false);
+    assert.equal(isKnownProtectedRoute(path), false, `${path} should no longer be an authenticated route`);
+  }
+});
+
+test('the retired admin surfaces stay under the admin prefix and 404 in the dispatcher', () => {
+  // /api/admin/ 是管理后台的粗粒度边界：退役的 admin 子路径仍会被判为受保护，
+  // 但分发器里已经没有对应分支，会落到兜底 404（见 knowledge-admin 的「已下架」用例）。
+  for (const path of [
+    '/api/admin/workorders',
+    '/api/admin/engineers/engineer-1',
+    '/api/admin/analytics/overview',
+    '/api/admin/business/work-orders',
+  ]) {
+    assert.equal(isKnownProtectedRoute(path), true);
   }
 });
