@@ -240,7 +240,8 @@ async function confirmAuthFailure(nativeFetch) {
   return __authFailureConfirmation;
 }
 
-if (typeof window !== 'undefined' && !window.__sagemroFetchPatched) {
+// 只在真正的浏览器里打补丁：SSR / 测试里的 window 桩可能没有 fetch。
+if (typeof window !== 'undefined' && typeof window.fetch === 'function' && !window.__sagemroFetchPatched) {
   window.__sagemroFetchPatched = true;
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input, init) => {
