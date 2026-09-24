@@ -22,10 +22,11 @@ test('Cloudflare test job runs Admin and E2E gates before deploy jobs', () => {
     'Admin tests should run before Admin build',
   );
   assert.match(testJob, /name: E2E install\s+working-directory: e2e\s+run: npm install --no-audit --no-fund/);
-  assert.match(testJob, /name: Full E2E tests\s+working-directory: e2e\s+run: npm test/);
+  assert.match(testJob, /name: E2E contract tests\s+working-directory: e2e\s+run: npm test/);
+  assert.doesNotMatch(testJob, /playwright install/, '没有浏览器旅程后不应再下载 Chromium');
   assert.ok(
-    testJob.indexOf('name: Full E2E tests') > testJob.indexOf('name: Admin build'),
-    'full E2E should run after Worker, frontend, and Admin verification',
+    testJob.indexOf('name: E2E contract tests') > testJob.indexOf('name: Admin build'),
+    'E2E contracts should run after Worker, frontend, and Admin verification',
   );
 });
 
