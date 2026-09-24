@@ -31,8 +31,10 @@ test('Aliyun China portal waits for the shared API and D1 contract', () => {
   for (const version of ['050_engineer_service_profiles', '051_business_scope', '052_business_quote_costs', '053_business_receipt_actors', '054_business_execution_assignments', '055_business_service_execution']) {
     assert.ok(required.split(' ').includes(version), `CN must require ${version}`);
   }
-  assert.match(workflow, /POST https:\/\/api\.sagemro\.cn\/api\/service-request-assist/);
-  assert.match(workflow, /assist_status.*400/s);
+  // 就绪探测必须指向保留的接口：服务请求/工单已下架，探测它们会稳定 404 卡死发布。
+  assert.match(workflow, /POST https:\/\/api\.sagemro\.cn\/api\/contact/);
+  assert.match(workflow, /contact_status.*400/s);
+  assert.doesNotMatch(workflow, /api\/service-request-assist/);
 });
 
 test('Aliyun activation atomically maps each host to the approved artifact', () => {
@@ -88,7 +90,11 @@ test('Aliyun health checks and summary include the AI portal without dropping ex
   for (const url of urls) {
     assert.match(workflow, new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
-  assert.match(workflow, /ai\.sagemro\.cn\/service-request\?mode=manual/);
-  assert.match(workflow, /noindex,nofollow,noarchive/);
+  // 私密路由的 X-Robots-Tag 只对仍在的入口断言（/activate 与 work-orders 已下线）。
+  assert.match(workflow, /expect_robots_tag https:\/\/ai\.sagemro\.cn\//);
+  assert.match(workflow, /expect_robots_tag https:\/\/admin\.sagemro\.cn\/deploy-admin-smoke/);
+  assert.doesNotMatch(workflow, /sagemro\.cn\/activate/);
+  assert.doesNotMatch(workflow, /work-orders\/deploy-smoke/);
+  assert.match(workflow, /noindex, nofollow, noarchive/);
   assert.match(workflow, /- AI: https:\/\/ai\.sagemro\.cn\//);
 });

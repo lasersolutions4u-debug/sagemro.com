@@ -35,13 +35,15 @@ test('China deployment attempts rollback for failed or cancelled activation and 
 });
 
 test('China health checks cover private SPA routes and real public 404s', () => {
-  assert.match(workflow, /https:\/\/sagemro\.cn\/activate/);
-  assert.match(workflow, /https:\/\/engineer\.sagemro\.cn\/work-orders\/deploy-smoke/);
+  // 私密 SPA 路由探测只保留仍在的入口：/activate 与 work-orders 已随 2026-09-24 裁剪下线。
   assert.match(workflow, /https:\/\/admin\.sagemro\.cn\/deploy-admin-smoke/);
+  assert.match(workflow, /https:\/\/ai\.sagemro\.cn\//);
   assert.match(workflow, /expected HTTP 200/);
   assert.match(workflow, /https:\/\/sagemro\.cn\/deploy-404-smoke/);
   assert.match(workflow, /https:\/\/engineer\.sagemro\.cn\/deploy-404-smoke/);
   assert.match(workflow, /expected HTTP 404/);
+  assert.doesNotMatch(workflow, /sagemro\.cn\/activate/);
+  assert.doesNotMatch(workflow, /work-orders\/deploy-smoke/);
 });
 
 test('China health checks reject an unknown HTTPS host on the production address', () => {

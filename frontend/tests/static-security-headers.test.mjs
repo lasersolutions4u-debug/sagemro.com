@@ -61,7 +61,9 @@ test('China pages-only release verifies existing security headers without rewrit
   }
   assert.match(workflow, /HTML is missing security header/);
   assert.match(workflow, /expect_robots_tag https:\/\/admin\.sagemro\.cn\/deploy-admin-smoke/);
-  assert.match(workflow, /expect_robots_tag https:\/\/sagemro\.cn\/activate/);
-  assert.match(workflow, /expect_robots_tag https:\/\/engineer\.sagemro\.cn\/work-orders\/deploy-smoke/);
+  assert.match(workflow, /expect_robots_tag https:\/\/ai\.sagemro\.cn\//);
   assert.match(workflow, /expect_no_robots_tag https:\/\/engineer\.sagemro\.cn\//);
+  // /activate 与 work-orders 已下线，不再有对应的 robots 探测。
+  assert.doesNotMatch(workflow, /sagemro\.cn\/activate/);
+  assert.doesNotMatch(workflow, /work-orders\/deploy-smoke/);
 });

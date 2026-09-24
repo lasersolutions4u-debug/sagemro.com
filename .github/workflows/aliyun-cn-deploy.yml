@@ -67,13 +67,16 @@ jobs:
             fi
           done
 
-          assist_status=$(curl -sS -o /tmp/service-request-assist-readiness.json -w '%{http_code}' \
-            -X POST https://api.sagemro.cn/api/service-request-assist \
+          # 就绪探测只允许指向保留的接口：服务请求/工单/物料等已随 2026-09-24 裁剪下架，
+          # 探测它们会稳定拿到 404 并卡死发布。本站咨询线索表单（/api/contact）是最能代表
+          # 「新 Worker 已上线」的保留契约：空 body 必须返回 400（校验错误），而不是 401/404。
+          contact_status=$(curl -sS -o /tmp/website-contact-readiness.json -w '%{http_code}' \
+            -X POST https://api.sagemro.cn/api/contact \
             -H 'Content-Type: application/json' \
-            -H 'Origin: https://ai.sagemro.cn' \
+            -H 'Origin: https://sagemro.cn' \
             --data '{}')
-          if [ "$assist_status" != "400" ]; then
-            echo "::error::CN API does not expose the expected service-request assist contract (HTTP ${assist_status})."
+          if [ "$contact_status" != "400" ]; then
+            echo "::error::CN API does not expose the expected website consultation contract (HTTP ${contact_status})."
             exit 1
           fi
 
@@ -349,13 +352,9 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsS --retry 3 --retry-delay 2 https://sagemro.cn/ >/dev/null
-          portal_html=$(curl -fsS --retry 3 --retry-delay 2 'https://ai.sagemro.cn/service-request?mode=manual')
-          echo "$portal_html" | grep -qi 'noindex,nofollow,noarchive'
           curl -fsS --retry 3 --retry-delay 2 https://admin.sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://engineer.sagemro.cn/ >/dev/null
           curl -fsS --retry 3 --retry-delay 2 https://api.sagemro.cn/health >/dev/null
-          curl -fsS --retry 3 --retry-delay 2 https://sagemro.cn/activate >/dev/null
-          curl -fsS --retry 3 --retry-delay 2 https://engineer.sagemro.cn/work-orders/deploy-smoke >/dev/null
 
           expected_robots_tag='noindex, nofollow, noarchive, nosnippet, noimageindex'
           expect_robots_tag() {
@@ -375,8 +374,6 @@ jobs:
 
           expect_robots_tag https://admin.sagemro.cn/deploy-admin-smoke
           expect_robots_tag https://ai.sagemro.cn/
-          expect_robots_tag https://sagemro.cn/activate
-          expect_robots_tag https://engineer.sagemro.cn/work-orders/deploy-smoke
           expect_no_robots_tag https://engineer.sagemro.cn/
 
           admin_smoke_url=https://admin.sagemro.cn/deploy-admin-smoke
