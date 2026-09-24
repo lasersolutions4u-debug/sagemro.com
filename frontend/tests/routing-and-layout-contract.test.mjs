@@ -45,13 +45,13 @@ test('work order modal uses one full-height scroll surface without trailing blan
   assert.doesNotMatch(modal, /min-h-0 overflow-y-auto/);
 });
 
-test('customer site location distinguishes current position from map selection', () => {
-  const serviceRequestFlow = read('frontend/src/components/ServiceRequest/ServiceRequestFlow.jsx');
-
-  assert.match(serviceRequestFlow, /captureLocation: '确认现场定位'/);
-  assert.match(serviceRequestFlow, /locationCaptured: '现场定位已获取'/);
-  assert.match(serviceRequestFlow, /draft\.service_mode === 'onsite'/);
-  assert.match(serviceRequestFlow, /draft\.service_location\.accuracy_m/);
+test('the retired customer location capture stays deleted', () => {
+  // 服务请求与现场定位表单随工单体系下线，不要再回到主站产物里。
+  assert.equal(
+    existsSync(new URL('../src/components/ServiceRequest/ServiceRequestFlow.jsx', import.meta.url)),
+    false,
+    'ServiceRequestFlow 属于已下线的服务请求流程',
+  );
 });
 
 test('frontend build keeps modulepreload dependencies enabled', () => {

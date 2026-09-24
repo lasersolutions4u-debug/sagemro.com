@@ -200,8 +200,9 @@ test('insight guide conversion reuses the established service callbacks and requ
   const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const insightBranch = app.slice(app.indexOf('if (isInsightsPath)'), app.indexOf('if (isServicesPath)'));
 
-  assert.match(app, /const handleServiceDiagnosis = useCallback\(\(\) => \{\s*window\.history\.pushState\(\{\}, '', '\/'\);\s*setCurrentPath\('\/'\);/);
-  assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*window\.history\.pushState\(\{\}, '', '\/service-request'\);\s*setCurrentPath\('\/service-request'\);/);
-  assert.match(insightBranch, /<InsightsPage[\s\S]*onStartDiagnosis=\{handleServiceDiagnosis\}[\s\S]*onOpenServiceRequest=\{handleServiceRequest\}/);
+  // 服务请求路由已下线：洞察页的转化入口打开咨询线索表单。
+  // 服务请求路由已下线：洞察页的转化入口打开咨询线索表单。
+  assert.doesNotMatch(app, /service-request/);
+  assert.match(insightBranch, /<InsightsPage[\s\S]*onStartDiagnosis=\{openConsultation\}[\s\S]*onOpenServiceRequest=\{openConsultation\}/);
   assert.doesNotMatch(insightBranch, /WorkOrderModal|workOrderModalOpen/);
 });

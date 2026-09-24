@@ -66,5 +66,5 @@ test('App uses the resolved target and keeps the service request on the customer
   assert.match(app, /portalTarget === 'customer'/);
   assert.match(app, /portalTarget === 'public'/);
   assert.match(app, /portalTarget === 'blocked'/);
-  assert.match(app, /isServiceRequestPath[\s\S]{0,180}portalTarget === 'customer'|portalTarget === 'customer'[\s\S]{0,180}isServiceRequestPath/);
+  assert.doesNotMatch(app, /isServiceRequestPath/);
 });

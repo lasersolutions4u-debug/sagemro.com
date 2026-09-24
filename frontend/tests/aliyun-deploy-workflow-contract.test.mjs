@@ -66,7 +66,8 @@ test('Aliyun preflight is SHA-pinned and cannot activate or upload a release', (
   assert.match(workflow, /EXPECTED_SHA: \$\{\{ inputs.expected_sha \}\}/);
   assert.match(workflow, /"\$EXPECTED_SHA" != "\$GITHUB_SHA"/);
   for (const name of ['Check CN API and D1 readiness', 'Build frontend', 'Build admin', 'Package release', 'Upload release', 'Activate release']) {
-    const block = workflow.split(`      - name: ${name}\n`)[1]?.split('      - name: ')[0];
+    // 用正则切块：工作流在 Windows 工作区是 CRLF，字面量 '\n' 切不出来（CI 上是 LF）。
+    const block = workflow.split(new RegExp(`^ {6}- name: ${name}\\r?$`, 'm'))[1]?.split(/^ {6}- name: /m)[0];
     assert.ok(block, name);
     assert.match(block, /if: \$\{\{ !inputs.preflight_only \}\}/, name);
   }

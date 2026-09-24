@@ -57,27 +57,20 @@ test('public home content exposes the approved bilingual service-first structure
   }
 });
 
-test('public home content routes both request choices to the correct market portal', async () => {
+test('public home content routes the AI request choice to the correct market portal', async () => {
   const { getPublicHomeContent } = await import('../src/data/publicHomeContent.js');
 
+  // 服务请求页已下线：只保留 AI 门户入口，站内转化走咨询表单。
   assert.deepEqual(getPublicHomeContent(true).requestCtas, {
     assist: {
       label: '协助填写服务请求',
-      href: 'https://ai.sagemro.cn/service-request?mode=assist',
-    },
-    manual: {
-      label: '手动填写服务请求',
-      href: 'https://ai.sagemro.cn/service-request?mode=manual',
+      href: 'https://ai.sagemro.cn/?mode=assist',
     },
   });
   assert.deepEqual(getPublicHomeContent(false).requestCtas, {
     assist: {
       label: 'Get help preparing a service request',
-      href: 'https://ai.sagemro.com/service-request?mode=assist',
-    },
-    manual: {
-      label: 'Complete the service request manually',
-      href: 'https://ai.sagemro.com/service-request?mode=manual',
+      href: 'https://ai.sagemro.com/?mode=assist',
     },
   });
 });

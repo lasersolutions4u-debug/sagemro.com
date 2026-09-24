@@ -285,6 +285,16 @@ function authHeaders() {
   return headers;
 }
 
+// 上传表单（语音转写等）不能带 Content-Type，否则 multipart 边界会丢。
+function authHeadersNoContentType() {
+  const headers = {};
+  const token = localStorage.getItem('sagemro_token');
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 let __sessionRestoreOperation = null;
 let __logoutOperation = null;
 
@@ -299,8 +309,7 @@ export async function restoreSession() {
   const storedType = localStorage.getItem('sagemro_user_type');
   __sessionRestoreOperation = (async () => {
     const response = await fetch(`${API_BASE}/api/auth/session`, { credentials: 'include' });
-    const data = await response.json().catch(() => ({}));
-
+    const data = await response.json().catch(() => ({ authenticated: false }));
     if (response.status === 404) {
       return {
         authenticated: Boolean(localStorage.getItem('sagemro_token') && storedUser && storedType),
@@ -318,15 +327,10 @@ export async function restoreSession() {
 export async function logout() {
   if (__logoutOperation) return __logoutOperation;
   __logoutOperation = (async () => {
-    const response = await fetch(`${API_BASE}/api/auth/logout`, {
-      method: 'POST',
-      credentials: 'include',
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || `HTTP ${response.status}`);
-    }
-    return response.json().catch(() => ({}));
+    const response = await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    return data;
   })().finally(() => { __logoutOperation = null; });
   return __logoutOperation;
 }
@@ -336,6 +340,7 @@ export async function logout() {
 /**
  * 发送验证码
  */
+
 export async function sendVerifyCode({ phone, email }) {
   const payload = email ? { email } : { phone };
   const response = await fetch(`${API_BASE}/api/auth/send-code`, {
@@ -353,11 +358,12 @@ export async function sendVerifyCode({ phone, email }) {
 /**
  * 客户注册
  */
-export async function registerCustomer({ name, phone, email, password, code, company, identity, conversation_id }) {
+
+export async function registerCustomer({ name, phone, email, password, code, company, identity }) {
   const response = await fetch(`${API_BASE}/api/auth/register/customer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, phone, email, password, code, company, identity, conversation_id }),
+    body: JSON.stringify({ name, phone, email, password, code, company, identity }),
   });
   if (!response.ok) {
     const data = await response.json();
@@ -371,6 +377,7 @@ export async function registerCustomer({ name, phone, email, password, code, com
 /**
  * 登录
  */
+
 export async function login({ phone, email, password }) {
   await waitForAuthTransitions();
   const response = await fetch(`${API_BASE}/api/auth/login`, {
@@ -394,20 +401,7 @@ export async function login({ phone, email, password }) {
 /**
  * 激活工程师账号并设置初始密码
  */
-export async function activateEngineerAccount({ token, password }) {
-  const response = await fetch(`${API_BASE}/api/auth/engineer/activate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, password }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
 
-/**
- * 发送重置密码验证码
- */
 export async function sendResetCode({ phone, email }) {
   const response = await fetch(`${API_BASE}/api/auth/send-reset-code`, {
     method: 'POST',
@@ -424,6 +418,7 @@ export async function sendResetCode({ phone, email }) {
 /**
  * 重置密码
  */
+
 export async function resetPassword({ phone, email, code, newPassword }) {
   const response = await fetch(`${API_BASE}/api/auth/reset-password`, {
     method: 'POST',
@@ -442,7 +437,8 @@ export async function resetPassword({ phone, email, code, newPassword }) {
 /**
  * 发送消息并获取流式响应
  */
-export async function streamChat({ conversationId, message, images, onChunk, onDone, onError, signal, customerId }) {
+
+export async function streamChat({ conversationId, message, images, onChunk, onDone, onError, signal, customerId, serviceRequestOnly = false }) {
   try {
     const userType = localStorage.getItem('sagemro_user_type') || 'guest';
     const engineerId = localStorage.getItem('sagemro_engineer_id');
@@ -453,6 +449,7 @@ export async function streamChat({ conversationId, message, images, onChunk, onD
       body: JSON.stringify({
         conversation_id: conversationId,
         message: message,
+        service_request_only: serviceRequestOnly,
         images: images && images.length > 0 ? images : undefined,
         customer_id: customerId || localStorage.getItem('sagemro_customer_id'),
         engineer_id: engineerId,
@@ -525,6 +522,7 @@ export async function transcribeVoiceInput(audioBlob) {
 /**
  * 获取对话列表
  */
+
 export async function getConversations() {
   const response = await fetch(`${API_BASE}/api/conversations`, {
     headers: authHeaders(),
@@ -536,6 +534,7 @@ export async function getConversations() {
 /**
  * 获取对话详情
  */
+
 export async function getConversation(id) {
   const response = await fetch(`${API_BASE}/api/conversations/${id}`, {
     headers: authHeaders(),
@@ -547,6 +546,7 @@ export async function getConversation(id) {
 /**
  * 删除对话
  */
+
 export async function deleteConversation(id) {
   const response = await fetch(`${API_BASE}/api/conversations/${id}`, {
     method: 'DELETE',
@@ -559,6 +559,7 @@ export async function deleteConversation(id) {
 /**
  * 重命名对话
  */
+
 export async function renameConversation(id, title) {
   const response = await fetch(`${API_BASE}/api/conversations/${id}`, {
     method: 'PATCH',
@@ -572,394 +573,7 @@ export async function renameConversation(id, title) {
   return response.json();
 }
 
-// ============ 工单相关 ============
-
-export async function assistServiceRequestDraft({ message, draft, signal } = {}) {
-  const market = typeof window !== 'undefined' && window.location.hostname.endsWith('.cn') ? 'cn' : 'com';
-  const response = await fetch(`${API_BASE}/api/service-request-assist`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ market, message, draft }),
-    signal,
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-/**
- * 提交工单
- */
-export async function submitWorkOrder(data) {
-  const response = await fetch(`${API_BASE}/api/workorders`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-/**
- * 获取工单列表
- */
-export async function getWorkOrders(customerId) {
-  const url = customerId
-    ? `${API_BASE}/api/workorders?customer_id=${customerId}`
-    : `${API_BASE}/api/workorders`;
-  const response = await fetch(url, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 获取工单详情
- */
-export async function getWorkOrder(id) {
-  const response = await fetch(`${API_BASE}/api/workorders/${id}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-export async function getWorkOrderServiceReadiness(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/service-readiness`, {
-    headers: authHeaders(),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function refreshWorkOrderServiceReadiness(workOrderId, { force = false } = {}) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/service-readiness/refresh`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ force }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function getWorkOrderServiceStandard(workOrderId) {
-  const response = await fetch(
-    `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-standard`,
-    { headers: authHeaders() },
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw Object.assign(
-      new Error(data.error || `HTTP ${response.status}`),
-      { status: response.status, data },
-    );
-  }
-  return data;
-}
-
-export async function confirmWorkOrderServiceStandardItem(workOrderId, itemKey, payload) {
-  const response = await fetch(
-    `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-standard/items/${encodeURIComponent(itemKey)}/confirm`,
-    {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(payload),
-    },
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw Object.assign(
-      new Error(data.error || `HTTP ${response.status}`),
-      { status: response.status, data },
-    );
-  }
-  return data;
-}
-
-export async function getWorkOrderServiceGuidance(workOrderId) {
-  const response = await fetch(
-    `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-guidance`,
-    { headers: authHeaders() },
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw Object.assign(
-      new Error(data.error || `HTTP ${response.status}`),
-      { status: response.status, data },
-    );
-  }
-  return data;
-}
-
-export async function refreshWorkOrderServiceGuidance(workOrderId, { force = false } = {}) {
-  const response = await fetch(
-    `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-guidance/refresh`,
-    {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ force }),
-    },
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw Object.assign(
-      new Error(data.error || `HTTP ${response.status}`),
-      { status: response.status, data },
-    );
-  }
-  return data;
-}
-
-export async function submitWorkOrderServiceGuidanceFeedback(workOrderId, payload) {
-  const response = await fetch(
-    `${API_BASE}/api/workorders/${encodeURIComponent(workOrderId)}/service-guidance/feedback`,
-    {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify(payload),
-    },
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw Object.assign(
-      new Error(data.error || `HTTP ${response.status}`),
-      { status: response.status, data },
-    );
-  }
-  return data;
-}
-
-export async function searchMaterials({ search = '', category = 'all', pageSize = 20 } = {}) {
-  const params = new URLSearchParams({ search, category, pageSize });
-  const response = await fetch(`${API_BASE}/api/materials?${params}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function getWorkOrderMaterialItems(workOrderId, purpose = '') {
-  const params = purpose ? `?purpose=${encodeURIComponent(purpose)}` : '';
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/material-items${params}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-export async function createMaterialRequest(data) {
-  const response = await fetch(`${API_BASE}/api/material-requests`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function getMaterialRequisitions(workOrderId) {
-  const query = workOrderId ? `?work_order_id=${encodeURIComponent(workOrderId)}` : '';
-  const response = await fetch(`${API_BASE}/api/material-requisitions${query}`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function getMaterialRequisition(requisitionId) {
-  const response = await fetch(`${API_BASE}/api/material-requisitions/${requisitionId}`, {
-    method: 'GET',
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function createMaterialRequisition(data, idempotencyKey) {
-  const response = await fetch(`${API_BASE}/api/material-requisitions`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const data = await response.json();
-    const error = new Error(data.error || `HTTP ${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
-  return response.json();
-}
-
-export async function submitMaterialRequisition(requisitionId) {
-  const response = await fetch(`${API_BASE}/api/material-requisitions/${requisitionId}/submit`, {
-    method: 'POST',
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function confirmMaterialRequisitionReceipt(requisitionId, data, idempotencyKey) {
-  const response = await fetch(`${API_BASE}/api/material-requisitions/${requisitionId}/engineer-receipt`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const data = await response.json();
-    const error = new Error(data.error || `HTTP ${response.status}`);
-    error.status = response.status;
-    throw error;
-  }
-  return response.json();
-}
-
-/**
- * 提交评价
- */
-export async function submitRating(data) {
-  const response = await fetch(`${API_BASE}/api/workorders/rating`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const data = await response.json();
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-// ============ 工单消息与核价 ============
-
-/**
- * 获取工单消息列表
- */
-export async function getWorkOrderMessages(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/messages`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 发送工单消息
- */
-export async function postWorkOrderMessage(workOrderId, data) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/messages`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 获取工单核价信息
- */
-export async function getWorkOrderPricing(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 工程师提交/更新核价
- */
-export async function submitWorkOrderPricing(workOrderId, data) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const d = await response.json();
-    throw new Error(d.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-/**
- * 客户确认报价
- */
-export async function confirmWorkOrderPricing(workOrderId, customerId, quoteVersion) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing/confirm`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ customer_id: customerId, quote_version: quoteVersion }),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 客户拒绝/议价
- */
-export async function rejectWorkOrderPricing(workOrderId, customerId, reason, counterOffer = null, quoteVersion) {
-  const body = { customer_id: customerId, reason, quote_version: quoteVersion };
-  if (counterOffer) body.counter_offer = counterOffer;
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pricing/reject`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-// ============ 工程师相关 ============
-
-/**
- * 获取工程师的服务任务列表。
- * Service OS 默认返回当前工程师个人任务；区域负责人可请求团队范围。
- */
-export async function getEngineerTickets(options = {}) {
-  const params = typeof options === 'string' ? { scope: options } : options;
-  const search = new URLSearchParams({ scope: params.scope || 'personal' });
-  for (const key of ['view', 'filter', 'group_type', 'group_id', 'limit', 'cursor', 'timezone_offset_minutes']) {
-    if (params[key] !== undefined && params[key] !== null && params[key] !== '') search.set(key, String(params[key]));
-  }
-  const url = `${API_BASE}/api/engineers/tickets?${search.toString()}`;
-  const response = await fetch(url, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-export async function getEngineerTeam() {
-  const response = await fetch(`${API_BASE}/api/engineers/team`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
+// ============ 工程师招募与咨询线索 ============
 
 export async function submitEngineerApplication(data) {
   const response = await fetch(`${API_BASE}/api/engineer-applications`, {
@@ -970,714 +584,6 @@ export async function submitEngineerApplication(data) {
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function getEngineerCalendarEvents(params = {}) {
-  const search = new URLSearchParams();
-  if (params.from) search.set('from', params.from);
-  if (params.to) search.set('to', params.to);
-  const query = search.toString();
-  const response = await fetch(`${API_BASE}/api/engineers/calendar-events${query ? `?${query}` : ''}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-export async function createEngineerCalendarEvent(data) {
-  const response = await fetch(`${API_BASE}/api/engineers/calendar-events`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function updateEngineerCalendarEvent(eventId, data) {
-  const response = await fetch(`${API_BASE}/api/engineers/calendar-events/${eventId}`, {
-    method: 'PATCH',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function deleteEngineerCalendarEvent(eventId) {
-  const response = await fetch(`${API_BASE}/api/engineers/calendar-events/${eventId}`, {
-    method: 'DELETE',
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function assignEngineerWorkOrder({ work_order_id, engineer_id }) {
-  const response = await fetch(`${API_BASE}/api/engineers/assign-engineer`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ work_order_id, engineer_id }),
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-/**
- * SERVICE_OS_LEGACY: 工程师确认派工兼容接口。
- * 新 Service OS 主路径应使用后台管理员派工。
- */
-export async function acceptTicket({ work_order_id, engineer_id }) {
-  const response = await fetch(`${API_BASE}/api/engineers/tickets/accept`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ work_order_id, engineer_id }),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * SERVICE_OS_LEGACY: 工程师退回调度兼容接口。
- */
-export async function rejectTicket({ work_order_id, engineer_id, reason }) {
-  const response = await fetch(`${API_BASE}/api/engineers/tickets/reject`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ work_order_id, engineer_id, reason }),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 更新工程师派工状态
- */
-export async function updateEngineerStatus({ engineer_id, status }) {
-  const response = await fetch(`${API_BASE}/api/engineers/status`, {
-    method: 'PATCH',
-    headers: authHeaders(),
-    body: JSON.stringify({ engineer_id, status }),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 获取工程师档案
- */
-export async function getEngineerProfile(engineerId) {
-  const response = await fetch(`${API_BASE}/api/engineers/profile?engineer_id=${engineerId}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-export async function getEngineerServiceProfile(engineerId) {
-  const response = await fetch(`${API_BASE}/api/engineers/service-profile?expected_engineer_id=${encodeURIComponent(engineerId)}`, { headers: authHeaders() });
-  const data = await response.json();
-  if (!response.ok) {
-    const error = new Error(data.error || `HTTP ${response.status}`);
-    error.status = response.status;
-    error.code = data.code;
-    throw error;
-  }
-  return data;
-}
-
-export async function saveEngineerServiceProfile({ revision, profile }, engineerId) {
-  const response = await fetch(`${API_BASE}/api/engineers/service-profile`, {
-    method: 'PUT',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ revision, profile, expected_engineer_id: engineerId }),
-  });
-  const data = await response.json();
-  if (!response.ok) {
-    const error = new Error(data.error || `HTTP ${response.status}`);
-    error.status = response.status;
-    error.code = data.code;
-    throw error;
-  }
-  return data;
-}
-
-/**
- * 工程师标记服务完成
- */
-export async function resolveWorkOrder(workOrderId, engineerId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/resolve`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ engineer_id: engineerId }),
-  });
-  if (!response.ok) {
-    const d = await response.json().catch(() => ({}));
-    const error = new Error(d.error || `HTTP ${response.status}`);
-    error.code = d.error;
-    error.fields = Array.isArray(d.fields) ? d.fields : [];
-    throw error;
-  }
-  return response.json();
-}
-
-export async function searchServiceLocations(query) {
-  const params = new URLSearchParams({ q: query, limit: '5' });
-  const response = await fetch(`${API_BASE}/api/location/search?${params}`, {
-    headers: authHeaders(),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function checkInWorkOrder(workOrderId, location) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/arrival-check`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(location),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || data.reason || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function checkInFieldDay(workOrderId, { photo, expectedCheckoutTime, location }, idempotencyKey) {
-  const formData = new FormData();
-  formData.append('photo', photo);
-  formData.append('expected_checkout_time', expectedCheckoutTime);
-  formData.append('location', JSON.stringify(location || { location_status: 'unavailable' }));
-
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/field-days/check-in`, {
-    method: 'POST',
-    headers: { ...authHeadersNoContentType(), 'Idempotency-Key': idempotencyKey },
-    body: formData,
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function getFieldDays(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/field-days`, {
-    headers: authHeaders(),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function submitFieldDayReport(workOrderId, fieldDayId, data, idempotencyKey) {
-  const formData = new FormData();
-  for (const field of [
-    'completed_work',
-    'issues_risks',
-    'next_plan',
-    'customer_support_needed',
-    'labor_hours',
-    'internal_note',
-    'late_reason',
-    'extension_reason',
-    'extension_customer_explanation',
-    'requested_additional_days',
-    'proposed_completion_date',
-    'extension_internal_note',
-  ]) {
-    if (data[field] !== undefined && data[field] !== null) formData.append(field, data[field]);
-  }
-  for (const photo of data.progress_photos || []) formData.append('progress_photos', photo);
-  for (const photo of data.internal_photos || []) formData.append('internal_photos', photo);
-
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/field-days/${fieldDayId}/report`, {
-    method: 'POST',
-    headers: { ...authHeadersNoContentType(), 'Idempotency-Key': idempotencyKey },
-    body: formData,
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
-  return result;
-}
-
-export async function requestFieldExtension(workOrderId, data) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/extension-requests`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
-  return result;
-}
-
-export function fieldMediaUrl(workOrderId, mediaId) {
-  return `${API_BASE}/api/workorders/${workOrderId}/field-media/${mediaId}`;
-}
-
-export async function requestOnsiteConversion(workOrderId, note) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/onsite-conversion/request`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ note }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function confirmOnsiteConversion(workOrderId, location) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/onsite-conversion/confirm`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(location),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-/**
- * 客户取消工单
- */
-export async function cancelWorkOrder(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/cancel`, {
-    method: 'POST',
-    headers: authHeaders(),
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || 'Cancellation failed');
-  }
-  return response.json();
-}
-
-// ============ 付款相关 ============
-
-/**
- * 客户模拟付款
- */
-export async function payWorkOrder(workOrderId, { payment_method, payment_stage = 'advance' }) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/pay`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ payment_method, payment_stage }),
-  });
-  if (!response.ok) {
-    const d = await response.json();
-    throw new Error(d.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function startInstallmentCollection(workOrderId, installmentId, { milestone_confirmation } = {}) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/installments/${installmentId}/collect`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(milestone_confirmation ? { milestone_confirmation } : {}),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function selectInstallmentPaymentMethod(workOrderId, installmentId, { payment_method }) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/installments/${installmentId}/payment-method`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ payment_method }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function submitInstallmentReceiptClaim(workOrderId, installmentId, payload) {
-  const formData = new FormData();
-  formData.append('claimed_amount', String(payload.claimed_amount));
-  formData.append('idempotency_key', payload.idempotency_key);
-  if (payload.transaction_reference) formData.append('transaction_reference', payload.transaction_reference);
-  if (payload.note) formData.append('note', payload.note);
-  if (payload.evidence) formData.append('evidence', payload.evidence);
-
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/installments/${installmentId}/receipt-claims`, {
-    method: 'POST',
-    headers: authHeadersNoContentType(),
-    body: formData,
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-  return data;
-}
-
-export async function requestWorkOrderPaymentStart(workOrderId, note = '') {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/payment/start-request`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ note }),
-  });
-  if (!response.ok) {
-    const d = await response.json();
-    throw new Error(d.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-
-/**
- * 获取工单付款记录
- */
-export async function getWorkOrderPayment(workOrderId, paymentStage = 'advance') {
-  const query = paymentStage ? `?payment_stage=${encodeURIComponent(paymentStage)}` : '';
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/payment${query}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-export async function getWorkOrderPayout(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const data = await response.json();
-  return { payout: data.payout || null, payout_status: data.payout_status || 'not_ready' };
-}
-
-export async function submitInvoiceRequest(workOrderId, invoiceData) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/invoice-request`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify(invoiceData),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-export async function getInvoiceRequest(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/invoice-request`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-// 保存推送订阅（OneSignal Player ID）
-// 后端按 JWT 里的 userType 自动路由到 customers / engineers 表
-export async function savePushSubscription(userId, { onesignal_player_id }) {
-  const response = await fetch(`${API_BASE}/api/push-subscription`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({
-      user_id: userId,
-      onesignal_player_id,
-    }),
-  });
-  if (!response.ok) {
-    const d = await response.json();
-    throw new Error(d.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-// ============ 设备管理 ============
-
-/**
- * 获取客户的所有设备
- */
-export async function getDevices() {
-  const response = await fetch(`${API_BASE}/api/devices`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 获取单个设备详情（含维修记录）
- */
-export async function getDevice(deviceId) {
-  const response = await fetch(`${API_BASE}/api/devices/${deviceId}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 添加新设备
- */
-export async function createDevice({ name, type, brand, model, power }) {
-  const response = await fetch(`${API_BASE}/api/devices`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({ name, type, brand, model, power }),
-  });
-  if (!response.ok) {
-    const d = await response.json();
-    throw new Error(d.error || `HTTP ${response.status}`);
-  }
-  const result = await response.json();
-  trackFunnelEvent('device_saved', { device_type: type, authenticated: true });
-  return result;
-}
-
-/**
- * 更新设备
- */
-export async function updateDevice(deviceId, { name, type, brand, model, power, status, photo_url, notes }) {
-  const response = await fetch(`${API_BASE}/api/devices/${deviceId}`, {
-    method: 'PATCH',
-    headers: authHeaders(),
-    body: JSON.stringify({ name, type, brand, model, power, status, photo_url, notes }),
-  });
-  if (!response.ok) {
-    const d = await response.json();
-    throw new Error(d.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-/**
- * 删除设备
- */
-export async function deleteDevice(deviceId) {
-  const response = await fetch(`${API_BASE}/api/devices/${deviceId}`, {
-    method: 'DELETE',
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-// ============ 通知相关 ============
-
-/**
- * 获取当前用户的通知列表
- */
-export async function getNotifications(limit = 50, offset = 0) {
-  const response = await fetch(`${API_BASE}/api/notifications?limit=${limit}&offset=${offset}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 获取未读通知数量
- */
-export async function getUnreadNotificationCount() {
-  const response = await fetch(`${API_BASE}/api/notifications/unread-count`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 标记单条通知为已读
- */
-export async function markNotificationRead(notificationId) {
-  const response = await fetch(`${API_BASE}/api/notifications/${notificationId}/read`, {
-    method: 'PATCH',
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 标记所有通知为已读
- */
-export async function markAllNotificationsRead() {
-  const response = await fetch(`${API_BASE}/api/notifications/read-all`, {
-    method: 'POST',
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-// ============ 个人中心 ============
-
-/**
- * 更新客户档案
- */
-export async function updateCustomerProfile({ name, region }) {
-  const response = await fetch(`${API_BASE}/api/customers/profile`, {
-    method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, region }),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 更新工程师档案
- */
-export async function updateEngineerProfile({
-  name,
-  bio,
-  service_region,
-  payout_method,
-  paypal_account,
-  bank_country,
-  bank_name,
-  bank_account,
-  bank_branch,
-  bank_swift_code,
-  account_holder,
-  payout_notes,
-}) {
-  const response = await fetch(`${API_BASE}/api/engineers/profile`, {
-    method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name,
-      bio,
-      service_region,
-      payout_method,
-      paypal_account,
-      bank_country,
-      bank_name,
-      bank_account,
-      bank_branch,
-      bank_swift_code,
-      account_holder,
-      payout_notes,
-    }),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-/**
- * 修改密码
- */
-export async function changePassword({ oldPassword, newPassword }) {
-  const response = await fetch(`${API_BASE}/api/auth/change-password`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ oldPassword, newPassword }),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-// ============ 工程师评价客户 ============
-
-/**
- * 提交工程师对客户的评价
- */
-export async function submitEngineerReview(workOrderId, data) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/engineer-review`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const d = await response.json();
-    throw new Error(d.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-/**
- * 获取工单的工程师评价
- */
-export async function getEngineerReview(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/engineer-review`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-// ============ 维修记录 ============
-
-export async function saveRepairRecord(workOrderId, data) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/repair-record`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const d = await response.json().catch(() => ({}));
-    const error = new Error(d.error || `HTTP ${response.status}`);
-    error.code = d.error;
-    error.fields = Array.isArray(d.fields) ? d.fields : [];
-    throw error;
-  }
-  return response.json();
-}
-
-// ============ 工单附件 ============
-
-function authHeadersNoContentType() {
-  const headers = {};
-  const token = localStorage.getItem('sagemro_token');
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return headers;
-}
-
-export async function uploadWorkOrderAttachment(workOrderId, file, onProgress) {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/attachments`, {
-    method: 'POST',
-    headers: authHeadersNoContentType(),
-    body: formData,
-  });
-  if (!response.ok) {
-    const d = await response.json().catch(() => ({}));
-    throw new Error(d.error || `HTTP ${response.status}`);
-  }
-  return response.json();
-}
-
-export async function getWorkOrderAttachments(workOrderId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/attachments`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-export async function deleteWorkOrderAttachment(workOrderId, attachmentId) {
-  const response = await fetch(`${API_BASE}/api/workorders/${workOrderId}/attachments/${attachmentId}`, {
-    method: 'DELETE',
-    headers: authHeaders(),
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return response.json();
-}
-
-export async function createMachineLead(data) {
-  const response = await fetch(`${API_BASE}/api/leads/machine`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || `HTTP ${response.status}`);
   }
   return response.json();
 }
@@ -1714,6 +620,27 @@ export async function submitBendSimulationReview({ contact = {}, simulation = {}
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+// 主站咨询线索表单：写入 leads，不进入工单流程。
+export async function submitConsultation(data) {
+  const response = await fetch(`${API_BASE}/api/contact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: typeof data?.name === 'string' ? data.name.trim() : '',
+      company: typeof data?.company === 'string' ? data.company.trim() : '',
+      email: typeof data?.email === 'string' ? data.email.trim() : '',
+      phone: typeof data?.phone === 'string' ? data.phone.trim() : '',
+      message: typeof data?.message === 'string' ? data.message.trim() : '',
+      source: data?.source || 'website_contact',
+    }),
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));

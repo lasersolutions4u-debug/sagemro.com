@@ -22,8 +22,8 @@ test('authenticated conversations do not persist message history to localStorage
   const app = await read('src/App.jsx');
   const hook = await read('src/hooks/useConversations.js');
 
-  assert.match(app, /if \(!currentUser\) \{[\s\S]*localStorage\.getItem\(`sagemro_messages_/);
-  assert.match(app, /else refreshConversations\(\)/);
+  assert.match(app, /if \(!currentUser\) \{[\s\S]*localStorage\.setItem\(`sagemro_messages_/);
+  assert.match(app, /else \{\n      refreshConversations\(\);\n    \}/);
   assert.match(hook, /localStorage\.setItem\('sagemro_conversations'/);
   assert.match(hook, /if \(!isAuthenticated\) saveToStorage\(updated\)/);
   assert.match(hook, /if \(isAuthenticated\) loadFromServer\(\)/);

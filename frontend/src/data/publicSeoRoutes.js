@@ -257,7 +257,6 @@ function buildRoutes(locale) {
         { href: '/insights/', label: locale === 'zh-CN' ? '技术洞察' : 'Insights' },
         ...(locale === 'zh-CN' ? [] : [{ href: 'https://www.dhgate.com/store/sagemro', label: 'Store' }]),
         { href: publicHome.requestCtas.assist.href, label: publicHome.requestCtas.assist.label },
-        { href: publicHome.requestCtas.manual.href, label: publicHome.requestCtas.manual.label },
       ],
     },
     structuredData: { '@type': 'WebSite', name: 'SAGEMRO', url: `${HOSTS[locale]}/`, publisher: organizationRef(locale) },

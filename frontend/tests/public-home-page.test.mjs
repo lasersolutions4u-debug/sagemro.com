@@ -55,8 +55,10 @@ test('public home renders the approved service-first section order and real navi
   for (const href of ['/services/', '/brands/', '/tools/', '/insights/']) {
     assert.match(html, new RegExp(`href="${href}"`));
   }
-  assert.match(html, /href="https:\/\/ai\.sagemro\.cn\/service-request\?mode=assist"/);
-  assert.match(html, /href="https:\/\/ai\.sagemro\.cn\/service-request\?mode=manual"/);
+  assert.match(html, /href="https:\/\/ai\.sagemro\.cn\/\?mode=assist"/);
+  // 工单体系已下线：落地页的转化入口是咨询表单按钮，不再是服务请求链接。
+  assert.doesNotMatch(html, /service-request/);
+  assert.match(html, /<button[^>]*>提交咨询需求<\/button>/);
   assert.match(html, /href="mailto:support@sagemro\.com"/);
   for (const [title, href] of [
     ['激光切割速度参考', '/tools/laser-cutting-speed-reference/'],
@@ -74,7 +76,7 @@ test('public home exposes six service links, ten direct FAQs, and no competing i
   assert.equal((html.match(/<details\b/g) || []).length, 10);
   assert.doesNotMatch(html, /<form\b|role="dialog"|WorkOrderModal|type="tel"|wa\.me|WhatsApp/i);
   assert.match(html, /AI only helps organize submitted information/);
-  assert.match(html, /href="https:\/\/ai\.sagemro\.com\/service-request\?mode=assist"/);
+  assert.match(html, /href="https:\/\/ai\.sagemro\.com\/\?mode=assist"/);
 });
 
 test('App routes only the resolved public build target to the public home', async () => {

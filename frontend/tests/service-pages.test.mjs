@@ -147,8 +147,8 @@ test('service routes lazy-load the public pages and preserve the existing conver
   assert.match(app, /const serviceRoute = portalTarget === 'public' \? getServicePageRoute\(currentPath\) : null;/);
   assert.match(app, /const isServicesPath = serviceRoute !== null;/);
   assert.match(app, /window\.history\.pushState\(\{\}, '', '\/'\);\s*setCurrentPath\('\/'\);/);
-  assert.match(app, /const handleServiceRequest = useCallback\(\(\) => \{\s*window\.history\.pushState\(\{\}, '', '\/service-request'\);\s*setCurrentPath\('\/service-request'\);/);
-  assert.match(app, /<ServicePages[\s\S]*onStartDiagnosis=\{handleServiceDiagnosis\}[\s\S]*onOpenServiceRequest=\{handleServiceRequest\}/);
+  // 服务请求页面已下线：服务页的转化入口改为打开咨询线索表单。
+  assert.match(app, /<ServicePages[\s\S]*onStartDiagnosis=\{openConsultation\}[\s\S]*onOpenServiceRequest=\{openConsultation\}/);
 
   const [pages, conversionPanel] = await Promise.all([
     readFile(new URL('../src/components/Services/ServicePages.jsx', import.meta.url), 'utf8'),

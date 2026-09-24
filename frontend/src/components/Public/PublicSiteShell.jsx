@@ -1,5 +1,6 @@
 import { Footer } from '../common/Footer';
 import { BrandMark } from '../common/BrandMark';
+import { openConsultationForm } from '../../utils/consultation';
 
 const INTERNATIONAL_STORE_URL = 'https://www.dhgate.com/store/sagemro';
 
@@ -51,6 +52,9 @@ export function PublicSiteShell({ children, isCn, onOpenLegal }) {
                 Store
               </a>
             )}
+            <button type="button" onClick={openConsultationForm} className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#d97706]">
+              {isCn ? '咨询' : 'Contact'}
+            </button>
           </nav>
 
           <a href={portalHref} className="order-2 flex min-h-11 items-center rounded-lg border border-[#d97706] bg-[#f59e0b] px-4 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24] md:order-3">
@@ -64,10 +68,13 @@ export function PublicSiteShell({ children, isCn, onOpenLegal }) {
       <section className="border-t border-[#e6dccf] bg-[#f4ede3] px-5 py-7" aria-label={isCn ? '联系支持' : 'Contact support'}>
         <div className="mx-auto flex max-w-[1240px] flex-col justify-between gap-3 sm:flex-row sm:items-center lg:px-3">
           <div>
-            <p className="text-sm font-semibold">{isCn ? '需要补充资料或咨询服务范围？' : 'Need to clarify scope or provide supporting information?'}</p>
-            <p className="mt-1 text-sm text-[#756552]">{isCn ? '通过统一服务入口提交最完整，邮件用于补充沟通。' : 'The service request is the primary intake; email is available for follow-up.'}</p>
+            <p className="text-sm font-semibold">{isCn ? '需要报价、设备评估或补充资料？' : 'Need a quotation, an equipment assessment, or more detail?'}</p>
+            <p className="mt-1 text-sm text-[#756552]">{isCn ? '提交咨询表单留下联系方式，工程师会直接回复；也可以直接和 AI 助手沟通。' : 'Send the consultation form with your contact details and an engineer replies directly. You can also talk to the AI assistant.'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+            <button type="button" onClick={openConsultationForm} className="flex min-h-11 items-center text-sm font-semibold text-[#b45309] underline decoration-[#e7b65b] underline-offset-4">
+              {isCn ? '提交咨询' : 'Request a consultation'}
+            </button>
             {isCn ? (
               <span aria-disabled="true" className="flex min-h-11 items-center text-sm font-medium text-[#a39686]">商城（筹备中）</span>
             ) : (
