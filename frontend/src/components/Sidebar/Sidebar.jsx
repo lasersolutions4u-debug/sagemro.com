@@ -1,57 +1,32 @@
 import {
-  Bell,
-  ClipboardList,
-  FileText,
   History,
   LogIn,
   LogOut,
-  Package,
-  Plus,
-  Settings,
+  MessageSquarePlus,
+  Send,
   User,
 } from 'lucide-react';
 import { BrandMark } from '../common/BrandMark';
 import { isCnLocale } from '../../utils/locale';
 
+// AI 门户的侧边栏。工单、设备、通知、工程师工作台入口已随业务下线，
+// 这里只保留对话相关操作 + 咨询线索表单 + 登录/退出。
 export function Sidebar({
   onNewChat,
   onOpenHistory,
-  onOpenWorkOrder,
-  onOpenMyWorkOrders,
-  onOpenSettings,
+  onOpenConsultation,
   onOpenLogin,
   onLogout,
-  onOpenEngineerDashboard,
-  onOpenMyDevices,
-  onOpenNotifications,
-  unreadCount,
   currentUser,
-  userType,
   isOpen,
   onClose,
 }) {
   const isCn = isCnLocale();
-  const isEngineer = userType === 'engineer';
-  const accountAction = isEngineer ? onOpenEngineerDashboard : onOpenSettings;
-  const baseTools = [
-    { icon: Plus, label: isCn ? '新对话' : 'New Chat', onClick: onNewChat, testid: 'new-chat-button', primary: true },
+  const tools = [
+    { icon: MessageSquarePlus, label: isCn ? '新对话' : 'New Chat', onClick: onNewChat, testid: 'new-chat-button', primary: true },
     { icon: History, label: isCn ? '历史' : 'History', onClick: onOpenHistory, testid: 'tool-history' },
+    { icon: Send, label: isCn ? '咨询留言' : 'Contact us', onClick: onOpenConsultation, testid: 'tool-consultation' },
   ];
-  const customerTools = currentUser
-    ? [
-        { icon: FileText, label: isCn ? '发起工单' : 'Request Service', onClick: onOpenWorkOrder, testid: 'tool-create-work-order' },
-        { icon: ClipboardList, label: isCn ? '我的工单' : 'My Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
-        { icon: Package, label: isCn ? '设备' : 'My Equipment', onClick: onOpenMyDevices, testid: 'tool-my-devices' },
-        { icon: Bell, label: isCn ? '通知' : 'Notifications', onClick: onOpenNotifications, testid: 'tool-notifications', badge: unreadCount },
-      ]
-    : [];
-  const engineerTools = currentUser
-    ? [
-        { icon: ClipboardList, label: isCn ? '任务' : 'Assigned Services', onClick: onOpenMyWorkOrders, testid: 'tool-my-work-orders' },
-        { icon: Bell, label: isCn ? '通知' : 'Notifications', onClick: onOpenNotifications, testid: 'tool-notifications', badge: unreadCount },
-      ]
-    : [];
-  const tools = [...baseTools, ...(isEngineer ? engineerTools : customerTools)];
 
   const rail = (
     <aside className="flex h-full w-[184px] flex-col items-stretch overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-sidebar)] px-2 py-3">
@@ -65,8 +40,7 @@ export function Sidebar({
         {currentUser ? (
           <>
             <RailButton
-              tool={{ icon: User, label: currentUser.name || (isCn ? '账号' : 'Account'), onClick: accountAction, testid: 'user-avatar-button' }}
-              onClick={() => { accountAction?.(); onClose?.(); }}
+              tool={{ icon: User, label: currentUser.name || (isCn ? '账号' : 'Account'), testid: 'user-avatar-button' }}
             />
             <RailButton
               tool={{ icon: LogOut, label: isCn ? '退出' : 'Log Out', onClick: onLogout, testid: 'logout-button' }}
@@ -74,12 +48,10 @@ export function Sidebar({
             />
           </>
         ) : (
-          <>
-            <RailButton
-              tool={{ icon: LogIn, label: isCn ? '登录' : 'Sign In', onClick: onOpenLogin, testid: 'sidebar-login-button' }}
-              onClick={() => { onOpenLogin?.(); onClose?.(); }}
-            />
-          </>
+          <RailButton
+            tool={{ icon: LogIn, label: isCn ? '登录' : 'Sign In', onClick: onOpenLogin, testid: 'sidebar-login-button' }}
+            onClick={() => { onOpenLogin?.(); onClose?.(); }}
+          />
         )}
       </div>
     </aside>
@@ -104,22 +76,9 @@ export function Sidebar({
     </>
   );
 }
-function RailButton({ tool, onClick }) {
-  const Icon = tool.icon || Settings;
-  if (tool.href) {
-    return (
-      <a
-        href={tool.href}
-        title={tool.label}
-        data-testid={tool.testid || `tool-${tool.label}`}
-        className="relative flex h-11 w-full items-center justify-start gap-2 rounded-lg px-2 text-[var(--color-sidebar-muted)] transition-colors duration-200 hover:bg-[var(--color-sidebar-surface)] hover:text-[var(--color-sidebar-text)]"
-      >
-        <Icon size={20} className="shrink-0" />
-        <span className="min-w-0 truncate whitespace-nowrap text-xs">{tool.label}</span>
-      </a>
-    );
-  }
 
+function RailButton({ tool, onClick }) {
+  const Icon = tool.icon;
   return (
     <button
       type="button"
@@ -134,11 +93,6 @@ function RailButton({ tool, onClick }) {
     >
       <Icon size={20} className="shrink-0" />
       <span className="min-w-0 truncate whitespace-nowrap text-xs">{tool.label}</span>
-      {tool.badge > 0 && (
-        <span className="ml-auto flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-medium text-white">
-          {tool.badge > 99 ? '99+' : tool.badge}
-        </span>
-      )}
     </button>
   );
 }

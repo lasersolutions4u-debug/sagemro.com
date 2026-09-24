@@ -95,7 +95,8 @@ export function getBrandServicePage(slug, locale = 'en') {
 
 export function getBrandServiceRequestHref(slug, locale = 'en') {
   const host = normalizeLocale(locale) === 'zh-CN' ? 'https://ai.sagemro.cn' : 'https://ai.sagemro.com';
-  return `${host}/service-request?mode=manual&brand=${encodeURIComponent(slug)}`;
+  // 服务请求页已下线：品牌页 CTA 进入 AI 门户对话，并带上品牌上下文。
+  return `${host}/?mode=assist&brand=${encodeURIComponent(slug)}`;
 }
 
 export function getBrandServicePageRoute(pathname) {

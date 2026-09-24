@@ -1,6 +1,7 @@
 import { getPublicHomeContent } from '../../data/publicHomeContent';
 import { getLocalizedTool, industryTools } from '../../data/industryTools';
 import { PublicSiteShell } from './PublicSiteShell';
+import { openConsultationForm } from '../../utils/consultation';
 
 const serviceRoutes = {
   repair: '/services/laser-cutting-machine-repair/',
@@ -49,6 +50,8 @@ const serviceDescriptions = {
 
 const labels = {
   cn: {
+    consultCta: '提交咨询需求',
+    aiCta: '与 AI 助手对话',
     problemEyebrow: '从现场问题开始',
     problemTitle: '你现在需要解决什么？',
     servicesEyebrow: '服务项目',
@@ -74,6 +77,8 @@ const labels = {
     ctaBody: '无论选择手动填写还是由 AI 协助整理，最终都进入同一份服务请求，由技术人员确认下一步。',
   },
   com: {
+    consultCta: 'Request a consultation',
+    aiCta: 'Talk to the AI assistant',
     problemEyebrow: 'Start with the site issue',
     problemTitle: 'What do you need to resolve now?',
     servicesEyebrow: 'Services',
@@ -128,11 +133,11 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
             <h1 className="mt-5 max-w-4xl text-4xl font-semibold leading-[1.12] tracking-[-0.04em] text-[#21160c] md:text-6xl">{content.hero.title}</h1>
             <p className="mt-6 max-w-3xl text-base leading-8 text-[#6b5a48] md:text-lg">{content.hero.description}</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <a href={content.requestCtas.assist.href} className="flex min-h-12 items-center justify-center rounded-lg bg-[#f59e0b] px-6 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24]">
-                {content.requestCtas.assist.label}
-              </a>
-              <a href={content.requestCtas.manual.href} className="flex min-h-12 items-center justify-center rounded-lg border border-[#c9b9a5] bg-[#fffdf8] px-6 text-sm font-semibold text-[#2d2116] transition-colors hover:border-[#d97706] hover:bg-white">
-                {content.requestCtas.manual.label}
+              <button type="button" onClick={openConsultationForm} className="flex min-h-12 items-center justify-center rounded-lg bg-[#f59e0b] px-6 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24]">
+                {copy.consultCta}
+              </button>
+              <a href={content.requestCtas.assist.href} className="flex min-h-12 items-center justify-center rounded-lg border border-[#c9b9a5] bg-[#fffdf8] px-6 text-sm font-semibold text-[#2d2116] transition-colors hover:border-[#d97706] hover:bg-white">
+                {copy.aiCta}
               </a>
             </div>
           </div>
@@ -286,8 +291,8 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
             <p className="mt-5 max-w-3xl text-sm leading-7 text-[#d8cec0]">{copy.ctaBody}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
-            <a href={content.requestCtas.assist.href} className="flex min-h-12 items-center justify-center rounded-lg bg-[#f59e0b] px-6 text-sm font-semibold text-[#21160c] transition-colors hover:bg-[#fbbf24]">{content.requestCtas.assist.label}</a>
-            <a href={content.requestCtas.manual.href} className="flex min-h-12 items-center justify-center rounded-lg border border-[#8a7864] px-6 text-sm font-semibold text-white transition-colors hover:border-[#fbbf24] hover:text-[#fbbf24]">{content.requestCtas.manual.label}</a>
+            <button type="button" onClick={openConsultationForm} className="flex min-h-12 items-center justify-center rounded-lg bg-[#f59e0b] px-6 text-sm font-semibold text-[#21160c] transition-colors hover:bg-[#fbbf24]">{copy.consultCta}</button>
+            <a href={content.requestCtas.assist.href} className="flex min-h-12 items-center justify-center rounded-lg border border-[#8a7864] px-6 text-sm font-semibold text-white transition-colors hover:border-[#fbbf24] hover:text-[#fbbf24]">{copy.aiCta}</a>
           </div>
         </div>
       </section>

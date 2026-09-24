@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { createAcquisitionEventActions, createTrackedConversionClick } from '../../hooks/useAcquisitionTracking';
 import { buildCustomerPortalUrl } from '../../utils/portalTarget';
+import { openConsultationForm } from '../../utils/consultation';
 
 export function PublicConversionPanel({ context, acquisitionContext, serviceRequestPreset }) {
   const safeAcquisitionContext = acquisitionContext || {};
@@ -31,31 +32,26 @@ export function PublicConversionPanel({ context, acquisitionContext, serviceRequ
     market,
     presets: { ...sharedPresets, mode: 'assist' },
   });
-  const serviceRequestHref = buildCustomerPortalUrl({
-    hostname,
-    market,
-    presets: { mode: 'manual', ...sharedPresets },
-  });
 
   return (
     <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-5" aria-label={context}>
       <div className="flex flex-col gap-3 sm:flex-row">
-        <a
-          href={serviceRequestHref}
-          onClick={openServiceRequest}
+        <button
+          type="button"
+          onClick={(event) => { openServiceRequest(event); openConsultationForm(); }}
           className="rounded-lg bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white"
         >
-          {market === 'cn' ? '填写服务需求' : 'Request service'}
-        </a>
+          {market === 'cn' ? '提交咨询需求' : 'Request a consultation'}
+        </button>
         <a
           href={diagnosisHref}
           onClick={startDiagnosis}
           className="rounded-lg border border-[var(--color-border)] px-4 py-2.5 text-sm font-semibold text-[var(--color-text-primary)] hover:border-[var(--color-primary)]"
         >
-          {market === 'cn' ? 'AI 协助填写' : 'Get help filling the form'}
+          {market === 'cn' ? '与 AI 助手对话' : 'Talk to the AI assistant'}
         </a>
       </div>
-      <p className="mt-3 text-sm text-[var(--color-text-secondary)]">{market === 'cn' ? '直接填写，或先与 AI 聊天整理信息。两种方式使用同一份服务单，由您核对后提交。' : 'Fill in the form directly, or chat with AI first. Both use the same service request, which you review before submitting.'}</p>
+      <p className="mt-3 text-sm text-[var(--color-text-secondary)]">{market === 'cn' ? '留下联系方式与需求，工程师会直接回复；也可以先与 AI 助手沟通整理。' : 'Send your contact details and requirement and an engineer replies directly, or talk to the AI assistant first.'}</p>
     </section>
   );
 }

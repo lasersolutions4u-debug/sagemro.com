@@ -22,7 +22,8 @@ export function getCustomerPortalOrigin({ market, hostname = '' } = {}) {
 }
 
 export function buildCustomerPortalUrl({ path, market, hostname, presets = {} } = {}) {
-  const entryPath = path || (['assist', 'ai'].includes(presets.mode) ? '/' : '/service-request');
+  // 工单/服务请求页已下线：AI 门户的入口只有首页对话。
+  const entryPath = path || '/';
   const url = new URL(entryPath, getCustomerPortalOrigin({ market, hostname }));
   for (const key of SERVICE_REQUEST_PRESET_KEYS) {
     const value = presets?.[key];

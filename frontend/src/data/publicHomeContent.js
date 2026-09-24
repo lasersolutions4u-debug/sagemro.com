@@ -76,14 +76,12 @@ const zhContent = {
       { key: 'systems', title: '系统与部件', items: ['控制系统', '辅助设备'] },
     ],
   },
+  // 工单/服务请求页已下线：落地页只保留「和 AI 助手对话」这一个站外入口，
+  // 站内转化走咨询线索表单（PublicSiteShell 的「咨询」按钮）。
   requestCtas: {
     assist: {
       label: 'AI 协助填写',
       href: 'https://ai.sagemro.cn/?mode=assist',
-    },
-    manual: {
-      label: '手动填写服务请求',
-      href: 'https://ai.sagemro.cn/service-request?mode=manual',
     },
   },
   contact: { email: 'support@sagemro.com' },
@@ -171,10 +169,6 @@ const enContent = {
     assist: {
       label: 'Get help preparing a service request',
       href: 'https://ai.sagemro.com/?mode=assist',
-    },
-    manual: {
-      label: 'Complete the service request manually',
-      href: 'https://ai.sagemro.com/service-request?mode=manual',
     },
   },
   contact: { email: 'support@sagemro.com' },

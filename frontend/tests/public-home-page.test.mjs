@@ -56,7 +56,9 @@ test('public home renders the approved service-first section order and real navi
     assert.match(html, new RegExp(`href="${href}"`));
   }
   assert.match(html, /href="https:\/\/ai\.sagemro\.cn\/\?mode=assist"/);
-  assert.match(html, /href="https:\/\/ai\.sagemro\.cn\/service-request\?mode=manual"/);
+  // 工单体系已下线：落地页的转化入口是咨询表单按钮，不再是服务请求链接。
+  assert.doesNotMatch(html, /service-request/);
+  assert.match(html, /<button[^>]*>提交咨询需求<\/button>/);
   assert.match(html, /href="mailto:support@sagemro\.com"/);
   for (const [title, href] of [
     ['激光切割速度参考', '/tools/laser-cutting-speed-reference/'],

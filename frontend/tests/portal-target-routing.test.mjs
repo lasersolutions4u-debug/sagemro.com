@@ -34,7 +34,7 @@ test('public conversion URLs always enter the market-specific customer portal', 
   );
   assert.equal(
     buildCustomerPortalUrl({ hostname: 'sagemro.com', presets: { mode: 'manual' } }),
-    'https://ai.sagemro.com/service-request?mode=manual',
+    'https://ai.sagemro.com/?mode=manual',
   );
 });
 
@@ -60,11 +60,12 @@ test('portal artifact blocks unknown production hosts while keeping local previe
   assert.equal(resolvePortalTarget({ buildTarget: 'public', hostname: 'engineer.127.0.0.1.nip.io' }), 'engineer');
 });
 
-test('App uses the resolved target and keeps the service request on the customer portal', async () => {
+test('App uses the resolved target and keeps the AI chat on the customer portal', async () => {
   const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(app, /resolvePortalTarget/);
   assert.match(app, /portalTarget === 'customer'/);
   assert.match(app, /portalTarget === 'public'/);
   assert.match(app, /portalTarget === 'blocked'/);
-  assert.match(app, /isServiceRequestPath[\s\S]{0,180}portalTarget === 'customer'|portalTarget === 'customer'[\s\S]{0,180}isServiceRequestPath/);
+  // 工单/服务请求页面已下线，App 里不应再有服务请求路由判断。
+  assert.doesNotMatch(app, /isServiceRequestPath/);
 });

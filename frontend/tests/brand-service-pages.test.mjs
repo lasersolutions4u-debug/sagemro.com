@@ -90,8 +90,8 @@ test('brand request links use the matching AI market and preserve the selected b
   const { getBrandServiceRequestHref } = await loadBrandModule();
 
   for (const slug of expectedSlugs) {
-    assert.equal(getBrandServiceRequestHref(slug, 'en'), `https://ai.sagemro.com/service-request?mode=manual&brand=${slug}`);
-    assert.equal(getBrandServiceRequestHref(slug, 'zh-CN'), `https://ai.sagemro.cn/service-request?mode=manual&brand=${slug}`);
+    assert.equal(getBrandServiceRequestHref(slug, 'en'), `https://ai.sagemro.com/?mode=assist&brand=${slug}`);
+    assert.equal(getBrandServiceRequestHref(slug, 'zh-CN'), `https://ai.sagemro.cn/?mode=assist&brand=${slug}`);
   }
 });
 

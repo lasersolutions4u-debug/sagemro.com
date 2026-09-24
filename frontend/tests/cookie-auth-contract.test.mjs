@@ -36,36 +36,8 @@ function passwordChangeClient(result, status = 200) {
   return { context, storage, calls };
 }
 
-for (const credentials of [
-  { csrfToken: 'rotated-csrf' },
-  { csrfToken: 'rotated-csrf', token: 'rotated-bearer' },
-  { token: 'rotated-bearer' },
-]) {
-  test(`frontend password change rotates credentials for the next write: ${Object.keys(credentials).join(', ')}`, async () => {
-    const result = { success: true, ...credentials };
-    const { context, storage, calls } = passwordChangeClient(result);
-    assert.deepEqual(await context.changePassword({ oldPassword: 'old-password', newPassword: 'new-password' }), result);
-    await context.renameConversation('test-conversation', 'Updated');
-
-    const headers = calls[1].options.headers;
-    assert.equal(headers.get('X-CSRF-Token'), credentials.csrfToken || 'old-csrf');
-    assert.equal(headers.get('Authorization'), credentials.csrfToken ? null : 'Bearer rotated-bearer');
-    assert.equal(storage.get('sagemro_token'), credentials.csrfToken ? undefined : 'rotated-bearer');
-    assert.equal(calls[1].options.credentials, 'include');
-    assert.equal(storage.get('sagemro_user'), '{"id":"test-user"}');
-  });
-}
-
-for (const status of [400, 401, 503, 'network']) {
-  test(`frontend failed password change preserves credentials: ${status}`, async () => {
-    const result = status === 'network' ? new Error('Network unavailable') : { error: 'Rejected' };
-    const { context, storage } = passwordChangeClient(result, status === 'network' ? 200 : status);
-    const original = [...storage];
-    await assert.rejects(context.changePassword({ oldPassword: 'wrong-password', newPassword: 'new-password' }));
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual([...storage], original);
-  });
-}
+// 客户自助改密接口随客户工作台一并下线（重置密码走邮箱验证码），
+// 因此这里不再断言 changePassword 的凭据轮换；CSRF/会话契约仍由下面的用例覆盖。
 
 test('frontend API requests include cookies and non-empty CSRF for unsafe methods', () => {
   assert.match(api, /credentials:\s*'include'/);
@@ -95,7 +67,7 @@ test('frontend application restores and clears the server session', () => {
   assert.doesNotMatch(app, /localStorage\.getItem\('sagemro_user'\)/);
   assert.doesNotMatch(app, /localStorage\.getItem\('sagemro_user_type'\)/);
   assert.match(app, /setAuthReady\(true\)/);
-  assert.match(app, /isEngineerHost[^\n]*&&[^\n]*!authReady/);
+  assert.match(app, /if \(!authReady\)/);
   assert.match(app, /if \(authVersionRef\.current !== restoreVersion\) return;[\s\S]*localStorage\.setItem\('sagemro_csrf_token'/);
   assert.match(app, /if \(authVersionRef\.current !== restoreVersion\) return;[\s\S]*localStorage\.removeItem\('sagemro_csrf_token'/);
 });
