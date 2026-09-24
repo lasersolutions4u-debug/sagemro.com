@@ -64,12 +64,13 @@ test('bulk import goes through the shared CSV parser and the admin API module', 
   assert.match(api, /'\/api\/admin\/knowledge\/batch'/);
 });
 
-test('business staff can reach the knowledge base from the sidebar', async () => {
+test('non-admin staff can reach the knowledge base from the sidebar', async () => {
   const app = await readFile(new URL('../App.jsx', import.meta.url), 'utf8');
 
-  // 商务专员/经理/总监除了商务记录，还应能看到知识库
-  assert.match(app, /BUSINESS_RECORD_NAV_KEYS\.has\(item\.key\) \|\| item\.key === 'knowledge'/);
-  assert.match(app, /商务角色（专员\/经理\/总监）/);
+  // 后台裁剪为知识中枢后，非 admin 内部员工（商务/运营/仓储/采购）只保留知识库维护入口。
+  assert.match(app, /if \(user\.staffRole !== 'admin'\) return getNavItems\(t\)\.filter\(\(item\) => item\.key === 'knowledge'\)/);
+  assert.doesNotMatch(app, /BUSINESS_RECORD_NAV_KEYS/);
+  assert.doesNotMatch(app, /businessWorkspace/);
 });
 
 test('Excel 直传：浏览器端解析，一个工作表一条知识', async () => {

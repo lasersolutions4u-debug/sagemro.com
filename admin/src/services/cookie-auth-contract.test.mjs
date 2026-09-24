@@ -43,7 +43,7 @@ for (const credentials of [
     const result = { success: true, mustChangePassword: false, ...credentials };
     const { context, storage, calls } = passwordChangeClient(result);
     assert.deepEqual(await context.changeAdminPassword('old-password', 'new-password'), result);
-    await context.updateAdminLead('test-lead', 'contacted');
+    await context.updateAdminKnowledge('test-article', { title: 'updated' });
 
     const headers = calls[1].options.headers;
     assert.equal(headers['X-CSRF-Token'], credentials.csrfToken || 'old-csrf');
@@ -100,20 +100,14 @@ test('admin navigation resets and guards privileged pages across identity change
   assert.match(app, /const handleLogout = \(\) => \{[\s\S]*setActivePage\('dashboard'\)[\s\S]*setUser\(null\)/);
   assert.match(app, /const handleLogin = \(nextUser\) => \{[\s\S]*setActivePage\('dashboard'\)[\s\S]*setUser\(normalizedUser\)/);
   assert.match(app, /visibleNavItems\.some\(\(item\) => item\.key === activePage\)/);
-  assert.match(app, /const currentPage = visibleNavItems\.some\(\(item\) => item\.key === activePage\) \? activePage : visibleNavItems\[0\]\?\.key \|\| 'dashboard'/);
-  assert.match(app, /if \(isBusinessStaff\) return item\.key === 'businessWorkspace'/);
-  // COM 下商务角色：屏蔽 businessWorkspace，但保留商务记录 + 知识库。
-  // 知识库是 2026-09-17 业务方要求新放开的（商务同事自行上传内容）；
-  // 其余 legacy 管理页对商务角色仍然不可见。
-  assert.match(app, /if \(item\.key === 'businessWorkspace'\) return false;/);
-  assert.match(app, /if \(isBusinessStaff\) return BUSINESS_RECORD_NAV_KEYS\.has\(item\.key\) \|\| item\.key === 'knowledge'/);
-  assert.match(app, /BUSINESS_RECORD_NAV_KEYS = new Set\(\['users', 'leads', 'workorders'\]\)/);
-  for (const kind of ['customer', 'lead', 'work_order']) {
-    assert.ok(app.includes(`key={\x60\x24{user.staffId}:\x24{user.staffRole}:${kind}\x60}`));
-    assert.ok(app.includes(`user={user} kind="${kind}"`));
-  }
+  assert.match(app, /const currentPage = visibleNavItems\.some\(\(item\) => item\.key === activePage\) \? activePage : visibleNavItems\[0\]\?\.key \|\| 'knowledge'/);
+  // 后台裁剪为知识中枢后：非 admin 内部员工只保留知识库，员工账号只对 bootstrap 管理员可见。
+  assert.match(app, /if \(user\.staffRole !== 'admin'\) return getNavItems\(t\)\.filter\(\(item\) => item\.key === 'knowledge'\)/);
+  assert.match(app, /if \(item\.key === 'staffAccounts'\) return isBootstrapAdmin;/);
+  assert.doesNotMatch(app, /businessWorkspace/);
+  assert.doesNotMatch(app, /BUSINESS_RECORD_NAV_KEYS/);
   assert.match(app, /switch \(currentPage\)/);
-  assert.match(app, /useEffect\(\(\) => \{[\s\S]*setActivePage\(visibleNavItems\[0\]\?\.key \|\| 'dashboard'\)[\s\S]*\}, \[activePage, user, visibleNavItems\]\)/);
+  assert.match(app, /useEffect\(\(\) => \{[\s\S]*setActivePage\(visibleNavItems\[0\]\?\.key \|\| 'knowledge'\)[\s\S]*\}, \[activePage, user, visibleNavItems\]\)/);
 });
 
 test('admin session restore falls back to the legacy JWT during staggered deploys', () => {

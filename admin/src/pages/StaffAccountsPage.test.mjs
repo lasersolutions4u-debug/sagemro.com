@@ -1,30 +1,38 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import './businessWorkspaceExport.test.mjs';
-import './BusinessWorkspacePage.test.mjs';
 
 const page = await readFile(new URL('./StaffAccountsPage.jsx', import.meta.url), 'utf8');
 const list = await readFile(new URL('./staffAccountList.js', import.meta.url), 'utf8');
 const app = await readFile(new URL('../App.jsx', import.meta.url), 'utf8');
 const api = await readFile(new URL('../services/api.js', import.meta.url), 'utf8');
 
-test('staff management offers the nine business grades and explicit hierarchy configuration', () => {
-  assert.match(page, /business_director/);
-  assert.match(page, /business_manager/);
-  assert.match(page, /business_specialist/);
-  assert.match(page, /BusinessStaffFields/);
-  assert.match(page, /BusinessOrganizationPanel/);
-  assert.match(page, /expected_staff_id/);
+test('staff creation offers only the system roles that still carry console access', () => {
+  assert.match(page, /const STAFF_ROLES = \['admin', 'operations', 'warehouse', 'procurement'\]/);
+  assert.match(page, /createAdminStaffAccount/);
+  assert.doesNotMatch(page, /expected_staff_id/);
+  assert.doesNotMatch(page, /scope_version/);
+  assert.doesNotMatch(page, /territory_ids/);
+});
+
+test('the retired business organization surface is gone from the page, the list, and the api client', () => {
+  for (const source of [page, list, api]) {
+    assert.doesNotMatch(source, /BusinessOrganizationPanel/);
+    assert.doesNotMatch(source, /BusinessStaffFields/);
+    assert.doesNotMatch(source, /getBusinessOrganization/);
+    assert.doesNotMatch(source, /orgSummary/);
+    assert.doesNotMatch(source, /deactivationImpact/);
+    assert.doesNotMatch(source, /effective_territory_ids/);
+  }
 });
 
 test('internal staff navigation and page are bootstrap-admin only', () => {
   assert.match(app, /StaffAccountsPage/);
   assert.match(app, /user\.staffRole === 'admin'/);
   assert.match(app, /user\.staffId == null/);
-  assert.match(page, /createAdminStaffAccount/);
   assert.match(page, /deactivateAdminStaffAccount/);
   assert.match(page, /resetAdminStaffPassword/);
+  assert.match(page, /reactivateAdminStaffAccount/);
 });
 
 test('temporary passwords are displayed once in a clear modal', () => {
@@ -66,36 +74,31 @@ test('new staff inherit the current portal market without a selectable market fi
   assert.match(page, /自动归属当前后台/);
 });
 
-test('the account list is searchable and exposes the organization relation per row', () => {
+test('the account list is searchable and filterable without an organization projection', () => {
   assert.match(page, /from '\.\/staffAccountList'/);
   assert.match(page, /filterStaffAccounts/);
-  assert.match(page, /orgSummary\(account, organization\)/);
+  assert.match(page, /sortStaffAccounts/);
   assert.match(page, /id="staff-search"/);
   assert.match(page, /id="staff-filter-role"/);
   assert.match(page, /id="staff-filter-status"/);
   assert.match(page, /clearFilters/);
   assert.match(page, /t\.noResults/);
-  assert.match(list, /effective_territory_ids/);
 });
 
-test('destructive row actions confirm through an in-page dialog that states the impact', () => {
+test('destructive row actions confirm through an in-page dialog that names the action', () => {
   assert.match(page, /setConfirmAction\(\{ kind: 'deactivate', account \}\)/);
   assert.match(page, /setConfirmAction\(\{ kind: 'reset', account \}\)/);
-  assert.match(page, /deactivationImpact\(confirmAction\.account, staff\)/);
   assert.match(page, /role="dialog" aria-modal="true" aria-label=\{t\.confirmTitle\}/);
-  assert.match(page, /t\.confirmDeactivateReports\(impact\.reports\)/);
-  assert.match(page, /startsWith\('deactivate:'\)/);
-  assert.doesNotMatch(page, /window\.confirm/, 'the staff page states the real impact instead of a generic confirm');
-  assert.match(list, /export function deactivationImpact/);
+  assert.match(page, /t\.confirmDeactivateTitle/);
+  assert.match(page, /const busy = pending\.endsWith\(`:\$\{account\.id\}`\)/);
+  assert.match(page, /pending \? t\.pendingOperation : t\.confirmSubmit/);
+  assert.doesNotMatch(page, /window\.confirm/, 'the staff page states the action instead of a generic confirm');
 });
 
-test('deactivation is reversible and the dialog says the relations are kept', () => {
+test('deactivation is reversible and the dialog says the account can be restored', () => {
   assert.match(page, /setConfirmAction\(\{ kind: 'reactivate', account \}\)/);
-  assert.match(page, /reactivateAdminStaffAccount/);
-  assert.match(page, /confirmDeactivateKeeps/);
   assert.match(page, /confirmReactivateTitle/);
   assert.match(api, /\/api\/admin\/staff\/\$\{staffId\}\/reactivate/);
-  assert.match(page, /pending\.startsWith\('deactivate:'\)/);
 });
 
 test('account creation lives in a labelled drawer whose submit action is distinct from the trigger', () => {

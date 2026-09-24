@@ -1,194 +1,111 @@
 import { useState, useEffect } from 'react';
-import { Archive, ClipboardCheck, FileText, Package, ShieldAlert, Timer, TrendingUp, UserCheck, Wrench } from 'lucide-react';
-import { getAdminStats, getMaterialRequisitionMetrics } from '../services/api';
+import { BookOpenText, KeyRound, UserPlus, UserRoundCheck, Users } from 'lucide-react';
+import { getAdminKnowledge, getAdminStats } from '../services/api';
 import { useAdminLocale } from '../config/locale';
 
+// 后台已裁剪为知识中枢：这里只展示「注册用户 + 知识储备」两组数字。
+// 工单、物料、报价、推广等运营指标已随业务下线，不要再往回加。
 const TEXT = {
   en: {
     loading: 'Loading...',
     loadFailed: 'Failed to load',
-    title: 'SAGEMRO Operations Console',
-    subtitle: 'Lead routing, service review, dispatch management, quote approval, service quality, and compliant archiving.',
-    operationalTitle: 'Material Requisition Operations',
-    operationalSubtitle: 'Approval, shortage, overdue, fulfillment, and closure performance.',
-    cards: {
-      aiLeadsToday: 'New machine leads today',
-      pendingReview: 'Service requests pending review',
-      highRiskDowntime: 'High-risk downtime issues',
-      pendingQuotes: 'Quotes pending review',
-      pendingDispatch: 'Pending dispatch',
-      inService: 'In service',
-      pendingArchive: 'Pending archive',
-      valueAddedRequests: 'Value-added requests',
-      euchioMachineLeads: 'Machine leads total',
-    },
-    status: {
-      pending: 'Pending',
-      inProgress: 'In progress',
-      completed: 'Completed',
-    },
-    statusDistribution: 'Service order status',
-    requisitionOperations: 'Material requisition operations',
-    requisitionMetrics: {
-      pendingApproval: 'Pending approval', shortages: 'Shortage lines', overdue: 'Overdue',
-      medianApprovalHours: 'Median approval', medianFulfillmentHours: 'Median fulfillment', closureRatePercent: 'Closure rate',
-    },
-    hours: 'h',
+    title: 'User Statistics',
+    subtitle: 'Registered accounts and knowledge readiness for the AI portal.',
+    customerTotal: 'Registered users',
+    recentRegistrations: 'New registrations (7 days)',
+    knowledgeTotal: 'Knowledge articles',
+    loginsToday: 'Logins today',
+    registrationsToday: 'Registrations today',
+    verificationCodesToday: 'Verification codes today',
+    apiNote: 'Today counts reset at 00:00 UTC.',
   },
   'zh-CN': {
     loading: '加载中...',
     loadFailed: '加载失败',
-    title: 'SAGEMRO 运营中枢',
-    subtitle: '线索分流、服务审核、派工管理、报价确认、服务质量和合规归档。',
-    operationalTitle: '物料领用运营',
-    operationalSubtitle: '查看审批、缺料、逾期、履约和关闭指标。',
-    cards: {
-      aiLeadsToday: '今日新增整机线索',
-      pendingReview: '待审核服务申请',
-      highRiskDowntime: '高风险停机问题',
-      pendingQuotes: '待报价',
-      pendingDispatch: '待派工',
-      inService: '服务中',
-      pendingArchive: '待归档',
-      valueAddedRequests: '增值服务需求',
-      euchioMachineLeads: '整机线索总数',
-    },
-    status: {
-      pending: '待处理',
-      inProgress: '处理中',
-      completed: '已完成',
-    },
-    statusDistribution: '工单状态分布',
-    requisitionOperations: '物料领用运营',
-    requisitionMetrics: {
-      pendingApproval: '待审批', shortages: '缺料明细', overdue: '已逾期',
-      medianApprovalHours: '审批中位时长', medianFulfillmentHours: '履约中位时长', closureRatePercent: '关闭率',
-    },
-    hours: '小时',
+    title: '用户统计',
+    subtitle: '注册账号情况与面向 AI 站的知识储备情况。',
+    customerTotal: '注册用户总数',
+    recentRegistrations: '近 7 天新增注册',
+    knowledgeTotal: '知识库条目',
+    loginsToday: '今日登录',
+    registrationsToday: '今日注册',
+    verificationCodesToday: '今日验证码',
+    apiNote: '今日计数按 UTC 零点重置。',
   },
 };
 
-export function DashboardPage({ staffRole = 'admin', staffId = null }) {
+export function DashboardPage() {
   const locale = useAdminLocale();
   const t = TEXT[locale] || TEXT.en;
-  const isOperationalStaff = staffId != null && staffRole !== 'admin';
   const [stats, setStats] = useState(null);
+  const [knowledgeTotal, setKnowledgeTotal] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    let active = true;
     setLoading(true);
     setError('');
-    (isOperationalStaff ? getMaterialRequisitionMetrics() : getAdminStats())
-      .then(setStats)
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [isOperationalStaff]);
+    Promise.all([
+      getAdminStats(),
+      // 知识库条目数：只取一页的最小体积计数（total 由服务端返回）。
+      getAdminKnowledge(1, 1).catch(() => null),
+    ])
+      .then(([nextStats, knowledge]) => {
+        if (!active) return;
+        setStats(nextStats);
+        setKnowledgeTotal(knowledge?.total ?? null);
+      })
+      .catch((err) => { if (active) setError(err.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [reloadKey]);
 
   if (loading) {
-    return <div className="text-center py-12 text-[var(--color-text-muted)]">{t.loading}</div>;
+    return <div className="py-12 text-center text-[var(--color-text-muted)]">{t.loading}</div>;
   }
 
   if (error) {
     return (
-      <div className="text-center py-12">
-        <div className="text-[var(--color-error)] mb-2">{t.loadFailed}</div>
+      <div className="py-12 text-center">
+        <div className="mb-2 text-[var(--color-error)]">{t.loadFailed}</div>
         <div className="text-sm text-[var(--color-text-muted)]">{error}</div>
+        <button onClick={() => setReloadKey((current) => current + 1)} className="mt-4 min-h-10 whitespace-nowrap rounded-lg border border-[var(--color-border)] px-4 text-sm">{locale === 'zh-CN' ? '重试' : 'Retry'}</button>
       </div>
     );
   }
 
-  const operations = stats.operations || {};
-  const workOrders = stats.workOrders || {};
-  const requisitionOperations = stats.requisitionOperations || {};
+  const apiCalls = stats?.apiCalls || {};
   const cards = [
-    { icon: TrendingUp, label: t.cards.aiLeadsToday, value: operations.aiLeadsToday ?? 0, color: 'var(--color-info)' },
-    { icon: ClipboardCheck, label: t.cards.pendingReview, value: operations.pendingReview ?? workOrders.pending, color: 'var(--color-primary)' },
-    { icon: ShieldAlert, label: t.cards.highRiskDowntime, value: operations.highRiskDowntime ?? 0, color: 'var(--color-error)' },
-    { icon: FileText, label: t.cards.pendingQuotes, value: operations.pendingQuotes ?? 0, color: 'var(--color-warning)' },
-    { icon: UserCheck, label: t.cards.pendingDispatch, value: operations.pendingDispatch ?? workOrders.pending, color: 'var(--color-info)' },
-    { icon: Wrench, label: t.cards.inService, value: operations.inService ?? workOrders.in_progress, color: 'var(--color-success)' },
-    { icon: Archive, label: t.cards.pendingArchive, value: operations.pendingArchive ?? 0, color: 'var(--color-text-muted)' },
-    { icon: Package, label: t.cards.valueAddedRequests, value: operations.valueAddedRequests ?? 0, color: 'var(--color-warning)' },
-    { icon: Timer, label: t.cards.euchioMachineLeads, value: operations.euchioMachineLeads ?? 0, color: 'var(--color-primary)' },
-  ];
-
-  const statusItems = [
-    { label: t.status.pending, value: workOrders.pending, color: 'var(--color-info)' },
-    { label: t.status.inProgress, value: workOrders.in_progress, color: 'var(--color-warning)' },
-    { label: t.status.completed, value: workOrders.completed, color: 'var(--color-success)' },
-  ];
-
-  const requisitionMetrics = [
-    ['pendingApproval', requisitionOperations.pendingApproval ?? 0],
-    ['shortages', requisitionOperations.shortages ?? 0],
-    ['overdue', requisitionOperations.overdue ?? 0],
-    ['medianApprovalHours', requisitionOperations.medianApprovalHours == null ? '-' : `${Number(requisitionOperations.medianApprovalHours).toFixed(1)} ${t.hours}`],
-    ['medianFulfillmentHours', requisitionOperations.medianFulfillmentHours == null ? '-' : `${Number(requisitionOperations.medianFulfillmentHours).toFixed(1)} ${t.hours}`],
-    ['closureRatePercent', requisitionOperations.closureRatePercent == null ? '-' : `${Number(requisitionOperations.closureRatePercent).toFixed(1)}%`],
+    { icon: Users, label: t.customerTotal, value: stats?.customers ?? 0 },
+    { icon: UserPlus, label: t.recentRegistrations, value: stats?.recentRegistrations ?? 0 },
+    { icon: BookOpenText, label: t.knowledgeTotal, value: knowledgeTotal ?? '-' },
+    { icon: UserRoundCheck, label: t.loginsToday, value: apiCalls.login ?? 0 },
+    { icon: UserPlus, label: t.registrationsToday, value: apiCalls.register_customer ?? 0 },
+    { icon: KeyRound, label: t.verificationCodesToday, value: apiCalls.send_code ?? 0 },
   ];
 
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-lg font-semibold">{isOperationalStaff ? t.operationalTitle : t.title}</h2>
-        <p className="text-sm text-[var(--color-text-muted)] mt-1">
-          {isOperationalStaff ? t.operationalSubtitle : t.subtitle}
-        </p>
+        <h2 className="text-lg font-semibold">{t.title}</h2>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">{t.subtitle}</p>
       </div>
 
-      <section className="mb-6 border-y border-[var(--color-border)] bg-[var(--color-surface)]">
-        <div className="border-b border-[var(--color-border)] px-3 py-2 text-xs font-medium uppercase text-[var(--color-text-secondary)]">{t.requisitionOperations}</div>
-        <div className="grid grid-cols-2 divide-x divide-y divide-[var(--color-border)] sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
-          {requisitionMetrics.map(([key, value]) => (
-            <div key={key} className="min-w-0 px-3 py-3">
-              <div className="truncate text-xs text-[var(--color-text-muted)]">{t.requisitionMetrics[key]}</div>
-              <div className="mt-1 text-lg font-semibold">{value}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {!isOperationalStaff && (
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         {cards.map((card) => (
-          <div
-            key={card.label}
-            className="rounded-xl bg-[var(--color-surface-elevated)] border border-[var(--color-border)] p-4"
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <card.icon size={18} style={{ color: card.color }} />
+          <div key={card.label} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <card.icon size={18} />
               <span className="text-sm text-[var(--color-text-secondary)]">{card.label}</span>
             </div>
             <div className="text-2xl font-bold">{card.value}</div>
           </div>
         ))}
       </div>
-      )}
 
-      {!isOperationalStaff && (
-      <div className="rounded-xl bg-[var(--color-surface-elevated)] border border-[var(--color-border)] p-4">
-        <h3 className="text-sm font-medium mb-4">{t.statusDistribution}</h3>
-        <div className="space-y-3">
-          {statusItems.map((item) => {
-            const total = workOrders.total || 1;
-            const pct = Math.round((item.value / total) * 100);
-            return (
-              <div key={item.label} className="flex items-center gap-3">
-                <span className="text-sm text-[var(--color-text-secondary)] w-16">{item.label}</span>
-                <div className="flex-1 h-2 rounded-full bg-[var(--color-border)] overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-500"
-                    style={{ width: `${pct}%`, backgroundColor: item.color }}
-                  />
-                </div>
-                <span className="text-sm font-medium w-12 text-right">{item.value}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      )}
+      <p className="mt-4 text-xs text-[var(--color-text-muted)]">{t.apiNote}</p>
     </div>
   );
 }

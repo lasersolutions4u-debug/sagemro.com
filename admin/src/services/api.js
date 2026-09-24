@@ -1,5 +1,7 @@
 import { runtimeConfig } from '../config/runtime.js';
 
+// 后台已裁剪为「知识库中枢」：这里只保留 登录/会话、注册用户统计与管理、内部员工账号、知识库、知识候选
+// 所需的调用。工单、物料、报价、商务、推广分析、评价、工程师等接口已随业务下线，不要再往回加。
 const API_BASE = runtimeConfig.apiBase;
 const DEBUG_API = import.meta.env?.DEV;
 
@@ -46,34 +48,6 @@ async function request(path, options = {}) {
     throw error;
   }
   return data;
-}
-
-const PROMOTION_ANALYTICS_FILTER_KEYS = ['from', 'to', 'market', 'source', 'medium', 'campaign'];
-
-function promotionAnalyticsQuery(filters = {}) {
-  const params = new URLSearchParams();
-  const values = filters || {};
-  for (const key of PROMOTION_ANALYTICS_FILTER_KEYS) {
-    if (values[key]) params.set(key, values[key]);
-  }
-  return params.toString();
-}
-
-function promotionAnalyticsPath(path, filters) {
-  const query = promotionAnalyticsQuery(filters);
-  return query ? `${path}?${query}` : path;
-}
-
-export function getPromotionOverview(filters, signal) {
-  return request(promotionAnalyticsPath('/api/admin/analytics/overview', filters), { signal });
-}
-
-export function getPromotionChannels(filters, signal) {
-  return request(promotionAnalyticsPath('/api/admin/analytics/channels', filters), { signal });
-}
-
-export function getOrganicAcquisition(filters, signal) {
-  return request(promotionAnalyticsPath('/api/admin/analytics/organic-acquisition', filters), { signal });
 }
 
 export async function adminLogin(phone, password) {
@@ -131,10 +105,6 @@ export async function getAdminStats() {
   return request('/api/admin/stats');
 }
 
-export async function getMaterialRequisitionMetrics() {
-  return request('/api/material-requisitions/metrics');
-}
-
 export async function changeAdminPassword(oldPassword, newPassword) {
   const data = await request('/api/auth/change-password', {
     method: 'POST',
@@ -148,122 +118,10 @@ export async function changeAdminPassword(oldPassword, newPassword) {
   return data;
 }
 
+// ---------- 内部员工账号（只用来分发知识库维护权限） ----------
+
 export async function getAdminStaffAccounts() {
   return request('/api/admin/staff');
-}
-
-export function getBusinessOrganization(expectedStaffId, signal) {
-  return request(`/api/admin/business/organization?expected_staff_id=${encodeURIComponent(expectedStaffId)}`, { signal });
-}
-
-export function getBusinessRecords(kind, filters, signal) {
-  const params = new URLSearchParams({ kind });
-  for (const key of ['expected_staff_id', 'limit', 'cursor', 'scope_version', 'export']) {
-    if (filters[key] !== undefined && filters[key] !== null) params.set(key, String(filters[key]));
-  }
-  return request(`/api/admin/business/records?${params}`, { signal });
-}
-
-export function getBusinessRecord(kind, id, expectedStaffId, scopeVersion, signal) {
-  return request(`/api/admin/business/records/${encodeURIComponent(kind)}/${encodeURIComponent(id)}?expected_staff_id=${encodeURIComponent(expectedStaffId)}&scope_version=${encodeURIComponent(scopeVersion)}`, { signal });
-}
-
-export function assignBusinessRecord(kind, id, payload, signal) {
-  return request(`/api/admin/business/records/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/assignment`, { method: 'PUT', body: JSON.stringify(payload), signal });
-}
-
-export function getBusinessQuote(id, expectedStaffId, scopeVersion, signal) {
-  const params = new URLSearchParams({ expected_staff_id: expectedStaffId, scope_version: scopeVersion });
-  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/quote?${params}`, { signal });
-}
-
-export function getBusinessPayments(id, expectedStaffId, scopeVersion, signal) {
-  const params = new URLSearchParams({ expected_staff_id: expectedStaffId, scope_version: scopeVersion });
-  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/payments?${params}`, { signal });
-}
-
-export function getBusinessExecution(id, expectedStaffId, scopeVersion, signal) {
-  const query = new URLSearchParams({ expected_staff_id: expectedStaffId, scope_version: scopeVersion });
-  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/execution?${query}`, { signal });
-}
-
-function businessServicePath(id, suffix = '') {
-  return `/api/admin/business/work-orders/${encodeURIComponent(id)}/service${suffix}`;
-}
-
-export function getBusinessService(id, expectedStaffId, scopeVersion, signal) {
-  const query = new URLSearchParams({ expected_staff_id: expectedStaffId, scope_version: scopeVersion });
-  return request(`${businessServicePath(id)}?${query}`, { signal });
-}
-
-export async function mutateBusinessService(id, action, payload, signal, context) {
-  if (!/^(request-start|approve-start|complete|report|extensions|messages|material-requests|field-days\/check-in|field-days\/[^/]+\/report|standard\/items\/[^/]+\/confirm)$/.test(action)) {
-    throw new Error('Unsupported business service action');
-  }
-  const multipart = payload instanceof FormData;
-  if (multipart) {
-    for (const key of ['expected_staff_id', 'scope_version', 'quote_version', 'revision', 'idempotency_key']) payload.set(key, String(context[key]));
-  }
-  return request(businessServicePath(id, `/${action}`), {
-    method: action === 'report' ? 'PUT' : 'POST', signal,
-    headers: { 'Idempotency-Key': multipart ? context.idempotency_key : payload.idempotency_key },
-    body: multipart ? payload : JSON.stringify(payload),
-  });
-}
-
-export function searchBusinessServiceMaterials(id, search, expectedStaffId, scopeVersion, signal) {
-  const query = new URLSearchParams({ search, pageSize: 8, expected_staff_id: expectedStaffId, scope_version: scopeVersion });
-  return request(`${businessServicePath(id, '/materials')}?${query}`, { signal });
-}
-
-export async function getBusinessServiceMedia(id, mediaId, expectedStaffId, scopeVersion, signal) {
-  const query = new URLSearchParams({ expected_staff_id: expectedStaffId, scope_version: scopeVersion });
-  const response = await fetch(`${API_BASE}${businessServicePath(id, `/field-media/${encodeURIComponent(mediaId)}`)}?${query}`, {
-    credentials: 'include', headers: authHeaders(), signal,
-  });
-  if (!response.ok) throw Object.assign(new Error(`Media unavailable (${response.status})`), { status: response.status });
-  return response.blob();
-}
-
-export function assignBusinessExecution(id, payload, signal) {
-  const { expected_staff_id, scope_version, quote_version, revision, executor_staff_id, reason, idempotency_key } = payload;
-  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/execution/assign`, {
-    method: 'POST', signal,
-    body: JSON.stringify({ expected_staff_id, scope_version, quote_version, revision, executor_staff_id, reason, idempotency_key }),
-  });
-}
-
-export function startBusinessCollection(id, installmentId, payload, signal) {
-  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/installments/${encodeURIComponent(installmentId)}/collection/start`, {
-    method: 'POST', body: JSON.stringify(payload), signal,
-  });
-}
-
-export function submitBusinessReceipt(id, installmentId, form, signal) {
-  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/installments/${encodeURIComponent(installmentId)}/receipt-claims`, {
-    method: 'POST', body: form, signal,
-  });
-}
-
-export function saveBusinessQuote(id, payload, signal) {
-  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/quote`, { method: 'PUT', body: JSON.stringify(payload), signal });
-}
-
-export function submitBusinessQuote(id, payload, signal) {
-  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/quote/submit`, { method: 'POST', body: JSON.stringify(payload), signal });
-}
-
-export function getBusinessQuoteCosts(id, quoteVersion, expectedStaffId, scopeVersion, signal) {
-  const params = new URLSearchParams({ quote_version: quoteVersion, expected_staff_id: expectedStaffId, scope_version: scopeVersion });
-  return request(`/api/admin/business/work-orders/${encodeURIComponent(id)}/quote/costs?${params}`, { signal });
-}
-
-export function createBusinessTerritory(payload, signal) {
-  return request('/api/admin/business/territories', { method: 'POST', body: JSON.stringify(payload), signal });
-}
-
-export function updateBusinessStaff(id, payload, signal) {
-  return request(`/api/admin/business/staff/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload), signal });
 }
 
 export async function createAdminStaffAccount(staff) {
@@ -285,275 +143,11 @@ export async function resetAdminStaffPassword(staffId) {
   return request(`/api/admin/staff/${staffId}/reset-password`, { method: 'POST' });
 }
 
-export async function getMaterialRequisitions() {
-  return request('/api/material-requisitions');
-}
-
-export async function getMaterialRequisition(requisitionId) {
-  return request(`/api/material-requisitions/${requisitionId}`);
-}
-
-export async function decideMaterialRequisition(requisitionId, action, reason = '') {
-  return request(`/api/material-requisitions/${requisitionId}/${action}`, {
-    method: 'POST',
-    body: JSON.stringify(reason ? { reason } : {}),
-  });
-}
-
-export async function cancelMaterialRequisitionItem(requisitionId, itemId, reason = '') {
-  return request(`/api/material-requisitions/${requisitionId}/items/${itemId}/cancel`, {
-    method: 'POST',
-    body: JSON.stringify(reason ? { reason } : {}),
-  });
-}
-
-export async function updateMaterialRequisitionProcurement(requisitionId, payload) {
-  return request(`/api/material-requisitions/${requisitionId}/procurement`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  });
-}
-
-const QUANTITY_ACTION_PATHS = {
-  allocate_stock: 'stock-allocation',
-  record_purchase: 'procurement',
-  receive_purchase: 'procurement-receipt',
-  issue: 'issue',
-  return: 'return',
-};
-
-export async function postMaterialRequisitionQuantityAction(requisitionId, action, payload, idempotencyKey) {
-  const path = QUANTITY_ACTION_PATHS[action];
-  if (!path) throw new Error(`Unsupported material requisition action: ${action}`);
-  return request(`/api/material-requisitions/${requisitionId}/${path}`, {
-    method: 'POST',
-    headers: { 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify(payload),
-  });
-}
+// ---------- 注册用户 ----------
 
 export async function getAdminUsers(type = 'customer', page = 1, pageSize = 20, filters = {}) {
   const params = new URLSearchParams({ type, page, pageSize, ...filters });
   return request(`/api/admin/users?${params}`);
-}
-
-export async function getAdminEngineerDetail(engineerId) {
-  return request(`/api/admin/engineers/${engineerId}`);
-}
-
-export async function updateAdminEngineer(engineerId, data) {
-  return request(`/api/admin/engineers/${engineerId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-}
-
-export async function getAdminWorkOrders(status = 'all', page = 1, pageSize = 20) {
-  return request(`/api/admin/workorders?status=${status}&page=${page}&pageSize=${pageSize}`);
-}
-
-export async function getAdminWorkOrder(workOrderId) {
-  return request(`/api/workorders/${workOrderId}`);
-}
-
-export async function getAdminWorkOrderServiceStandard(workOrderId) {
-  return request(`/api/workorders/${encodeURIComponent(workOrderId)}/service-standard`);
-}
-
-export async function overrideAdminWorkOrderServiceStandardGate(workOrderId, gate, reason) {
-  return request(`/api/admin/workorders/${encodeURIComponent(workOrderId)}/service-standard/override`, {
-    method: 'POST',
-    body: JSON.stringify({ gate, reason }),
-  });
-}
-
-export async function getAdminWorkOrderMessages(workOrderId) {
-  return request(`/api/workorders/${workOrderId}/messages`);
-}
-
-export async function searchAdminServiceLocations(query) {
-  const params = new URLSearchParams({ q: query, limit: '5' });
-  return request(`/api/location/search?${params}`);
-}
-
-export async function confirmAdminOnsiteConversion(workOrderId, data) {
-  return request(`/api/admin/workorders/${workOrderId}/onsite-conversion/confirm`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-export async function overrideAdminArrival(workOrderId, reason) {
-  return request(`/api/admin/workorders/${workOrderId}/arrival-override`, {
-    method: 'POST',
-    body: JSON.stringify({ reason }),
-  });
-}
-
-export async function updateFieldPlan(workOrderId, payload) {
-  return request(`/api/admin/workorders/${workOrderId}/field-plan`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function decideFieldExtension(workOrderId, requestId, payload) {
-  return request(`/api/admin/workorders/${workOrderId}/extension-requests/${requestId}/decision`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function overrideFieldDay(workOrderId, payload) {
-  return request(`/api/admin/workorders/${workOrderId}/field-days/override`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function correctFieldDayReport(workOrderId, fieldDayId, payload) {
-  return request(`/api/admin/workorders/${workOrderId}/field-days/${fieldDayId}/report`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function openFieldEvidenceHold(workOrderId, payload) {
-  return request(`/api/admin/workorders/${workOrderId}/evidence-holds`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function resolveFieldEvidenceHold(workOrderId, holdId, payload) {
-  return request(`/api/admin/workorders/${workOrderId}/evidence-holds/${holdId}/resolve`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function getAuthenticatedFieldMediaUrl(workOrderId, mediaId) {
-  const res = await fetch(`${API_BASE}/api/workorders/${workOrderId}/field-media/${mediaId}`, {
-    credentials: 'include',
-    headers: authHeaders(),
-  });
-  if (!res.ok) {
-    let message = `请求失败 (${res.status})`;
-    try {
-      const data = await res.json();
-      message = data.error || message;
-    } catch {
-      // The protected media endpoint may return a non-JSON transport error.
-    }
-    throw new Error(message);
-  }
-  return URL.createObjectURL(await res.blob());
-}
-
-export async function getAuthenticatedReceiptEvidenceUrl(workOrderId, evidenceId) {
-  const res = await fetch(`${API_BASE}/api/workorders/${workOrderId}/receipt-evidence/${evidenceId}`, {
-    credentials: 'include',
-    headers: authHeaders(),
-  });
-  if (!res.ok) {
-    let message = `请求失败 (${res.status})`;
-    try {
-      const data = await res.json();
-      message = data.error || message;
-    } catch {
-      // The protected evidence endpoint may return a non-JSON transport error.
-    }
-    throw new Error(message);
-  }
-  return URL.createObjectURL(await res.blob());
-}
-
-export async function postAdminWorkOrderMessage(workOrderId, content, isInternalNote = true) {
-  return request(`/api/workorders/${workOrderId}/messages`, {
-    method: 'POST',
-    body: JSON.stringify({ content, is_internal_note: isInternalNote }),
-  });
-}
-
-export async function assignAdminWorkOrder(workOrderId, engineerId) {
-  return request(`/api/admin/workorders/${workOrderId}/assign`, {
-    method: 'PATCH',
-    body: JSON.stringify({ engineer_id: engineerId }),
-  });
-}
-
-export async function assignAdminWorkOrderRegionalLead(workOrderId, regionalLeadId) {
-  return request(`/api/admin/workorders/${workOrderId}/assign-regional-lead`, {
-    method: 'PATCH',
-    body: JSON.stringify({ regional_lead_id: regionalLeadId }),
-  });
-}
-
-export async function approveAdminWorkOrderPricing(workOrderId) {
-  return request(`/api/admin/workorders/${workOrderId}/pricing/approve`, {
-    method: 'PATCH',
-    body: JSON.stringify({}),
-  });
-}
-
-export async function rejectAdminWorkOrderPricing(workOrderId, note = '') {
-  return request(`/api/admin/workorders/${workOrderId}/pricing/reject`, {
-    method: 'PATCH',
-    body: JSON.stringify({ note }),
-  });
-}
-
-export async function reviewWorkOrderQuote(workOrderId, action, quoteVersion, note = '', businessContext) {
-  return request(`/api/admin/workorders/${workOrderId}/pricing/${action}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ quote_version: quoteVersion, note, ...(businessContext ? {
-      expected_staff_id: businessContext.expected_staff_id,
-      scope_version: businessContext.scope_version,
-    } : {}) }),
-  });
-}
-
-export async function decideInstallmentReceipt(workOrderId, installmentId, claimId, payload) {
-  return request(`/api/admin/workorders/${workOrderId}/installments/${installmentId}/receipt-claims/${claimId}/decision`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-
-export async function approveAdminWorkOrderPaymentStart(workOrderId, note = '') {
-  return request(`/api/admin/workorders/${workOrderId}/payment/approve-start`, {
-    method: 'POST',
-    body: JSON.stringify({ note }),
-  });
-}
-
-export async function approveAdminWorkOrderBalance(workOrderId, note = '') {
-  return request(`/api/admin/workorders/${workOrderId}/payment/approve-balance`, {
-    method: 'POST',
-    body: JSON.stringify({ note }),
-  });
-}
-
-export async function updateAdminWorkOrderPayout(workOrderId, data) {
-  return request(`/api/admin/workorders/${workOrderId}/payout`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-}
-
-export async function updateAdminWorkOrderTitle(workOrderId, shortTitle) {
-  return request(`/api/admin/workorders/${workOrderId}/short-title`, {
-    method: 'PATCH',
-    body: JSON.stringify({ short_title: shortTitle }),
-  });
-}
-
-export async function archiveAdminWorkOrder(workOrderId) {
-  return request(`/api/admin/workorders/${workOrderId}/archive`, {
-    method: 'PATCH',
-    body: JSON.stringify({}),
-  });
 }
 
 export async function createAdminUser(userData) {
@@ -563,68 +157,13 @@ export async function createAdminUser(userData) {
   });
 }
 
-export async function getAdminEngineerApplications(page = 1, pageSize = 20, status = 'all', market = 'all') {
-  const params = new URLSearchParams({ page, pageSize, status, market });
-  return request(`/api/admin/engineer-applications?${params}`);
-}
-
-export async function updateAdminEngineerApplication(applicationId, data) {
-  return request(`/api/admin/engineer-applications/${applicationId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-}
-
-export function openAdminEngineerAccount(applicationId, data) {
-  return request(`/api/admin/engineer-applications/${applicationId}/open-account`, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-export function resendAdminEngineerActivation(applicationId) {
-  return request(`/api/admin/engineer-applications/${applicationId}/resend-activation`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
-}
-
 export async function deleteAdminUser(userId, userType) {
   return request(`/api/admin/users/${userId}?type=${userType}`, {
     method: 'DELETE',
   });
 }
 
-export async function getAdminRatings(page = 1, pageSize = 20, filters = {}) {
-  const params = new URLSearchParams({ page, pageSize, ...filters });
-  return request(`/api/admin/ratings?${params}`);
-}
-
-export async function replyToRating(ratingId, content) {
-  return request(`/api/admin/ratings/${ratingId}/reply`, {
-    method: 'POST',
-    body: JSON.stringify({ content }),
-  });
-}
-
-export async function getAdminPlatformRatings(page = 1, pageSize = 20) {
-  return request(`/api/admin/platform-ratings?page=${page}&pageSize=${pageSize}`);
-}
-
-export async function getAdminCustomerRatings(page = 1, pageSize = 20) {
-  return request(`/api/admin/customer-ratings?page=${page}&pageSize=${pageSize}`);
-}
-
-export async function getAdminLeads(page = 1, pageSize = 20, status = 'all') {
-  return request(`/api/admin/leads?page=${page}&pageSize=${pageSize}&status=${status}`);
-}
-
-export async function updateAdminLead(leadId, status) {
-  return request(`/api/admin/leads/${leadId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status }),
-  });
-}
+// ---------- 知识库 ----------
 
 export async function getAdminKnowledge(page = 1, pageSize = 20, filters = {}) {
   const params = new URLSearchParams({ page, pageSize, ...filters });
@@ -652,6 +191,8 @@ export async function updateAdminKnowledge(articleId, article) {
     body: JSON.stringify(article),
   });
 }
+
+// ---------- 知识候选（AI / 服务记录沉淀的待审知识） ----------
 
 export async function getAdminKnowledgeCandidates(page = 1, pageSize = 20, status = 'all', options = {}) {
   const params = new URLSearchParams({ page, pageSize, status });
@@ -694,43 +235,5 @@ export async function rejectAdminKnowledgeCandidate(candidateId, notes) {
   return request(`/api/admin/knowledge-candidates/${candidateId}/reject`, {
     method: 'POST',
     body: JSON.stringify({ notes }),
-  });
-}
-
-export async function getAdminMaterials(page = 1, pageSize = 20, filters = {}) {
-  const params = new URLSearchParams({ page, pageSize, ...filters });
-  return request(`/api/admin/materials?${params}`);
-}
-
-export async function getAdminMaterialRequests(page = 1, pageSize = 20, filters = {}) {
-  const params = new URLSearchParams({ page, pageSize, ...filters });
-  return request(`/api/admin/material-requests?${params}`);
-}
-
-export async function reviewAdminMaterialRequest(requestId, payload) {
-  return request(`/api/admin/material-requests/${requestId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function createAdminMaterial(material) {
-  return request('/api/admin/materials', {
-    method: 'POST',
-    body: JSON.stringify(material),
-  });
-}
-
-export async function updateAdminMaterial(materialId, material) {
-  return request(`/api/admin/materials/${materialId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(material),
-  });
-}
-
-export async function adjustAdminMaterialInventory(materialId, adjustment) {
-  return request(`/api/admin/materials/${materialId}/inventory-adjustments`, {
-    method: 'POST',
-    body: JSON.stringify(adjustment),
   });
 }
