@@ -1,27 +1,31 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import './businessWorkspaceExport.test.mjs';
-import './BusinessWorkspacePage.test.mjs';
 
 const page = await readFile(new URL('./StaffAccountsPage.jsx', import.meta.url), 'utf8');
 const app = await readFile(new URL('../App.jsx', import.meta.url), 'utf8');
 const api = await readFile(new URL('../services/api.js', import.meta.url), 'utf8');
 
-test('staff management offers the nine business grades and explicit hierarchy configuration', () => {
-  assert.match(page, /business_director/);
-  assert.match(page, /business_manager/);
-  assert.match(page, /business_specialist/);
-  assert.match(page, /BusinessStaffFields/);
-  assert.match(page, /BusinessOrganizationPanel/);
-  assert.match(page, /expected_staff_id/);
+test('staff creation offers only the system roles that still carry console access', () => {
+  assert.match(page, /const STAFF_ROLES = \['admin', 'operations', 'warehouse', 'procurement'\]/);
+  assert.match(page, /createAdminStaffAccount/);
+  assert.doesNotMatch(page, /expected_staff_id/);
+  assert.doesNotMatch(page, /scope_version/);
+  assert.doesNotMatch(page, /territory_ids/);
+});
+
+test('the retired business organization surface is gone from the page, the app and the api client', () => {
+  for (const source of [page, app, api]) {
+    assert.doesNotMatch(source, /BusinessOrganizationPanel/);
+    assert.doesNotMatch(source, /BusinessStaffFields/);
+    assert.doesNotMatch(source, /getBusinessOrganization/);
+  }
 });
 
 test('internal staff navigation and page are bootstrap-admin only', () => {
   assert.match(app, /StaffAccountsPage/);
   assert.match(app, /user\.staffRole === 'admin'/);
   assert.match(app, /user\.staffId == null/);
-  assert.match(page, /createAdminStaffAccount/);
   assert.match(page, /deactivateAdminStaffAccount/);
   assert.match(page, /resetAdminStaffPassword/);
 });

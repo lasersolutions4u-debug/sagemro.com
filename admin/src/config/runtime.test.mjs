@@ -18,7 +18,7 @@ test('resolves CN admin portal to CN market and API', () => {
   assert.equal(config.portal, 'admin');
   assert.equal(config.locale, 'zh-CN');
   assert.equal(config.apiBase, 'https://api.sagemro.cn');
-  assert.equal(config.documentTitle, 'SAGEMRO 运营中枢');
+  assert.equal(config.documentTitle, 'SAGEMRO 知识中枢');
 });
 
 test('resolves COM admin portal to international market and API', () => {
@@ -28,15 +28,15 @@ test('resolves COM admin portal to international market and API', () => {
   assert.equal(config.portal, 'admin');
   assert.equal(config.locale, 'en');
   assert.equal(config.apiBase, 'https://api.sagemro.com');
-  assert.equal(config.documentTitle, 'SAGEMRO Operations Console');
+  assert.equal(config.documentTitle, 'SAGEMRO Knowledge Console');
 });
 
-test('CN admin copy uses operations console naming instead of old admin wording', () => {
+test('CN admin copy uses knowledge console naming instead of the retired operations wording', () => {
   const app = read('src/App.jsx');
   const dashboard = read('src/pages/DashboardPage.jsx');
 
-  assert.match(app, /mobileTitle: 'SAGEMRO 运营中枢'/);
-  assert.match(dashboard, /title: 'SAGEMRO 运营中枢'/);
+  assert.match(app, /mobileTitle: 'SAGEMRO 知识中枢'/);
+  assert.match(dashboard, /title: '用户统计'/);
   assert.doesNotMatch(app, /SAGEMRO 运营管理后台/);
-  assert.doesNotMatch(dashboard, /'zh-CN': \{[\s\S]*?title: 'SAGEMRO Operations Console'/);
+  assert.doesNotMatch(app, /SAGEMRO 运营中枢/);
 });

@@ -1,70 +1,45 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { Boxes, ChartNoAxesCombined, ClipboardCheck, ClipboardList, LayoutDashboard, Users, UserCog, FileText, Star, LogOut, Target, BookOpenText, Menu, PackageSearch, ShieldCheck } from 'lucide-react';
+import { BookOpenText, ClipboardCheck, LayoutDashboard, LogOut, Menu, ShieldCheck, Users } from 'lucide-react';
 import { LoginPage } from './pages/LoginPage';
 import { runtimeConfig } from './config/runtime';
 import { BrandMark } from './components/BrandMark';
 import { adminLogout, changeAdminPassword, restoreAdminSession } from './services/api';
 
+// 后台已裁剪为「知识库中枢」：登录 / 用户统计 / 注册用户管理 / 知识库 / 知识候选 / 内部员工账号。
+// 工单、物料、报价、商务、推广分析、评价、工程师等页面已随业务下线移除，不要在导航里恢复。
 const DashboardPage = lazy(() => import('./pages/DashboardPage.jsx').then(({ DashboardPage }) => ({ default: DashboardPage })));
 const UsersPage = lazy(() => import('./pages/UsersPage.jsx').then(({ UsersPage }) => ({ default: UsersPage })));
-const EngineersPage = lazy(() => import('./pages/EngineersPage.jsx').then(({ EngineersPage }) => ({ default: EngineersPage })));
-const WorkOrdersPage = lazy(() => import('./pages/WorkOrdersPage.jsx').then(({ WorkOrdersPage }) => ({ default: WorkOrdersPage })));
-const RatingsPage = lazy(() => import('./pages/RatingsPage.jsx').then(({ RatingsPage }) => ({ default: RatingsPage })));
-const LeadsPage = lazy(() => import('./pages/LeadsPage.jsx').then(({ LeadsPage }) => ({ default: LeadsPage })));
-const EngineerApplicationsPage = lazy(() => import('./pages/EngineerApplicationsPage.jsx').then(({ EngineerApplicationsPage }) => ({ default: EngineerApplicationsPage })));
-const MaterialsPage = lazy(() => import('./pages/MaterialsPage.jsx').then(({ MaterialsPage }) => ({ default: MaterialsPage })));
 const KnowledgePage = lazy(() => import('./pages/KnowledgePage.jsx').then(({ KnowledgePage }) => ({ default: KnowledgePage })));
 const KnowledgeCandidatesPage = lazy(() => import('./pages/KnowledgeCandidatesPage.jsx').then(({ KnowledgeCandidatesPage }) => ({ default: KnowledgeCandidatesPage })));
-const MaterialRequisitionsPage = lazy(() => import('./pages/MaterialRequisitionsPage.jsx').then(({ MaterialRequisitionsPage }) => ({ default: MaterialRequisitionsPage })));
 const StaffAccountsPage = lazy(() => import('./pages/StaffAccountsPage.jsx').then(({ StaffAccountsPage }) => ({ default: StaffAccountsPage })));
-const PromotionAnalyticsPage = lazy(() => import('./pages/PromotionAnalyticsPage.jsx').then(({ PromotionAnalyticsPage }) => ({ default: PromotionAnalyticsPage })));
-const BusinessWorkspacePage = lazy(() => import('./pages/BusinessWorkspacePage.jsx').then(({ BusinessWorkspacePage }) => ({ default: BusinessWorkspacePage })));
 
 const TEXT = {
   en: {
-    subtitle: 'Operations Console',
-    mobileTitle: 'SAGEMRO Operations Console',
+    subtitle: 'Knowledge Console',
+    mobileTitle: 'SAGEMRO Knowledge Console',
     adminInitial: 'A',
     logout: 'Sign out',
     loadingPage: 'Loading page',
     nav: {
-      dashboard: 'Operations Dashboard',
-      businessWorkspace: 'Business workspace',
-      promotionAnalytics: 'Promotion Analytics',
-      leads: 'Machine Leads',
-      workorders: 'Service Orders',
-      engineerApplications: 'Engineer Applications',
-      materials: 'Material Master',
-      materialRequisitions: 'Material Requisitions',
-      staffAccounts: 'Internal Staff',
+      dashboard: 'User Statistics',
+      users: 'Registered Users',
       knowledge: 'Knowledge Base',
       knowledgeCandidates: 'Knowledge Candidates',
-      engineers: 'Engineers',
-      users: 'Customers',
-      ratings: 'Service Reviews',
+      staffAccounts: 'Internal Staff',
     },
   },
   'zh-CN': {
-    subtitle: '运营中枢',
-    mobileTitle: 'SAGEMRO 运营中枢',
+    subtitle: '知识中枢',
+    mobileTitle: 'SAGEMRO 知识中枢',
     adminInitial: '管',
     logout: '退出登录',
     loadingPage: '页面加载中',
     nav: {
-      dashboard: '运营驾驶舱',
-      businessWorkspace: '商务工作台',
-      promotionAnalytics: '推广分析',
-      leads: '整机线索',
-      workorders: '服务工单',
-      engineerApplications: '工程师申请审核',
-      materials: '物料管理',
+      dashboard: '用户统计',
+      users: '注册用户',
       knowledge: '知识库',
-      engineers: '工程师',
-      materialRequisitions: '物料领用申请',
-      staffAccounts: '内部员工账号',
-      users: '客户',
       knowledgeCandidates: '知识候选',
-      ratings: '评价管理',
+      staffAccounts: '内部员工账号',
     },
   },
 };
@@ -73,24 +48,11 @@ const t = TEXT[runtimeConfig.locale] || TEXT.en;
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: t.nav.dashboard, icon: LayoutDashboard },
-  { key: 'businessWorkspace', label: t.nav.businessWorkspace, icon: Users },
-  { key: 'promotionAnalytics', label: t.nav.promotionAnalytics, icon: ChartNoAxesCombined },
-  { key: 'leads', label: t.nav.leads, icon: Target },
+  { key: 'users', label: t.nav.users, icon: Users },
   { key: 'knowledge', label: t.nav.knowledge, icon: BookOpenText },
   { key: 'knowledgeCandidates', label: t.nav.knowledgeCandidates, icon: ClipboardCheck },
-  { key: 'workorders', label: t.nav.workorders, icon: FileText },
-  { key: 'materials', label: t.nav.materials, icon: Boxes },
-  { key: 'materialRequisitions', label: t.nav.materialRequisitions, icon: PackageSearch },
-  { key: 'engineerApplications', label: t.nav.engineerApplications, icon: ClipboardList },
-  { key: 'engineers', label: t.nav.engineers, icon: UserCog },
-  { key: 'users', label: t.nav.users, icon: Users },
-  { key: 'ratings', label: t.nav.ratings, icon: Star },
   { key: 'staffAccounts', label: t.nav.staffAccounts, icon: ShieldCheck },
 ];
-
-const REQUISITION_ROLES = ['admin', 'operations', 'warehouse', 'procurement'];
-const OPERATIONAL_NAV_KEYS = new Set(['dashboard', 'materialRequisitions']);
-const OPERATIONS_NAV_KEYS = new Set(['dashboard', 'promotionAnalytics', 'workorders', 'materials', 'materialRequisitions']);
 
 function normalizeAdminUser(user) {
   if (!user) return user;
@@ -142,7 +104,7 @@ function MandatoryPasswordChange({ user, onChanged }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-4">
       <form onSubmit={submit} className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-2xl">
-        <div className="flex items-center gap-3"><BrandMark className="h-10 w-10 rounded-full" /><div><h1 className="font-semibold">{isCn ? '修改临时密码' : 'Change temporary password'}</h1><p className="mt-1 text-sm text-[var(--color-text-muted)]">{isCn ? '完成修改后才能进入运营中枢。' : 'Change your password before entering the operations console.'}</p></div></div>
+        <div className="flex items-center gap-3"><BrandMark className="h-10 w-10 rounded-full" /><div><h1 className="font-semibold">{isCn ? '修改临时密码' : 'Change temporary password'}</h1><p className="mt-1 text-sm text-[var(--color-text-muted)]">{isCn ? '完成修改后才能进入知识中枢。' : 'Change your password before entering the knowledge console.'}</p></div></div>
         {error && <div className="mt-4 border-l-2 border-red-400 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>}
         <div className="mt-5 space-y-3">
           <div><label htmlFor="current-password" className="mb-1 block text-sm text-[var(--color-text-secondary)]">{isCn ? '当前临时密码' : 'Current temporary password'}</label><input id="current-password" type="password" autoComplete="current-password" required value={oldPassword} onChange={(event) => setOldPassword(event.target.value)} className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-elevated)] px-3 py-3 text-sm" /></div>
@@ -160,24 +122,12 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedEngineerId, setSelectedEngineerId] = useState('');
   const visibleNavItems = useMemo(() => {
     if (!user) return [];
     const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
-    const isOperationalStaff = user.staffId != null && user.staffRole !== 'admin';
-    const isBusinessStaff = ['business_director', 'business_manager', 'business_specialist'].includes(user.staffRole);
-    return NAV_ITEMS.filter((item) => {
-      if (isBusinessStaff) return item.key === 'businessWorkspace';
-      if (item.key === 'businessWorkspace') return user.staffRole === 'admin';
-      if (item.key === 'staffAccounts') return isBootstrapAdmin;
-      if (item.key === 'materialRequisitions') return REQUISITION_ROLES.includes(user.staffRole);
-      if (isOperationalStaff) {
-        return user.staffRole === 'operations'
-          ? OPERATIONS_NAV_KEYS.has(item.key)
-          : OPERATIONAL_NAV_KEYS.has(item.key);
-      }
-      return true;
-    });
+    // 非 admin 的内部员工（商务 / 运营 / 仓储 / 采购）只保留知识库上传与维护。
+    if (user.staffRole !== 'admin') return NAV_ITEMS.filter((item) => item.key === 'knowledge');
+    return NAV_ITEMS.filter((item) => (item.key === 'staffAccounts' ? isBootstrapAdmin : true));
   }, [user]);
 
   useEffect(() => {
@@ -204,7 +154,7 @@ export default function App() {
 
   useEffect(() => {
     if (user && !visibleNavItems.some((item) => item.key === activePage)) {
-      setActivePage(visibleNavItems[0]?.key || 'dashboard');
+      setActivePage(visibleNavItems[0]?.key || 'knowledge');
     }
   }, [activePage, user, visibleNavItems]);
 
@@ -233,7 +183,7 @@ export default function App() {
             {isCn ? '你访问的页面不存在，或者链接已经失效。' : 'The page you requested does not exist or the link has expired.'}
           </p>
           <a href="/" className="mt-6 inline-flex rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-sm font-medium text-white">
-            {isCn ? '返回管理后台' : 'Back to Admin'}
+            {isCn ? '返回知识中枢' : 'Back to Knowledge Console'}
           </a>
         </div>
       </main>
@@ -269,25 +219,16 @@ export default function App() {
   }
 
   const isBootstrapAdmin = user.staffRole === 'admin' && user.staffId == null;
-  const currentPage = visibleNavItems.some((item) => item.key === activePage) ? activePage : visibleNavItems[0]?.key || 'dashboard';
+  const currentPage = visibleNavItems.some((item) => item.key === activePage) ? activePage : visibleNavItems[0]?.key || 'knowledge';
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'businessWorkspace': return <BusinessWorkspacePage key={`${user.staffId}:${user.staffRole}`} user={user} />;
-      case 'dashboard': return <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
-      case 'promotionAnalytics': return <PromotionAnalyticsPage />;
+      case 'dashboard': return <DashboardPage />;
       case 'users': return <UsersPage />;
-      case 'engineers': return <EngineersPage initialEngineerId={selectedEngineerId} onEngineerOpened={() => setSelectedEngineerId('')} />;
-      case 'workorders': return <WorkOrdersPage readOnly={user.staffRole === 'operations'} />;
-      case 'materials': return <MaterialsPage readOnly={user.staffRole === 'operations'} />;
-      case 'materialRequisitions': return <MaterialRequisitionsPage staffRole={user.staffRole} />;
-      case 'staffAccounts': return isBootstrapAdmin ? <StaffAccountsPage /> : <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
       case 'knowledge': return <KnowledgePage />;
       case 'knowledgeCandidates': return <KnowledgeCandidatesPage />;
-      case 'engineerApplications': return <EngineerApplicationsPage onOpenEngineer={(engineerId) => { setSelectedEngineerId(engineerId); setActivePage('engineers'); }} />;
-      case 'ratings': return <RatingsPage />;
-      case 'leads': return <LeadsPage />;
-      default: return <DashboardPage staffRole={user.staffRole} staffId={user.staffId} />;
+      case 'staffAccounts': return isBootstrapAdmin ? <StaffAccountsPage /> : <DashboardPage />;
+      default: return <KnowledgePage />;
     }
   };
 
