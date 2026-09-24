@@ -230,30 +230,30 @@ function findModalInteraction() {
 test('CN exported content keeps approved hero and structured recruiting data', () => {
   const copy = exportedContent().cn;
 
-  assert.equal(copy.title, '免费品牌与系统，工程师只专注技术');
+  assert.equal(copy.title, '品牌、系统、推广免费给，你只管把技术做到极致');
   assert.equal(
     copy.subtitle,
-    '面向激光切割与金属成形设备行业：SAGEMRO 提供免费品牌授权、免费使用的工单/物料/客户管理系统，加上统一品牌宣传、供应链支持与视频、公众号、搜索引擎等多渠道推广；后台 AI 智能助理帮你管理工作、学习和答疑。第一年免加盟费。',
+    '品牌和系统你不用自己搭：SAGEMRO 免费开放品牌授权、工单/物料/客户管理系统、小程序与官网，并持续投入统一宣传、视频与搜索引擎推广、供应链支持，后台还有 AI 智能助理帮你管工作、学技术、答现场问题。第一年免加盟费——你只管把激光切割与金属成形设备的现场服务做到最好。',
   );
-  assert.ok([copy.primary, copy.applyNow].includes('提交合作意向'));
+  assert.ok([copy.primary, copy.applyNow].includes('申请加入合作计划'));
   assert.deepEqual(plain(copy.questionSlides), [
-    { id: 'Q1', question: '平台免费给我什么？', confirmation: '免费品牌授权、免费管理系统，第一年免加盟费' },
-    { id: 'Q2', question: '收入怎么分配？', confirmation: '合作制平台，公平透明，多劳多得，收益空间不设上限' },
-    { id: 'Q3', question: 'AI 在合作里做什么？', confirmation: '后台 AI 智能助理帮你管理工作、学习和答疑' },
+    { id: 'Q1', question: '加入要花多少钱？', confirmation: '第一年免加盟费，品牌授权与管理系统免费使用' },
+    { id: 'Q2', question: '收益怎么算？', confirmation: '合作制平台：多劳多得、逐笔留痕、收益不设上限' },
+    { id: 'Q3', question: 'AI 到底做什么？', confirmation: '对外把专业回复越做越准，对内帮你管工作、学技术、答疑' },
   ]);
-  assert.equal(copy.coreValueTitle, '把品牌、系统、推广和管理交给我们，你专注现场技术');
+  assert.equal(copy.coreValueTitle, '琐碎的交给平台，值钱的留给你');
   assert.deepEqual(plain(copy.platformSupport), ['免费品牌授权', '免费管理系统', '小程序与网站', 'AI 工作助理']);
   assert.deepEqual(plain(copy.engineerFocus), ['故障诊断', '维修保养', '技术判断', '现场交付']);
   assert.deepEqual(plain(copy.developmentDirections), [
-    { title: '统一品牌宣传', status: '持续开展' },
+    { title: '统一品牌宣传', status: '持续推进' },
     { title: '视频、公众号与搜索引擎推广', status: '多渠道并行' },
     { title: '供应链与备件管理', status: '逐步建设' },
     { title: 'AI 知识库运营', status: '持续积累' },
   ]);
   assert.deepEqual(plain(copy.cooperationPrinciples), [
-    { title: '合作制平台', text: '不是雇佣关系，而是长期合作：客户来源、双方投入和实际收益清晰记录，合作方案提前沟通。' },
-    { title: '公平透明，多劳多得', text: '每笔业务的客户来源、双方投入和实际交付都留痕，核算有据可查，收益空间不设上限。' },
-    { title: '第一年免加盟费', text: '第一年不收取加盟费，先把服务与口碑做起来，后续合作方式由双方另行确认。' },
+    { title: '一起做，不是打工', text: '合作制而非雇佣制：客户来源、双方投入与实际收益逐笔记录，合作方案事先谈清。' },
+    { title: '账目透明，多劳多得', text: '每笔业务的来源、投入与交付都留痕，核算有据可查；收益空间不设上限，干得多就拿得多。' },
+    { title: '第一年免加盟费', text: '第一年不收加盟费，先把服务和口碑做起来，之后的合作方式双方另行确认。' },
   ]);
   const text = visibleText();
   for (const required of [
@@ -273,18 +273,18 @@ test('CN rendered page preserves the approved v32 platform intro and detailed se
   const text = visibleText();
 
   for (const required of [
-    '品牌、系统、推广与 AI，一起给到工程师',
+    '四件事 SAGEMRO 全包：品牌、系统、推广、AI',
     '免费品牌授权',
     '免费管理系统',
     '多渠道推广',
     'AI 工作助理',
-    '工程师最关心的三个问题',
-    'SAGEMRO 的 AI 只做一件事：给客户越来越靠谱、越来越专业的回复',
-    'AI 的目标只有一个：把专业回复做到越来越靠谱',
+    '工程师最先问的三件事',
+    'SAGEMRO 的 AI 只做一件事：把给客户的回复做得越来越靠谱、越来越专业',
+    'AI 不抢你的活，只把专业回复做到越来越准',
     'SAGEMRO 不再自建工单、评价与物料系统，改用第三方成熟产品免费提供给合作工程师',
-    '工程师的核心价值，永远在现场解决问题',
+    '客户买单的，永远是现场解决问题的能力',
     '品牌、推广、供应链与 AI，平台持续投入',
-    '统一对外形象、案例与专业内容输出',
+    '统一的对外形象、案例与专业内容输出',
     '真实服务沉淀为知识，知识让 AI 更专业，专业带来更多客户',
   ]) {
     assert.ok(text.includes(required), `Expected approved v32 content: ${required}`);
@@ -317,10 +317,10 @@ test('CN rendered carousel defaults to Q3 and exposes manual click switching wit
 test('CN rendered page shows the approved concise application CTA without requiring a data shape', () => {
   const text = visibleText();
 
-  assert.match(text, /加入 SAGEMRO 工程师网络/);
-  assert.match(text, /填写基本信息，运营团队审核后与你联系。/);
-  assert.match(text, /提交合作意向/);
-  assert.match(text, /提交合作意向/);
+  assert.match(text, /把你的技术，装进 SAGEMRO 的品牌里/);
+  assert.match(text, /留下基本信息，运营团队会尽快与你沟通合作细节。/);
+  assert.match(text, /申请加入合作计划/);
+  assert.match(text, /申请加入合作计划/);
 });
 
 test('CN recruiting data and rendered output avoid unsupported promises and close variants', () => {
@@ -372,10 +372,10 @@ test('application modal retains gated open, CTA trigger, close, form submit, and
 test('public engineer recruiting SEO retains canonical and Service schema semantics', () => {
   const { name, cn, en } = exportedSeoBuilder();
 
-  assert.equal(cn.title, '工程师合作网络 | SAGEMRO');
-  assert.equal(cn.description, '免费品牌授权、免费工单/物料/客户管理系统、统一品牌宣传与多渠道推广，还有后台 AI 智能助理；第一年免加盟费，SAGEMRO 与工程师合作共赢。');
-  assert.equal(en.title, 'Engineer Partner Network | SAGEMRO');
-  assert.equal(en.description, "A free SAGEMRO brand licence, free work-order, material and customer systems, unified brand marketing, multi-channel promotion and a back-office AI assistant. No franchise fee in year one.");
+  assert.equal(cn.title, '工程师合作计划 | SAGEMRO');
+  assert.equal(cn.description, 'SAGEMRO 免费开放品牌授权与工单、物料、客户管理系统，并投入统一宣传、多渠道推广与供应链支持；后台 AI 智能助理帮工程师管工作、答现场问题。第一年免加盟费，欢迎工程师加入合作计划。');
+  assert.equal(en.title, 'Engineer Partner Program | SAGEMRO');
+  assert.equal(en.description, "SAGEMRO opens its brand licence plus work-order, material and customer systems to partner engineers free of charge, and invests in unified marketing, multi-channel promotion and supply-chain support. A back-office AI assistant helps with admin and on-site questions. No franchise fee in year one.");
   assert.deepEqual(
     {
       cn: {
