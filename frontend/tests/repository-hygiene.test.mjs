@@ -77,7 +77,8 @@ test('retired one-off tooling and unreachable frontend modules stay out of the r
 
 test('production credential probes and machine-local state stay out of Git', () => {
   assert.equal(existsSync(path.join(root, 'worker/test-roles.sh')), false, 'worker/test-roles.sh');
-  assert.doesNotMatch(readFileSync(path.join(root, 'worker/tests/smoke.mjs'), 'utf8'), /test-roles\.sh/);
+  // 手工 smoke 脚本随工单体系下线删除；已被删除的文件不可能再引用凭据探针。
+  assert.equal(existsSync(path.join(root, 'worker/tests/smoke.mjs')), false, 'worker/tests/smoke.mjs');
 
   const gitignore = readFileSync(path.join(root, '.gitignore'), 'utf8');
   assert.match(gitignore, /^\.claude\/memory\/$/m);
