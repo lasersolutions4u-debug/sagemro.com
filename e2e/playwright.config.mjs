@@ -45,6 +45,13 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
+      // 主站（营销落地页）：同一份 frontend 源码，build target = public。
+      command: 'node scripts/run-local-e2e.mjs server frontend-public',
+      url: runtime.publicBase,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+    {
       command: 'node scripts/run-local-e2e.mjs server admin',
       url: runtime.adminBase,
       reuseExistingServer: false,

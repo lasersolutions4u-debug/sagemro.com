@@ -4,8 +4,10 @@
   "type": "module",
   "scripts": {
     "test:contracts": "node --test tests/*-contract.test.mjs",
+    "test:browser": "node scripts/run-local-e2e.mjs test tests/public-home-chat.spec.mjs",
+    "test:public-home": "npm run test:browser",
     "prepare:local": "node scripts/run-local-e2e.mjs prepare",
-    "test": "npm run test:contracts"
+    "test": "npm run test:contracts && npm run test:browser"
   },
   "devDependencies": {
     "@playwright/test": "^1.54.2"

@@ -88,9 +88,12 @@ jobs:
         working-directory: e2e
         run: npm install --no-audit --no-fund
 
-      # 浏览器旅程（工单/物料/商务/工程师工作台）已随功能下线删除，
-      # 这里只跑部署与运行时契约，不再下载 Chromium。
-      - name: E2E contract tests
+      - name: Install Playwright Chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      # 契约 + 一条主站浏览器回归（首屏 AI 对话框 + 咨询线索表单）。
+      - name: E2E contract and public home tests
         working-directory: e2e
         run: npm test
 

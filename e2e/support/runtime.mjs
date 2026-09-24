@@ -43,6 +43,8 @@ export function e2eRuntime(env = process.env) {
     customerBase: env.E2E_CUSTOMER_BASE || 'http://customer.127.0.0.1.nip.io:4273',
     engineerBase: env.E2E_ENGINEER_BASE || 'http://engineer.127.0.0.1.nip.io:4273',
     adminBase: env.E2E_ADMIN_BASE || 'http://admin.127.0.0.1.nip.io:4274',
+    // 主站（营销落地页）本地实例：与 AI 门户同一份代码，但 build target = public。
+    publicBase: env.E2E_PUBLIC_BASE || 'http://127.0.0.1:4275',
     testSecret: env.E2E_TEST_SECRET || '',
     adminPassword: env.ADMIN_PASSWORD || '',
     engineerPassword: env.E2E_ENGINEER_PASSWORD || '',
@@ -52,6 +54,7 @@ export function e2eRuntime(env = process.env) {
   assertLoopbackUrl(runtime.customerBase);
   assertLoopbackUrl(runtime.engineerBase);
   assertLoopbackUrl(runtime.adminBase);
+  assertLoopbackUrl(runtime.publicBase);
   if (runtime.testSecret.length < 20) {
     throw new Error('E2E_TEST_SECRET must contain at least 20 characters');
   }

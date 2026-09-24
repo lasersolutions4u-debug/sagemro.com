@@ -22,20 +22,20 @@ test('Cloudflare test job runs Admin and E2E gates before deploy jobs', () => {
     'Admin tests should run before Admin build',
   );
   assert.match(testJob, /name: E2E install\s+working-directory: e2e\s+run: npm install --no-audit --no-fund/);
-  assert.match(testJob, /name: E2E contract tests\s+working-directory: e2e\s+run: npm test/);
-  assert.doesNotMatch(testJob, /playwright install/, '没有浏览器旅程后不应再下载 Chromium');
+  assert.match(testJob, /name: Install Playwright Chromium\s+working-directory: e2e\s+run: npx playwright install --with-deps chromium/);
+  assert.match(testJob, /name: E2E contract and public home tests\s+working-directory: e2e\s+run: npm test/);
   assert.ok(
-    testJob.indexOf('name: E2E contract tests') > testJob.indexOf('name: Admin build'),
-    'E2E contracts should run after Worker, frontend, and Admin verification',
+    testJob.indexOf('name: E2E contract and public home tests') > testJob.indexOf('name: Admin build'),
+    'E2E should run after Worker, frontend, and Admin verification',
   );
 });
 
-test('the E2E command runs the deployment contracts', () => {
+test('the E2E command runs deployment contracts plus the public home browser spec', () => {
   const { scripts } = JSON.parse(read('e2e/package.json'));
-  assert.equal(scripts.test, 'npm run test:contracts');
-  const args = scripts['test:contracts'].split(/\s+/);
-  assert.deepEqual(args.slice(0, 3), ['node', '--test', 'tests/*-contract.test.mjs']);
+  assert.equal(scripts.test, 'npm run test:contracts && npm run test:browser');
+  assert.match(scripts['test:browser'], /run-local-e2e\.mjs test tests\/public-home-chat\.spec\.mjs/);
   assert.equal(scripts['test:business-browser'], undefined, 'business browser suite is retired');
+  assert.ok(existsSync(path.join(root, 'e2e/tests/public-home-chat.spec.mjs')));
 });
 
 test('retired browser journeys stay deleted', () => {

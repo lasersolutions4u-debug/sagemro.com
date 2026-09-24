@@ -24,16 +24,20 @@ async function main() {
     const runtime = e2eRuntime();
     const paths = localRunPaths();
     const [target] = args;
-    if (args.length !== 1 || !['worker', 'frontend', 'admin'].includes(target)) throw new Error('Unknown local server');
+    if (args.length !== 1 || !['worker', 'frontend', 'frontend-public', 'admin'].includes(target)) throw new Error('Unknown local server');
     if (target === 'worker') return runNode([wranglerCli, 'dev', '--config', paths.configPath,
       '--local', '--persist-to', paths.stateDir, '--ip', '127.0.0.1', '--port', '8878',
       '--log-level', 'warn', '--show-interactive-dev-session', 'false'], process.env, paths.runDir);
     process.env.VITE_API_BASE = runtime.apiBase;
     if (target === 'frontend') process.env.SAGEMRO_BUILD_TARGET = 'portal';
+    // 主站（营销落地页）用同一个 frontend 源码，但 build target = public。
+    if (target === 'frontend-public') process.env.SAGEMRO_BUILD_TARGET = 'public';
     const { createServer } = await import('../../frontend/node_modules/vite/dist/node/index.js');
-    const root = path.join(repoDir, target);
+    const appDir = target === 'frontend-public' ? 'frontend' : target;
+    const root = path.join(repoDir, appDir);
+    const port = target === 'admin' ? 4274 : target === 'frontend-public' ? 4275 : 4273;
     const server = await createServer({ root, configFile: path.join(root, 'vite.config.js'), envDir: paths.runDir,
-      server: { host: '127.0.0.1', port: target === 'frontend' ? 4273 : 4274, strictPort: true,
+      server: { host: '127.0.0.1', port, strictPort: true,
         proxy: { '/api': { target: runtime.apiBase, changeOrigin: true } } } });
     await server.listen();
     return;
