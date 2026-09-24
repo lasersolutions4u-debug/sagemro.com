@@ -21,7 +21,8 @@ export function getCustomerPortalOrigin({ market, hostname = '' } = {}) {
   return useCn ? 'https://ai.sagemro.cn' : 'https://ai.sagemro.com';
 }
 
-export function buildCustomerPortalUrl({ path = '/service-request', market, hostname, presets = {} } = {}) {
+export function buildCustomerPortalUrl({ path = '/', market, hostname, presets = {} } = {}) {
+  // 工单/服务请求页已下线：AI 门户的入口只有首页对话。
   const url = new URL(path, getCustomerPortalOrigin({ market, hostname }));
   for (const key of SERVICE_REQUEST_PRESET_KEYS) {
     const value = presets?.[key];

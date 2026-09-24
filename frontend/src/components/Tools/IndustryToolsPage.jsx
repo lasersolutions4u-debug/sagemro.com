@@ -300,7 +300,6 @@ function ToolDetail({ tool, copy, locale, values, onChange, onSendMessage, onNav
   const handleSendToolReview = async (prompt) => {
     const hostname = typeof window === 'undefined' ? '' : window.location.hostname;
     const portalUrl = buildCustomerPortalUrl({
-      path: '/service-request',
       hostname,
       presets: { mode: 'assist', source: 'industry-tool' },
     });

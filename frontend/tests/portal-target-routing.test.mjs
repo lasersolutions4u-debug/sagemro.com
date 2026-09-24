@@ -25,16 +25,17 @@ test('lookalike and target-mismatched hosts never gain customer access', () => {
 });
 
 test('public conversion URLs always enter the market-specific customer portal', () => {
+  // 服务请求页已下线：门户入口只剩首页对话，presets 仍按市场拼进查询串。
   assert.equal(
     buildCustomerPortalUrl({
       hostname: 'sagemro.cn',
       presets: { mode: 'assist', brand: 'trumpf', description: 'discard' },
     }),
-    'https://ai.sagemro.cn/service-request?mode=assist&brand=trumpf',
+    'https://ai.sagemro.cn/?mode=assist&brand=trumpf',
   );
   assert.equal(
     buildCustomerPortalUrl({ hostname: 'sagemro.com', presets: { mode: 'manual' } }),
-    'https://ai.sagemro.com/service-request?mode=manual',
+    'https://ai.sagemro.com/?mode=manual',
   );
 });
 
