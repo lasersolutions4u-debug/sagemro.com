@@ -12,87 +12,87 @@ import { setSeoMetadata } from '../../utils/seo';
 
 export const ENGINEER_RECRUITING_COPY = {
   cn: {
-    badge: 'SAGEMRO 工程师合作网络',
-    networkLabel: '工业设备服务网络',
-    title: '让专业工程师价值最大化',
-    subtitle: '面向激光切割机及金属成形设备行业，SAGEMRO 连接服务需求、工程师协作、供应链与 AI 知识能力，逐步建设覆盖全国的设备维修保养、升级改造等专业服务网络。',
-    primary: '提交服务意向',
-    applyNow: '提交服务意向',
-    signIn: '工程师登录',
+    badge: 'SAGEMRO 工程师合作平台',
+    networkLabel: '工业设备服务合作网络',
+    title: '免费品牌与系统，工程师只专注技术',
+    subtitle: '面向激光切割与金属成形设备行业：SAGEMRO 提供免费品牌授权、免费使用的工单/物料/客户管理系统，加上统一品牌宣传、供应链支持与视频、公众号、搜索引擎等多渠道推广；后台 AI 智能助理帮你管理工作、学习和答疑。第一年免加盟费。',
+    primary: '提交合作意向',
+    applyNow: '提交合作意向',
+    signIn: '已合作工程师登录',
     returnToCustomer: '返回客户首页',
     customerHomeHref: 'https://sagemro.cn',
-    navLinks: ['工程师合作', 'AI 与知识库', '合作原则'],
-    introVisualTitle: '工业现场服务协作网络',
+    navLinks: ['平台支持', '平台建设', '合作原则'],
+    introVisualTitle: '品牌、系统、推广与 AI，一起给到工程师',
     introVisualRows: [
-      ['服务机会', 'SERVICE'],
-      ['工程师协作', 'ENGINEER'],
-      ['供应链支持', 'SUPPLY'],
-      ['AI 与知识', 'KNOWLEDGE'],
+      ['免费品牌授权', 'BRAND'],
+      ['免费管理系统', 'SYSTEM'],
+      ['多渠道推广', 'MARKETING'],
+      ['AI 工作助理', 'AI'],
     ],
     carouselKicker: '工程师最关心的三个问题',
     questionsLabel: '工程师关心的问题',
     questionSlides: [
-      { id: 'Q1', question: '我能接到什么单？', confirmation: '带着客户来，平台帮你把服务做完整' },
-      { id: 'Q2', question: '收入怎么算？', confirmation: '工时价值优先，每笔业务清晰核算' },
-      { id: 'Q3', question: 'AI 在合作中做什么？', confirmation: '派工前，先看 AI 整理的接单摘要' },
+      { id: 'Q1', question: '平台免费给我什么？', confirmation: '免费品牌授权、免费管理系统，第一年免加盟费' },
+      { id: 'Q2', question: '收入怎么分配？', confirmation: '合作制平台，公平透明，多劳多得，收益空间不设上限' },
+      { id: 'Q3', question: 'AI 在合作里做什么？', confirmation: '后台 AI 智能助理帮你管理工作、学习和答疑' },
     ],
     questionDetails: [
       {
-        lead: '希望获得更多订单，平台也会根据技术能力、服务区域和可用时间协调匹配服务机会。',
-        benefits: [['已有客户', '接入平台协作'], ['平台订单', '按能力协调匹配'], ['共同开发', '贡献清晰记录']],
+        lead: '工单、物料、客户管理这些系统，SAGEMRO 已经交给第三方成熟产品承担，免费给合作工程师使用；你不需要自己搭平台，也不用额外买软件。',
+        benefits: [['免费品牌授权', '以 SAGEMRO 品牌接单'], ['免费管理系统', '工单、物料、客户都现成'], ['第一年免加盟费', '加入门槛更低']],
         answerLabel: 'YOU BRING THE SKILL',
-        answerTitle: '你负责专业服务，平台连接订单协调、工具备件协作和服务记录',
-        answerRows: [['客户来源清晰', '服务机会和双方投入都有记录。'], ['交付支持逐步完善', '连接订单、工具备件与服务报告。'], ['服务履历持续积累', '真实交付形成个人专业记录。']],
+        answerTitle: '品牌、系统、推广和管理工具，都不用你操心',
+        answerRows: [['免费品牌授权', '统一形象与信任背书，接单更省力。'], ['免费系统使用', '工单、物料、客户管理用成熟第三方系统。'], ['小程序与网站', '客户触达和资料沉淀由平台侧完成。']],
       },
       {
-        lead: '工时服务、配件、维修保养和租赁等业务，结合客户来源、实际投入、成本与合作约定逐笔确认。',
-        benefits: [['按单核算', '收入成本有依据'], ['贡献记录', '客户来源看得见'], ['合作确认', '具体方案单独沟通']],
+        lead: '合作制平台：客户来源、双方投入和实际交付逐笔记录，方案提前沟通，核算有据可查。',
+        benefits: [['按单核算', '收入和成本都有依据'], ['贡献透明', '客户来源看得见'], ['长期合作', '具体方案单独沟通']],
         answerLabel: 'HOW YOU EARN',
-        answerTitle: '专业交付创造收入，清晰记录支撑长期合作',
+        answerTitle: '多劳多得，贡献清晰，合作长期稳定',
         answerRows: [['现场工时服务', '体现工程师的直接技术价值'], ['配件与维修保养', '依据实际投入和成本核算'], ['设备与备件租赁', '结合资源与服务贡献核算']],
       },
       {
-        lead: '客户现象、设备信息、已有记录和 AI 初步整理集中呈现，减少反复沟通，让工程师更快进入有价值的现场服务。',
-        benefits: [['信息更完整', '接单前了解背景'], ['风险提前看', '关注已有安全提示'], ['经验持续沉淀', '真实服务形成知识']],
-        answerLabel: 'CURRENT CAPABILITY',
+        lead: 'SAGEMRO 的 AI 只做一件事：给客户越来越靠谱、越来越专业的回复。由我们人工上传知识库内容与工单内容来喂养它，逐步形成 AI 智能体，替 SAGEMRO 品牌做对外宣传与专业答疑。',
+        benefits: [['人工喂养', '知识库与工单内容由我们上传'], ['越用越专业', '回复质量持续提升'], ['品牌宣传', 'AI 智能体对外讲清 SAGEMRO 能力']],
+        answerLabel: 'AI IN THIS PARTNERSHIP',
         answerStatus: '当前已有',
-        answerTitle: 'AI 先整理接单信息，工程师带着更完整的上下文到现场',
-        answerRows: [['客户现象与设备信息', '把已知问题和设备背景集中展示。'], ['AI 接单摘要', '整理重点信息并提示需要关注的风险。'], ['服务记录回流', '真实交付持续完善知识库与 AI。']],
+        answerTitle: 'AI 的目标只有一个：把专业回复做到越来越靠谱',
+        answerRows: [['不做工单管理', '工单、评价、物料由第三方成熟系统承担。'], ['人工上传内容', '知识库与工单内容由我们维护，AI 从中学习。'], ['AI 工作助理', '帮你管理工作、学习和解答工作中的问题。']],
       },
     ],
     coreValueLabel: '核心价值',
-    coreValueTitle: '少处理琐事，多专注有价值的现场服务',
-    platformSupportTitle: '平台协作',
-    platformSupport: ['订单与沟通', '工具与配件', '记录与报告', '核算与结算'],
-    platformSupportDetails: ['需求确认、进度协调', '准备与资源协作', '信息整理、报告生成', '业务记录、收益核算'],
+    coreValueTitle: '把品牌、系统、推广和管理交给我们，你专注现场技术',
+    platformSupportTitle: '平台直接给你',
+    platformSupport: ['免费品牌授权', '免费管理系统', '小程序与网站', 'AI 工作助理'],
+    platformSupportDetails: ['以 SAGEMRO 品牌对外承接服务，统一形象与信任背书', '工单、物料、客户管理使用成熟第三方系统，免费用', '客户触达与资料沉淀在平台侧完成', '后台 AI 智能助理帮你管理工作、学习和答疑'],
     engineerFocusTitle: '工程师专注',
     engineerFocus: ['故障诊断', '维修保养', '技术判断', '现场交付'],
     engineerFocusDetails: ['找到真正的问题', '完成专业服务', '制定可靠方案', '帮助客户恢复生产'],
-    coreValueText: '平台协助处理订单协调、信息整理、工具备件、服务报告和结算跟进。工程师把更多时间用在诊断、维修、技术判断和现场交付。',
-    payoffTitle: '工程师的核心价值，在现场解决问题',
-    payoffText: '平台连接协作环节，让专业时间产生更高价值。',
-    developmentTitle: '共同建设的四个方向',
-    networkTitle: '平台持续建设更大的服务网络',
-    developmentIntro: '订单、区域服务、供应链、营销和知识能力相互连接，为工程师创造更多服务机会和更完整的交付支持。',
+    coreValueText: 'SAGEMRO 不再自建工单、评价与物料系统，改用第三方成熟产品免费提供给合作工程师；平台负责品牌、系统、推广与供应链，你专注诊断、维修、技术判断与现场交付。',
+    payoffTitle: '工程师的核心价值，永远在现场解决问题',
+    payoffText: '平台把品牌、系统、推广和管理接过去，让专业时间更值钱。',
+    developmentTitle: '平台持续建设的四个方向',
+    networkTitle: '品牌、推广、供应链与 AI，平台持续投入',
+    developmentIntro: '平台把统一品牌宣传、多渠道推广、供应链管理和 AI 知识库运营持续做深，让合作工程师接单更容易、交付更有支撑。',
     developmentDirections: [
-      { title: '全国共享客服中心', status: '逐步布局' },
-      { title: '配件集采与供应链', status: '逐步建设' },
-      { title: '新媒体营销与获客', status: '持续开展' },
-      { title: 'AI 与知识库运营', status: '持续积累' },
+      { title: '统一品牌宣传', status: '持续开展' },
+      { title: '视频、公众号与搜索引擎推广', status: '多渠道并行' },
+      { title: '供应链与备件管理', status: '逐步建设' },
+      { title: 'AI 知识库运营', status: '持续积累' },
     ],
-    developmentDescriptions: ['连接区域工程师、工具备件与服务协作。', '聚合服务需求，提升采购效率与供应稳定性。', '统一开展内容、品牌与客户开发。', '整理服务记录，形成接单摘要与可复用知识。'],
-    flywheelTitle: '工程师越多，真实服务越多，平台能力持续增强',
-    flywheelText: '服务数据推动 AI，规模推动供应链与营销。',
+    developmentDescriptions: ['统一对外形象、案例与专业内容输出。', '视频、公众号、搜索引擎等多渠道触达客户。', '聚合需求，提升采购效率与供应稳定性。', '人工上传知识库与工单内容，持续喂养 AI 智能体。'],
+    flywheelTitle: '工程师越多，真实服务越多，AI 回复越专业，品牌越强',
+    flywheelText: '真实服务沉淀为知识，知识让 AI 更专业，专业带来更多客户。',
     principlesTitle: '合作原则',
     cooperationPrinciples: [
-      { title: '着眼长期服务和共同成长', text: '以长期合作为目标，让工程师、平台与客户在持续服务中共同受益。' },
-      { title: '公平、诚信、透明', text: '客户来源、双方投入和业务收益清晰记录，合作方案提前沟通，核算有据可查。' },
-      { title: '尊重数据价值', text: 'AI 时代，数据是核心价值。详实的服务记录和报告，既形成工程师的专业履历，也持续推动 AI 成长。' },
+      { title: '合作制平台', text: '不是雇佣关系，而是长期合作：客户来源、双方投入和实际收益清晰记录，合作方案提前沟通。' },
+      { title: '公平透明，多劳多得', text: '每笔业务的客户来源、双方投入和实际交付都留痕，核算有据可查，收益空间不设上限。' },
+      { title: '第一年免加盟费', text: '第一年不收取加盟费，先把服务与口碑做起来，后续合作方式由双方另行确认。' },
     ],
     finalCtaTitle: '加入 SAGEMRO 工程师网络',
     finalCtaText: '填写基本信息，运营团队审核后与你联系。',
     finalCtaAction: '提交合作意向',
-    modalTitle: '提交工程师服务意向',
+    modalTitle: '提交工程师合作意向',
     fields: {
       name: '姓名',
       phone: '手机 / 电话',
@@ -123,7 +123,7 @@ export const ENGINEER_RECRUITING_COPY = {
     submitting: '正在提交...',
     success: '申请已收到。SAGEMRO 运营团队会审核资料，并在匹配合适区域后联系你。',
     failure: '提交失败，请稍后重试。',
-    note: '提交申请不会自动创建登录账号。审核通过后，服务代表会收到 SAGEMRO 发出的账号激活链接。',
+    note: '提交申请不会自动创建登录账号；审核通过后由运营团队联系你，并说明品牌授权与系统开通的后续步骤。',
     removeTag: '移除',
     closeApplication: '关闭申请表',
     regionSuggestions: ['华东', '华南', '华北', '长三角', '珠三角', '江苏', '浙江', '上海', '广东'],
@@ -131,88 +131,88 @@ export const ENGINEER_RECRUITING_COPY = {
     skillSuggestions: ['数控报警排查', '伺服驱动维修', '设备保养', '现场排查'],
   },
   en: {
-    badge: 'SAGEMRO Engineer Partner Network',
-    networkLabel: 'Industrial Service Network',
-    title: 'Maximize the Value of Professional Engineers',
-    subtitle: 'For the laser cutting and metal forming equipment industry, SAGEMRO connects service demand, engineer collaboration, supply chain support, and AI knowledge capabilities to develop a professional maintenance and upgrade service network.',
-    primary: 'Submit Service Interest',
-    applyNow: 'Submit Service Interest',
+    badge: 'SAGEMRO Engineer Partner Platform',
+    networkLabel: 'Industrial Service Partner Network',
+    title: 'A free brand licence and free systems, so engineers focus on the work',
+    subtitle: 'For laser cutting and metal forming equipment: SAGEMRO provides a free brand licence, free use of proven third-party work-order, material and customer systems, plus unified brand marketing, supply chain support and multi-channel promotion across video, official accounts and search. A back-office AI assistant helps you manage work, learn and answer on-the-job questions. No franchise fee in year one.',
+    primary: 'Submit Cooperation Interest',
+    applyNow: 'Submit Cooperation Interest',
     howItWorks: 'How It Works',
-    signIn: 'I already have an engineer account',
+    signIn: 'Partner sign-in',
     returnToCustomer: 'Back to Customer Home',
     customerHomeHref: 'https://sagemro.com',
-    navLinks: ['Engineer Partnership', 'AI & Knowledge', 'Principles'],
-    introVisualTitle: 'Industrial field-service collaboration network',
+    navLinks: ['Platform support', 'Platform roadmap', 'Principles'],
+    introVisualTitle: 'Brand, systems, promotion and AI for partner engineers',
     introVisualRows: [
-      ['Service opportunities', 'SERVICE'],
-      ['Engineer collaboration', 'ENGINEER'],
-      ['Supply chain support', 'SUPPLY'],
-      ['AI & knowledge', 'KNOWLEDGE'],
+      ['Free brand licence', 'BRAND'],
+      ['Free systems', 'SYSTEM'],
+      ['Multi-channel promotion', 'MARKETING'],
+      ['AI work assistant', 'AI'],
     ],
     carouselKicker: 'Three questions engineers care about most',
     questionsLabel: 'Engineer questions',
     questionSlides: [
-      { id: 'Q1', question: 'What service work can I take?', confirmation: 'Bring the customer relationship; the platform helps complete the service workflow' },
-      { id: 'Q2', question: 'How is income calculated?', confirmation: 'Field-service time comes first, with clear accounting for every engagement' },
-      { id: 'Q3', question: 'What does AI do in the partnership?', confirmation: 'Review an AI-organized service brief before dispatch' },
+      { id: 'Q1', question: 'What does the platform give me for free?', confirmation: 'A free brand licence, free systems, and no franchise fee in year one' },
+      { id: 'Q2', question: 'How is income shared?', confirmation: 'A cooperative platform: fair, transparent, more work means more return, with no fixed ceiling' },
+      { id: 'Q3', question: 'What does AI do in this partnership?', confirmation: 'A back-office AI assistant helps you manage work, learn and answer questions' },
     ],
     questionDetails: [
       {
-        lead: 'Engineers seeking more work can also receive opportunities coordinated by technical capability, service region, and availability.',
-        benefits: [['Existing customers', 'Connect them to platform collaboration'], ['Platform opportunities', 'Matched by capability'], ['Joint development', 'Contributions are recorded clearly']],
+        lead: 'Work orders, materials and customer management are already covered by proven third-party products that SAGEMRO provides to partner engineers free of charge, so you do not have to build or buy your own systems.',
+        benefits: [['Free brand licence', 'Serve customers under SAGEMRO'], ['Free systems', 'Work orders, materials, customers ready'], ['No year-one franchise fee', 'A lower barrier to join']],
         answerLabel: 'YOU BRING THE SKILL',
-        answerTitle: 'You deliver professional service; the platform connects order coordination, tools, parts, and service records',
-        answerRows: [['Clear opportunity sources', 'Service opportunities and contributions are recorded.'], ['Improving delivery support', 'Connect orders, tools, parts, and reports.'], ['A growing service history', 'Real delivery builds your professional record.']],
+        answerTitle: 'Brand, systems, promotion and management tools without the overhead',
+        answerRows: [['Free brand licence', 'A consistent identity and trust signal.'], ['Free systems in use', 'Work orders, materials and customers on proven third-party tools.'], ['Mini-program and website', 'Customer reach and records handled on the platform side.']],
       },
       {
-        lead: 'Field-service time, parts, maintenance, and rental work are confirmed engagement by engagement against source, contribution, cost, and agreed terms.',
-        benefits: [['Per-engagement accounting', 'Revenue and cost have a basis'], ['Contribution records', 'Opportunity sources stay visible'], ['Terms confirmed', 'Specific arrangements are discussed separately']],
+        lead: 'A cooperative platform: customer source, contributions and actual delivery are recorded engagement by engagement, terms are agreed in advance, and the accounting is verifiable.',
+        benefits: [['Per-engagement accounting', 'Revenue and cost have a basis'], ['Visible contribution', 'Customer source stays on record'], ['Long-term cooperation', 'Specific terms are discussed separately']],
         answerLabel: 'HOW YOU EARN',
-        answerTitle: 'Professional delivery creates income; clear records support long-term cooperation',
+        answerTitle: 'More work, more return, with clear records and long-term cooperation',
         answerRows: [['On-site labor', 'Reflects direct engineering value'], ['Parts and maintenance', 'Calculated from actual contribution and cost'], ['Equipment and spare rental', 'Based on resources and service contribution']],
       },
       {
-        lead: 'Customer symptoms, equipment information, existing records, and an initial AI summary are presented together, reducing repeated communication before valuable field work.',
-        benefits: [['More complete context', 'Understand the background before accepting'], ['Risks visible earlier', 'Review available safety prompts'], ['Experience keeps compounding', 'Real service becomes reusable knowledge']],
-        answerLabel: 'CURRENT CAPABILITY',
+        lead: 'SAGEMRO AI has exactly one goal: answers to customers that keep getting more reliable and more professional. We feed it by uploading knowledge-base and work-order content by hand, so it gradually becomes an AI agent that speaks for the SAGEMRO brand.',
+        benefits: [['Fed by hand', 'We upload knowledge-base and work-order content'], ['Better over time', 'Answer quality keeps improving'], ['Brand promotion', 'The AI agent explains SAGEMRO capability']],
+        answerLabel: 'AI IN THIS PARTNERSHIP',
         answerStatus: 'AVAILABLE NOW',
-        answerTitle: 'AI organizes dispatch information so engineers arrive with more complete context',
-        answerRows: [['Customer symptoms and equipment', 'Known issues and equipment context in one place.'], ['AI dispatch summary', 'Organizes key facts and highlights known risks.'], ['Service records return', 'Real delivery keeps improving the knowledge base and AI.']],
+        answerTitle: 'One goal for AI: increasingly reliable professional answers',
+        answerRows: [['No work-order management', 'Work orders, reviews and materials stay with proven third-party systems.'], ['Content uploaded by hand', 'We maintain the knowledge base and work-order content the AI learns from.'], ['AI work assistant', 'Helps you manage work, learn, and answer on-the-job questions.']],
       },
     ],
     coreValueLabel: 'Core value',
-    coreValueTitle: 'Spend less time on administration and more on valuable field service',
-    platformSupportTitle: 'Platform support',
-    platformSupport: ['Orders and communication', 'Tools and parts', 'Records and reports', 'Accounting and settlement'],
-    platformSupportDetails: ['Requirements and progress coordination', 'Preparation and resource collaboration', 'Information organization and reporting', 'Business records and income accounting'],
+    coreValueTitle: 'Hand over brand, systems, promotion and management, and focus on the work on site',
+    platformSupportTitle: 'Platform provides',
+    platformSupport: ['Free brand licence', 'Free management systems', 'Mini-program and website', 'AI work assistant'],
+    platformSupportDetails: ['Serve customers under the SAGEMRO brand with a consistent identity', 'Work orders, materials and customers on proven third-party systems, free to use', 'Customer reach and record capture handled on the platform side', 'A back-office AI assistant for work management, learning and questions'],
     engineerFocusTitle: 'Engineer focus',
     engineerFocus: ['Fault diagnosis', 'Maintenance and repair', 'Technical judgment', 'On-site delivery'],
     engineerFocusDetails: ['Find the real problem', 'Complete professional service', 'Develop a reliable solution', 'Help the customer restore production'],
-    coreValueText: 'The platform helps with order coordination, information, tools and parts, service reports, and settlement follow-up. Engineers spend more time on diagnosis, repair, technical judgment, and field delivery.',
-    payoffTitle: 'An engineer\'s core value is solving problems on site',
-    payoffText: 'The platform connects the collaboration steps so professional time creates more value.',
-    developmentTitle: 'Four development directions',
-    networkTitle: 'The platform is building a larger service network',
-    developmentIntro: 'Orders, regional service, supply chain, marketing, and knowledge capabilities work together to create more opportunities and stronger delivery support.',
+    coreValueText: 'SAGEMRO no longer builds its own work-order, review or material systems; proven third-party products are provided to partner engineers free of charge. The platform handles brand, systems, promotion and supply chain, while you focus on diagnosis, repair, technical judgement and on-site delivery.',
+    payoffTitle: 'An engineer\'s core value is always solving problems on site',
+    payoffText: 'The platform takes on brand, systems, promotion and management so professional time is worth more.',
+    developmentTitle: 'Four directions the platform keeps building',
+    networkTitle: 'Brand, promotion, supply chain and AI: continuous platform investment',
+    developmentIntro: 'The platform keeps deepening unified brand marketing, multi-channel promotion, supply-chain management and AI knowledge-base operations, so partner engineers win work more easily and deliver with more support.',
     developmentDirections: [
-      { title: 'National shared service center', status: 'Expanding progressively' },
-      { title: 'Parts sourcing and supply chain', status: 'Building progressively' },
-      { title: 'Digital marketing and customer acquisition', status: 'Ongoing' },
-      { title: 'AI and knowledge-base operations', status: 'Continuously developing' },
+      { title: 'Unified brand marketing', status: 'Ongoing' },
+      { title: 'Video, official account and search promotion', status: 'Multi-channel' },
+      { title: 'Supply chain and spare parts', status: 'Building progressively' },
+      { title: 'AI knowledge-base operations', status: 'Continuously developing' },
     ],
-    developmentDescriptions: ['Connect regional engineers, tools, parts, and service collaboration.', 'Aggregate service demand to improve purchasing efficiency and supply stability.', 'Coordinate content, brand building, and customer development.', 'Organize service records into dispatch summaries and reusable knowledge.'],
-    flywheelTitle: 'More engineers create more real service and a stronger platform',
-    flywheelText: 'Service data advances AI; scale strengthens supply chain and marketing.',
+    developmentDescriptions: ['One consistent identity, case studies and professional content.', 'Reach customers through video, official accounts, search engines and more.', 'Aggregate demand to improve purchasing efficiency and supply stability.', 'Knowledge-base and work-order content uploaded by hand keeps feeding the AI agent.'],
+    flywheelTitle: 'More engineers, more real service, more professional AI, stronger brand',
+    flywheelText: 'Real service becomes knowledge; knowledge sharpens the AI; a sharper AI brings more customers.',
     principlesTitle: 'Cooperation principles',
     cooperationPrinciples: [
-      { title: 'Long-term service and shared growth', text: 'We aim for sustained cooperation in which engineers, the platform, and customers benefit from ongoing service.' },
-      { title: 'Fairness, integrity, and transparency', text: 'Customer sources, contributions, and business returns are recorded clearly, with cooperation terms discussed in advance.' },
-      { title: 'Respect for data value', text: 'Detailed service records build an engineer\'s professional history while continuously improving AI-supported knowledge.' },
+      { title: 'A cooperative platform', text: 'Not employment: a long-term partnership where customer source, contributions and returns are recorded clearly and terms are agreed in advance.' },
+      { title: 'Fair, transparent, more work means more return', text: 'Every engagement keeps its customer source, contributions and delivery on record with verifiable accounting, and no ceiling on what you can earn.' },
+      { title: 'No franchise fee in year one', text: 'No franchise fee for the first year: build the service and reputation first, then agree the next stage together.' },
     ],
     finalCtaTitle: 'Join the SAGEMRO Engineer Network',
     finalCtaText: 'Share your basic information and our operations team will contact you after review.',
     finalCtaAction: 'Submit Cooperation Interest',
-    modalTitle: 'Submit Engineer Service Interest',
+    modalTitle: 'Submit Engineer Cooperation Interest',
     fields: {
       name: 'Name',
       phone: 'Phone',
@@ -243,7 +243,7 @@ export const ENGINEER_RECRUITING_COPY = {
     submitting: 'Submitting...',
     success: 'Application received. The SAGEMRO operations team will review your information and contact you when there is a suitable regional match.',
     failure: 'Submission failed. Please try again.',
-    note: 'Submitting an application does not create a login account. Approved representatives receive an account activation link from SAGEMRO after review.',
+    note: 'Submitting an application does not create a login account. After review, the operations team will contact you and explain the brand licence and system access steps.',
     equipmentSuggestions: ['Laser cutting machine', 'Press brake', 'Laser source', 'Cutting head'],
   },
 };
@@ -252,11 +252,11 @@ export function buildEngineerRecruitingSeo(locale) {
   const isCn = locale === 'cn';
   const canonicalHost = isCn ? 'https://engineer.sagemro.cn' : 'https://engineer.sagemro.com';
   const title = isCn
-    ? '认证服务代表网络 | SAGEMRO'
-    : 'Industrial Service Engineer Network | SAGEMRO';
+    ? '工程师合作网络 | SAGEMRO'
+    : 'Engineer Partner Network | SAGEMRO';
   const description = isCn
-    ? '加入 SAGEMRO 工程师合作网络，为激光切割机、折弯机和金属成形设备提供清晰、可记录的现场服务协作。'
-    : 'Join SAGEMRO\'s industrial service engineer network for laser cutting and metal forming equipment field service.';
+    ? '免费品牌授权、免费工单/物料/客户管理系统、统一品牌宣传与多渠道推广，还有后台 AI 智能助理；第一年免加盟费，SAGEMRO 与工程师合作共赢。'
+    : 'A free SAGEMRO brand licence, free work-order, material and customer systems, unified brand marketing, multi-channel promotion and a back-office AI assistant. No franchise fee in year one.';
 
   return {
     title,
@@ -656,7 +656,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
         <main>
           <section className="grid min-h-[470px] border-b-[12px] border-[#d7ded9] bg-[#fbfaf5] lg:grid-cols-[1.12fr_0.88fr]">
             <div className="flex flex-col justify-center px-6 py-14 sm:px-12 lg:px-[70px] lg:py-[68px]">
-              <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.17em] text-[#ef8244]">SAGEMRO INDUSTRIAL SERVICE NETWORK</div>
+              <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.17em] text-[#ef8244]">SAGEMRO ENGINEER PARTNER PROGRAM</div>
               <h1 className="mt-[22px] max-w-[690px] text-[40px] font-black leading-[1.17] tracking-[-0.05em] text-[#153e3c] sm:text-[55px]">{copy.title}</h1>
               <p className="mt-5 max-w-[690px] text-[15px] leading-[1.85] text-[#697a76]">{copy.subtitle}</p>
               <div className="mt-[30px] flex flex-wrap items-center gap-[22px]">
@@ -666,7 +666,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
             </div>
             <aside className="relative m-0 flex min-h-[360px] flex-col justify-between bg-[#052e2f] p-7 text-white before:absolute before:left-0 before:top-0 before:h-[5px] before:w-[74px] before:bg-[#ef8244] lg:m-[42px_38px_42px_0] lg:p-[35px]">
               <div>
-                <div className="font-mono text-[10px] font-semibold tracking-[0.14em] text-[#95d7c8]">SAGEMRO SERVICE OS</div>
+                <div className="font-mono text-[10px] font-semibold tracking-[0.14em] text-[#95d7c8]">SAGEMRO PARTNER PLATFORM</div>
                 <h2 className="mt-[26px] max-w-xs text-[31px] font-black leading-[1.35] tracking-[-0.035em]">{copy.introVisualTitle}</h2>
               </div>
               <div className="border-t border-white/15">
@@ -731,7 +731,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
 
           <section id="focus" className="bg-[#f1ecdf] px-6 py-14 sm:px-10 lg:px-[68px] lg:py-[72px]">
             <div className="grid items-end gap-5 lg:grid-cols-[1.2fr_0.8fr] lg:gap-[55px]">
-              <div><div className="font-mono text-[10px] font-semibold tracking-[0.15em] text-[#ef8244]">MORE TIME ON VALUABLE SERVICE</div><h2 className="mt-[18px] max-w-2xl text-[35px] font-black leading-[1.27] tracking-[-0.04em] sm:text-[43px]">{copy.coreValueTitle}</h2></div>
+              <div><div className="font-mono text-[10px] font-semibold tracking-[0.15em] text-[#ef8244]">BRAND, SYSTEMS, PROMOTION AND AI, PROVIDED</div><h2 className="mt-[18px] max-w-2xl text-[35px] font-black leading-[1.27] tracking-[-0.04em] sm:text-[43px]">{copy.coreValueTitle}</h2></div>
               <p className="m-0 text-[13px] leading-[1.8] text-[#697a76]">{copy.coreValueText}</p>
             </div>
             <div className="mt-[34px] grid border-y border-[#cfc8bb] lg:grid-cols-[1fr_72px_1fr]">
@@ -754,7 +754,7 @@ export function EngineerRecruitingPage({ onOpenLogin }) {
 
           <section id="network" className="bg-[#fbfaf5] px-6 py-14 sm:px-10 lg:px-[68px] lg:py-[72px]">
             <div className="grid items-end gap-5 lg:grid-cols-[1.2fr_0.8fr] lg:gap-[55px]">
-              <div><div className="font-mono text-[10px] font-semibold tracking-[0.15em] text-[#ef8244]">PLATFORM GROWTH DIRECTION</div><h2 className="mt-[18px] text-[35px] font-black leading-[1.27] tracking-[-0.04em] sm:text-[43px]">{copy.networkTitle}</h2></div>
+              <div><div className="font-mono text-[10px] font-semibold tracking-[0.15em] text-[#ef8244]">WHAT THE PLATFORM KEEPS BUILDING</div><h2 className="mt-[18px] text-[35px] font-black leading-[1.27] tracking-[-0.04em] sm:text-[43px]">{copy.networkTitle}</h2></div>
               <p className="m-0 text-[13px] leading-[1.8] text-[#697a76]">{copy.developmentIntro}</p>
             </div>
             <div className="mt-[37px] grid border-l border-t border-[#cfd5cf] sm:grid-cols-2 lg:grid-cols-4">
