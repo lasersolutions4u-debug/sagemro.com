@@ -144,14 +144,16 @@ test('schema snapshot includes the current work-order workflow migrations', () =
   assert.match(schema, /CREATE TABLE IF NOT EXISTS field_evidence_cleanup_queue\s*\(/);
 });
 
-test('onsite arrival is required for completion but not for saving a service report draft', () => {
+test('工单相关的派生函数已随功能下架删除', () => {
   const source = readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
-  const saveStart = source.indexOf('async function handleSaveRepairRecord');
-  const resolveStart = source.indexOf('async function handleResolveWorkOrder');
-  const saveSource = source.slice(saveStart, source.indexOf('// ============ 工单附件', saveStart));
-  const resolveSource = source.slice(resolveStart, source.indexOf('// 客户取消工单', resolveStart));
 
-  assert.doesNotMatch(saveSource, /arrival_verification_required/);
-  assert.match(resolveSource, /arrival_verification_required/);
-  assert.match(resolveSource, /arrival_verified_at/);
+  // 到场核验 / 服务报告 / 工单物料都随工单体系下线：对应 handler 不应再存在于入口文件。
+  for (const retired of [
+    'handleSaveRepairRecord',
+    'handleResolveWorkOrder',
+    'replaceWorkOrderMaterialItems',
+    'insertWorkOrderMaterialItem',
+  ]) {
+    assert.doesNotMatch(source, new RegExp(retired), `${retired} 属于已下线的工单体系`);
+  }
 });

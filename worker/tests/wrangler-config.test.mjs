@@ -11,10 +11,11 @@ test('committed wrangler config does not include development bypass verification
   assert.doesNotMatch(config, /^\s*DEV_BYPASS_CODE\s*=/m);
 });
 
-test('field evidence uses a private R2 binding in every deployed environment', async () => {
+test('R2 绑定指向附件桶（现场证据随工单体系下线）', async () => {
   const config = await readFile(wranglerTomlPath, 'utf8');
 
-  assert.match(config, /\[\[r2_buckets\]\]\s*binding\s*=\s*"FIELD_EVIDENCE"\s*bucket_name\s*=\s*"sagemro-field-evidence"/m);
-  assert.match(config, /\[\[env\.production\.r2_buckets\]\]\s*binding\s*=\s*"FIELD_EVIDENCE"\s*bucket_name\s*=\s*"sagemro-field-evidence"/m);
-  assert.doesNotMatch(config, /FIELD_EVIDENCE[\s\S]{0,250}R2_PUBLIC_HOST|R2_PUBLIC_HOST[\s\S]{0,250}FIELD_EVIDENCE/m);
+  // FIELD_EVIDENCE 私有桶随工单体系一并下架；CN 只剩附件桶，生产环境同样绑定。
+  assert.match(config, /\[\[r2_buckets\]\]\s*binding\s*=\s*"ATTACHMENTS"\s*bucket_name\s*=\s*"sagemro-attachments"/m);
+  assert.match(config, /\[\[env\.production\.r2_buckets\]\]\s*binding\s*=\s*"ATTACHMENTS"\s*bucket_name\s*=\s*"sagemro-attachments"/m);
+  assert.doesNotMatch(config, /FIELD_EVIDENCE/);
 });

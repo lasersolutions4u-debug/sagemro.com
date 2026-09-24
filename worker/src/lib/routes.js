@@ -10,30 +10,12 @@ export function isTestRoute(path) {
     || path === '/api/clear-test-data';
 }
 
+// 受保护路由白名单：必须与 index.js 里 routeRequest 的已登录分支保持同步。
+// 系统已裁剪为主站（营销页）/ AI 门户 / 知识中枢 / 工程师招募页，
+// 工单、物料、客户管理、商务、评价、设备、通知等接口已下架，不要在这里恢复。
 export function isKnownProtectedRoute(path) {
   return path.startsWith('/api/admin/')
-    || path === '/api/material-requisitions'
-    || path.startsWith('/api/material-requisitions/')
-    || path === '/api/material-requests'
-    || path === '/api/upsell-requests'
-    || path === '/api/upsell-requests/mine'
-    || path === '/api/leads/machine'
     || path === '/api/conversations'
     || path.startsWith('/api/conversations/')
-    || path === '/api/materials'
-    || path === '/api/location/search'
-    || path === '/api/workorders'
-    || path.startsWith('/api/workorders/')
-    || path === '/api/devices'
-    || path.startsWith('/api/devices/')
-    || path === '/api/notifications'
-    || path.startsWith('/api/notifications/')
-    || path.startsWith('/api/engineers/')
-    || path === '/api/push-subscription'
-    || path === '/api/platform-ratings'
-    || path === '/api/customer-ratings'
-    || path === '/api/customers/profile'
-    || path === '/api/customers/push-subscription'
-    || /^\/api\/customers\/[^/]+\/reviews$/.test(path)
     || path === '/api/auth/change-password';
 }

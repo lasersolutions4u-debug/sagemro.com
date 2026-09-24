@@ -13,9 +13,6 @@ export async function handlePublicRoute(request, env, ctx, handlers) {
   if (path === '/api/auth/register/customer' && request.method === 'POST') {
     return handlers.handleRegisterCustomer(request, env);
   }
-  if (path === '/api/auth/register/engineer' && request.method === 'POST') {
-    return handlers.handlePublicEngineerRegistrationClosed(request, env);
-  }
   if (path === '/api/auth/login' && request.method === 'POST') {
     return handlers.handleLogin(request, env);
   }
@@ -24,9 +21,6 @@ export async function handlePublicRoute(request, env, ctx, handlers) {
   }
   if (path === '/api/auth/logout' && request.method === 'POST') {
     return handlers.handleLogout(request, env);
-  }
-  if (path === '/api/auth/engineer/activate' && request.method === 'POST') {
-    return handlers.handleEngineerActivation(request, env);
   }
   if (path === '/api/auth/reset-password' && request.method === 'POST') {
     return handlers.handleResetPassword(request, env);
@@ -45,6 +39,9 @@ export async function handlePublicRoute(request, env, ctx, handlers) {
   }
   if (path === '/api/leads' && request.method === 'POST') {
     return handlers.handleSubmitLead(request, env);
+  }
+  if (path === '/api/contact' && request.method === 'POST') {
+    return handlers.handleSubmitConsultation(request, env);
   }
   if (path === '/api/leads/bend-simulation' && request.method === 'POST') {
     return handlers.handleSubmitBendSimulationReview(request, env);
