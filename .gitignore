@@ -82,3 +82,11 @@ reports/**/screenshots/*.png
 # Local historical execution reports
 /reports/
 /.superpowers/sdd/
+
+# 策略与决策材料：含公司财务（现金与融资安排）、客户关系与竞争判断，仅本地保存。
+# 不公开、不团队共享。整目录忽略而非逐个列举，新出现的文件同样不入库。
+/docs/research/
+
+# 文档转换工具（md2html 等）：非敏感，但暂不追踪。
+# 若需团队共享，删掉下面这一行即可。
+/docs/tools/
