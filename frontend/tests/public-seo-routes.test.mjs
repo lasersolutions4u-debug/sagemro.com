@@ -8,7 +8,6 @@ import { getDirectAccessNoindexToolRoutes, getPublicSeoRoute, getPublicSeoRoutes
 import { getServicePages } from '../src/data/servicePages.js';
 import { getTechnicalAuthor } from '../src/data/technicalAuthors.js';
 import { getTechnicalReviewPolicy } from '../src/data/technicalReviewPolicy.js';
-import { getBrandServicePages } from '../src/data/brandServicePages.js';
 import { getPublicHomeContent } from '../src/data/publicHomeContent.js';
 import {
   escapeHtml,
@@ -138,14 +137,17 @@ test('manifest body mirrors visible homepage and tool headings', () => {
   assert.deepEqual(home.body.paragraphs, [visibleHome.hero.description]);
   assert.equal(homeCn.body.h1, visibleHomeCn.hero.title);
   assert.deepEqual(homeCn.body.paragraphs, [visibleHomeCn.hero.description]);
+  // zh-CN 首页多出一节「整机厂售后协作」；国际站维持四节。
   assert.equal(home.body.sections.length, 4);
-  assert.equal(homeCn.body.sections.length, 4);
+  assert.equal(homeCn.body.sections.length, 5);
   assert.deepEqual(home.body.faqs, visibleHome.faqs.items);
   assert.deepEqual(homeCn.body.faqs, visibleHomeCn.faqs.items);
-  for (const href of ['/services/', '/brands/', '/tools/', '/insights/']) {
+  for (const href of ['/services/', '/tools/', '/insights/']) {
     assert.ok(home.body.links.some((link) => link.href === href));
     assert.ok(homeCn.body.links.some((link) => link.href === href));
   }
+  assert.ok(home.body.links.some((link) => link.href === '/partners/'));
+  assert.equal(homeCn.body.links.some((link) => link.href === '/partners/'), false);
 
   for (const locale of ['en', 'zh-CN']) {
     for (const tool of publicIndustryTools) {
@@ -155,15 +157,33 @@ test('manifest body mirrors visible homepage and tool headings', () => {
   }
 });
 
-test('manifest publishes the brand hub and all brand service pages on public hosts only', () => {
+test('partner intake page is published on the international host only', () => {
+  const enRoutes = getPublicSeoRoutes('en');
+  const cnRoutes = getPublicSeoRoutes('zh-CN');
+  const partner = enRoutes.find((route) => route.path === '/partners');
+
+  assert.ok(partner, 'expected an international /partners route');
+  assert.equal(partner.canonical, 'https://sagemro.com/partners/');
+  assert.equal(partner.type, 'partners');
+  assert.equal(cnRoutes.some((route) => route.path === '/partners'), false);
+  assert.equal(/ai\.sagemro\./.test(partner.canonical), false);
+
+  // 预渲染内容必须与可见页面同源，防止两处文案漂移。
+  const visible = getPublicHomeContent(false).partnerPage;
+  assert.equal(partner.body.h1, visible.title);
+  assert.deepEqual(partner.body.paragraphs, [visible.description]);
+  assert.deepEqual(
+    partner.body.sections.map((section) => section.heading),
+    visible.sections.map((section) => section.heading),
+  );
+});
+
+test('manifest publishes no brand pages after the brand hub removal', () => {
   for (const locale of ['en', 'zh-CN']) {
     const routes = getPublicSeoRoutes(locale);
-    assert.ok(routes.some((route) => route.path === '/brands' && route.type === 'brands-hub'));
-    for (const brand of getBrandServicePages(locale)) {
-      const route = routes.find((candidate) => candidate.path === `/brands/${brand.slug}`);
-      assert.equal(route?.type, 'brand');
-      assert.match(JSON.stringify(route.structuredData), /"Service"/);
-    }
+    // 品牌页已下线：公开站不再发布 /brands 路由，也不再承载任何品牌名。
+    assert.equal(routes.some((route) => route.path.startsWith('/brands')), false);
+    assert.equal(routes.some((route) => route.type === 'brand' || route.type === 'brands-hub'), false);
     assert.equal(routes.some((route) => route.path.startsWith('/service-request')), false);
     assert.equal(routes.some((route) => /ai\.sagemro\./.test(route.canonical)), false);
   }
@@ -203,13 +223,11 @@ test('prerendered public content has a visible branded first-paint contract', ()
   }
 });
 
-test('international brand structured data does not overpromise worldwide field coverage', () => {
-  const internationalBrand = getPublicSeoRoute('/brands/trumpf', 'en');
-  const cnBrand = getPublicSeoRoute('/brands/trumpf', 'zh-CN');
-  const internationalService = internationalBrand.structuredData['@graph'].find((item) => item['@type'] === 'Service');
-  const cnService = cnBrand.structuredData['@graph'].find((item) => item['@type'] === 'Service');
-  assert.equal(Object.hasOwn(internationalService, 'areaServed'), false);
-  assert.equal(cnService.areaServed, 'CN');
+test('removed brand routes are no longer resolvable in either locale', () => {
+  assert.equal(getPublicSeoRoute('/brands/trumpf', 'en'), null);
+  assert.equal(getPublicSeoRoute('/brands/trumpf', 'zh-CN'), null);
+  assert.equal(getPublicSeoRoute('/brands', 'en'), null);
+  assert.equal(getPublicSeoRoute('/brands', 'zh-CN'), null);
 });
 
 test('localized 404 documents reuse the visible branded shell without adding page copy', () => {

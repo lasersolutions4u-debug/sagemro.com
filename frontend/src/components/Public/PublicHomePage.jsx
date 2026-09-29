@@ -62,10 +62,6 @@ const labels = {
     reasonsTitle: '能不能做、怎么报价、如何落地、后续谁负责',
     processEyebrow: '统一服务流程',
     processTitle: '一份请求贯穿判断、报价与执行',
-    brandsEyebrow: '设备与品牌支持',
-    brandsTitle: '按设备、系统与部件能力匹配服务',
-    brandsBody: '不以单一品牌限定服务范围。请提交铭牌、型号、控制系统与故障信息，我们据此确认是否具备服务条件。',
-    viewBrands: '查看品牌支持',
     toolsEyebrow: '工具',
     toolsTitle: '先把关键数据整理清楚',
     insightsEyebrow: '技术洞察',
@@ -89,10 +85,6 @@ const labels = {
     reasonsTitle: 'Can it be done, how is it priced, how is it delivered, and what follows?',
     processEyebrow: 'One service workflow',
     processTitle: 'One request connects assessment, quotation, and delivery',
-    brandsEyebrow: 'Equipment and brand support',
-    brandsTitle: 'Match service capability to the machine, system, and component',
-    brandsBody: 'Support is not limited to one brand. Share the nameplate, model, control system, and fault evidence so service feasibility can be confirmed.',
-    viewBrands: 'Explore brand support',
     toolsEyebrow: 'Tools',
     toolsTitle: 'Organize key operating data first',
     insightsEyebrow: 'Insights',
@@ -128,37 +120,128 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
     <PublicSiteShell isCn={isCn} onOpenLegal={onOpenLegal}>
       <section data-home-section="hero" className="relative overflow-hidden border-b border-[#e6dccf] bg-[#f7f3ed] px-5 py-16 md:py-24">
         <div className="pointer-events-none absolute inset-0 opacity-45" style={{ backgroundImage: 'linear-gradient(#e8ded2 1px, transparent 1px), linear-gradient(90deg, #e8ded2 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
-        <div className="relative mx-auto grid max-w-[1240px] gap-10 lg:grid-cols-[1.35fr_0.65fr] lg:px-3">
+        <div className={`relative mx-auto grid max-w-[1240px] gap-10 lg:px-3 ${isCn ? '' : 'lg:grid-cols-[1.35fr_0.65fr]'}`}>
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#d97706]">{content.hero.eyebrow}</p>
             <h1 className="mt-5 max-w-4xl text-4xl font-semibold leading-[1.12] tracking-[-0.04em] text-[#21160c] md:text-6xl">{content.hero.title}</h1>
             <p className="mt-6 max-w-3xl text-base leading-8 text-[#6b5a48] md:text-lg">{content.hero.description}</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button type="button" onClick={openConsultationForm} className="flex min-h-12 items-center justify-center rounded-lg bg-[#f59e0b] px-6 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24]">
-                {copy.consultCta}
+                {isCn ? content.audiences.maker.cta : copy.consultCta}
               </button>
-              <a href={content.requestCtas.assist.href} className="flex min-h-12 items-center justify-center rounded-lg border border-[#c9b9a5] bg-[#fffdf8] px-6 text-sm font-semibold text-[#2d2116] transition-colors hover:border-[#d97706] hover:bg-white">
-                {copy.aiCta}
+              <a href={isCn ? '#maker-boundary' : content.requestCtas.assist.href} className="flex min-h-12 items-center justify-center rounded-lg border border-[#c9b9a5] bg-[#fffdf8] px-6 text-sm font-semibold text-[#2d2116] transition-colors hover:border-[#d97706] hover:bg-white">
+                {isCn ? content.audiences.maker.secondaryCta : copy.aiCta}
               </a>
             </div>
 
-            <div className="mt-10 border-l-4 border-[#ea580c] bg-[#fffdf8] p-5">
-              <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[#c2410c]">{isCn ? '提交前准备' : 'Before submitting'}</p>
-              <ul className="mt-4 grid gap-3 text-sm leading-6 text-[#6b5a48] sm:grid-cols-3">
-                {(isCn
-                  ? ['设备品牌与型号', '完整报警代码与故障现象', '现场地区、停机影响与联系方式']
-                  : ['Equipment brand and model', 'Complete alarm code and symptom', 'Site region, production impact, and contact details']
-                ).map((item, index) => (
-                  <li key={item} className="flex gap-2"><span className="font-mono font-bold text-[#d97706]">0{index + 1}</span><span>{item}</span></li>
-                ))}
-              </ul>
+            {!isCn && (
+              <div className="mt-10 border-l-4 border-[#ea580c] bg-[#fffdf8] p-5">
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[#c2410c]">Before submitting</p>
+                <ul className="mt-4 grid gap-3 text-sm leading-6 text-[#6b5a48] sm:grid-cols-3">
+                  {['Equipment brand and model', 'Complete alarm code and symptom', 'Site region, production impact, and contact details'].map((item, index) => (
+                    <li key={item} className="flex gap-2"><span className="font-mono font-bold text-[#d97706]">0{index + 1}</span><span>{item}</span></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          {!isCn && (
+            <div className="lg:pt-2">
+              <HomeChatPanel isCn={isCn} onOpenLegal={onOpenLegal} />
             </div>
-          </div>
-          <div className="lg:pt-2">
-            <HomeChatPanel isCn={isCn} onOpenLegal={onOpenLegal} />
-          </div>
+          )}
         </div>
       </section>
+
+      {isCn && (
+        <section data-home-section="maker" className="bg-[#1a1a1a] px-5 py-16 text-white md:py-24">
+          <div className="mx-auto max-w-[1240px] lg:px-3">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#fbbf24]">{content.makerEngagements.eyebrow}</p>
+            <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.025em] md:text-4xl">{content.makerEngagements.title}</h2>
+            <div className="mt-10 grid gap-px bg-[#43382d] lg:grid-cols-3">
+              {content.makerEngagements.items.map((item) => (
+                <article key={item.key} className="bg-[#252525] p-6">
+                  <h3 className="text-lg font-semibold">{item.title}</h3>
+                  <dl className="mt-5 space-y-4 text-sm leading-7">
+                    <div>
+                      <dt className="font-mono text-xs text-[#fbbf24]">{content.makerEngagements.columns.context}</dt>
+                      <dd className="mt-1 text-[#d8cec0]">{item.context}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-mono text-xs text-[#fbbf24]">{content.makerEngagements.columns.approach}</dt>
+                      <dd className="mt-1 text-[#d8cec0]">{item.approach}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-mono text-xs text-[#fbbf24]">{content.makerEngagements.columns.need}</dt>
+                      <dd className="mt-1 text-[#d8cec0]">{item.need}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-14 grid gap-10 lg:grid-cols-2">
+              <div>
+                <h3 className="text-xl font-semibold">{content.makerWorkflow.title}</h3>
+                <ol className="mt-6 grid gap-5 sm:grid-cols-2">
+                  {content.makerWorkflow.steps.map((step, index) => (
+                    <li key={step.key} className="border-t-2 border-[#f59e0b] pt-4">
+                      <span className="font-mono text-xs font-bold text-[#fbbf24]">STEP 0{index + 1}</span>
+                      <h4 className="mt-2 font-semibold">{step.title}</h4>
+                      <p className="mt-2 text-sm leading-7 text-[#d8cec0]">{step.detail}</p>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+              <div id="maker-boundary">
+                <h3 className="text-xl font-semibold">{content.makerBoundary.title}</h3>
+                <ul className="mt-6 divide-y divide-[#43382d] border-y border-[#43382d]">
+                  {content.makerBoundary.items.map((item) => (
+                    <li key={item.key} className="py-4 text-sm leading-7 text-[#d8cec0]">{item.detail}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="mt-14">
+              <h3 className="text-xl font-semibold">{content.makerFaqs.title}</h3>
+              <div className="mt-6 divide-y divide-[#43382d] border-y border-[#43382d]">
+                {content.makerFaqs.items.map((item) => (
+                  <details key={item.key} className="group py-1">
+                    <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 py-3 text-base font-semibold marker:content-none">
+                      {item.question}<span className="font-mono text-[#fbbf24] group-open:rotate-45">＋</span>
+                    </summary>
+                    <p className="max-w-3xl pb-6 pr-10 text-sm leading-7 text-[#d8cec0]">{item.answer}</p>
+                  </details>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {isCn && (
+        <section data-home-section="user-entry" className="border-b border-[#e6dccf] bg-[#fffdf8] px-5 py-16 md:py-20">
+          <div className="mx-auto max-w-[900px]">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#d97706]">{content.audiences.user.eyebrow}</p>
+              <h2 className="mt-4 max-w-3xl text-3xl font-semibold tracking-[-0.025em] text-[#21160c] md:text-4xl">{content.audiences.user.title}</h2>
+              <p className="mt-5 max-w-3xl text-base leading-8 text-[#6b5a48]">{content.audiences.user.description}</p>
+              <div className="mt-8">
+                <a href={content.requestCtas.assist.href} className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[#f59e0b] px-6 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24]">{content.audiences.user.cta}</a>
+              </div>
+              <div className="mt-10 border-l-4 border-[#ea580c] bg-[#f7f3ed] p-5">
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[#c2410c]">提交前准备</p>
+                <ul className="mt-4 grid gap-3 text-sm leading-6 text-[#6b5a48] sm:grid-cols-3">
+                  {['设备品牌与型号', '完整报警代码与故障现象', '现场地区、停机影响与联系方式'].map((item, index) => (
+                    <li key={item} className="flex gap-2"><span className="font-mono font-bold text-[#d97706]">0{index + 1}</span><span>{item}</span></li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section data-home-section="problems" className="border-b border-[#e6dccf] bg-[#fffdf8] px-5 py-14 md:py-20">
         <div className="mx-auto max-w-[1240px] lg:px-3">
@@ -208,6 +291,19 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
         </div>
       </section>
 
+      {!isCn && content.partnerEntry && (
+        <section data-home-section="partner-entry" className="border-y border-[#e6dccf] bg-[#fff5d9] px-5 py-14 md:py-20">
+          <div className="mx-auto grid max-w-[1240px] gap-8 lg:grid-cols-[1fr_auto] lg:items-end lg:px-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#c2410c]">{content.partnerEntry.eyebrow}</p>
+              <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.025em] text-[#21160c] md:text-4xl">{content.partnerEntry.title}</h2>
+              <p className="mt-5 max-w-3xl text-sm leading-7 text-[#62513e]">{content.partnerEntry.description}</p>
+            </div>
+            <a href={content.partnerEntry.href} className="inline-flex min-h-12 items-center justify-center rounded-lg border border-[#c9b9a5] bg-[#fffdf8] px-6 text-sm font-semibold text-[#2d2116] transition-colors hover:border-[#d97706] hover:bg-white">{content.partnerEntry.cta}</a>
+          </div>
+        </section>
+      )}
+
       <section data-home-section="process" className="bg-[#fffdf8] px-5 py-16 md:py-24">
         <div className="mx-auto max-w-[1240px] lg:px-3">
           <SectionHeading eyebrow={copy.processEyebrow} title={copy.processTitle} />
@@ -220,26 +316,6 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
             ))}
           </ol>
           <p className="mt-10 border-l-4 border-[#f59e0b] bg-[#fff5d9] p-5 text-sm leading-7 text-[#62513e]">{content.process.boundary}</p>
-        </div>
-      </section>
-
-      <section data-home-section="brands" className="border-y border-[#e6dccf] bg-[#f4ede3] px-5 py-16 md:py-24">
-        <div className="mx-auto grid max-w-[1240px] gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:px-3">
-          <div>
-            <SectionHeading eyebrow={copy.brandsEyebrow} title={copy.brandsTitle} />
-            <p className="mt-5 text-sm leading-7 text-[#756552]">{copy.brandsBody}</p>
-            <a href="/brands/" className="mt-6 inline-flex min-h-11 items-center font-semibold text-[#b45309] underline decoration-[#e7b65b] underline-offset-4">{copy.viewBrands}</a>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            {content.brands.groups.map((group) => (
-              <a key={group.key} href="/brands/" className="border border-[#e3d6c7] bg-[#fffdf8] p-5 transition-colors hover:border-[#d97706]">
-                <h3 className="font-semibold">{group.title}</h3>
-                <ul className="mt-4 space-y-2 text-sm text-[#756552]">
-                  {group.items.map((item) => <li key={item}>{item}</li>)}
-                </ul>
-              </a>
-            ))}
-          </div>
         </div>
       </section>
 

@@ -27,12 +27,39 @@ test('public home content exposes the approved bilingual service-first structure
   const zh = getPublicHomeContent(true);
   const en = getPublicHomeContent(false);
 
+  // CN 首页主入口改为整机厂口径；设备用户口径下沉为次入口。
   assert.deepEqual(zh.hero, {
-    eyebrow: '激光与金属成形设备服务',
-    title: '设备出现故障？从问题判断到服务执行，帮你明确下一步。',
-    description: '面向激光切割机、折弯机及相关工业设备，提供故障诊断、维修、系统改造、移位安装、维护保养、旧设备评估与备件支持。',
+    eyebrow: '面向激光与金属成形设备整机厂',
+    title: '承接整机厂售后交付，不占你的编制。',
+    description: '承接保内上门、出厂调试与安装、出口设备海外装机与调试、返修件流转与备件支持。工程师由我们组织，按项目或按次结算。',
   });
   assert.deepEqual(zh.services.items.map((item) => item.title), zhServiceTitles);
+
+  assert.deepEqual(zh.audiences, {
+    maker: {
+      cta: '提交协作需求',
+      secondaryCta: '查看协作边界',
+    },
+    user: {
+      eyebrow: '设备用户',
+      title: '设备出现故障？从问题判断到服务执行，帮你明确下一步。',
+      description: '面向激光切割机、折弯机及相关工业设备，提供故障诊断、维修、系统改造、移位安装、维护保养、旧设备评估与备件支持。',
+      cta: '提交服务需求',
+    },
+  });
+  assert.equal(zh.makerEngagements.items.length, 3);
+  assert.equal(zh.makerWorkflow.steps.length, 4);
+  assert.equal(zh.makerBoundary.items.length, 4);
+  assert.equal(zh.makerFaqs.items.length, 4);
+  assertUniqueBy(zh.makerEngagements.items, 'key', 'maker engagements');
+  assertUniqueBy(zh.makerWorkflow.steps, 'key', 'maker workflow steps');
+  assertUniqueBy(zh.makerBoundary.items, 'key', 'maker boundary');
+  assertUniqueBy(zh.makerFaqs.items, 'key', 'maker FAQs');
+
+  // 渠道商招商只对国际站露出；CN 不出现，避免与整机厂自有渠道体系冲突。
+  assert.equal(zh.partnerEntry, undefined);
+  assert.ok(en.partnerEntry?.title);
+  assert.match(en.partnerEntry.href, /^\/partners\/$/);
 
   for (const content of [zh, en]) {
     assert.equal(content.problemLinks.items.length, expectedLengths.problemLinks);
@@ -47,7 +74,6 @@ test('public home content exposes the approved bilingual service-first structure
     }
     assert.ok(content.tools.items.length >= 3);
     assert.ok(content.insights.items.length >= 3);
-    assert.ok(content.brands.groups.length >= 3);
 
     assertUniqueBy(content.problemLinks.items, 'key', 'problem links');
     assertUniqueBy(content.services.items, 'key', 'services');
@@ -108,10 +134,10 @@ test('public home getter returns a deep copy on every call', async () => {
 
   first.hero.title = 'changed';
   first.services.items[0].title = 'changed';
-  first.brands.groups[0].items.push('changed');
 
   const fresh = getPublicHomeContent(true);
-  assert.equal(fresh.hero.title, '设备出现故障？从问题判断到服务执行，帮你明确下一步。');
+  assert.equal(fresh.hero.title, '承接整机厂售后交付，不占你的编制。');
   assert.equal(fresh.services.items[0].title, '设备维修与故障诊断');
+  assert.equal(fresh.audiences.user.title, '设备出现故障？从问题判断到服务执行，帮你明确下一步。');
   assert.doesNotMatch(JSON.stringify(fresh), /changed/);
 });

@@ -9,7 +9,6 @@ import { getLocalizedInsights } from './insights.js';
 import { getServicePage, getServicePages } from './servicePages.js';
 import { getTechnicalAuthor } from './technicalAuthors.js';
 import { getTechnicalReviewPolicy } from './technicalReviewPolicy.js';
-import { getBrandServicePages } from './brandServicePages.js';
 import { getPublicHomeContent } from './publicHomeContent.js';
 
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
@@ -192,7 +191,6 @@ function buildRoutes(locale) {
   const tools = publicIndustryTools.map((tool) => getLocalizedTool(tool, locale));
   const insights = getLocalizedInsights(locale);
   const services = getServicePages(locale);
-  const brands = getBrandServicePages(locale);
   const guides = getDiagnosticGuides(locale);
   const reviewPolicy = getTechnicalReviewPolicy(locale);
   const collection = (path, type, content, children) => route(locale, {
@@ -228,6 +226,16 @@ function buildRoutes(locale) {
       h1: publicHome.hero.title,
       paragraphs: [publicHome.hero.description],
       sections: [
+        ...(locale === 'zh-CN'
+          ? [{
+            heading: '整机厂售后协作',
+            body: [
+              publicHome.makerEngagements.items.map((item) => `${item.title}: ${item.context} ${item.approach}`).join(' '),
+              publicHome.makerWorkflow.steps.map((step, index) => `${index + 1}. ${step.title}`).join(' '),
+              publicHome.makerBoundary.items.map((item) => item.detail).join(' '),
+            ].join(' '),
+          }]
+          : []),
         {
           heading: locale === 'zh-CN' ? '我们能解决的设备问题' : 'Equipment problems and service needs we handle',
           body: publicHome.services.items.map((item) => item.title).join(' · '),
@@ -241,26 +249,44 @@ function buildRoutes(locale) {
           body: `${publicHome.process.steps.map((step, index) => `${index + 1}. ${step.title}`).join(' ')} ${publicHome.process.boundary}`,
         },
         {
-          heading: locale === 'zh-CN' ? '工具、技术洞察与品牌支持' : 'Tools, technical insights, and brand support',
+          heading: locale === 'zh-CN' ? '工具与技术洞察' : 'Tools and technical insights',
           body: [
             ...publicHome.tools.items.map((item) => item.title),
             ...publicHome.insights.items.map((item) => item.title),
-            ...publicHome.brands.groups.flatMap((group) => group.items),
           ].join(' · '),
         },
       ],
       faqs: publicHome.faqs.items,
       links: [
         { href: '/services/', label: locale === 'zh-CN' ? '服务项目' : 'Services' },
-        { href: '/brands/', label: locale === 'zh-CN' ? '支持品牌' : 'Brands' },
         { href: '/tools/', label: locale === 'zh-CN' ? '实用工具' : 'Tools' },
         { href: '/insights/', label: locale === 'zh-CN' ? '技术洞察' : 'Insights' },
+        ...(locale === 'zh-CN' ? [] : [{ href: '/partners/', label: 'Dealers and service partners' }]),
         ...(locale === 'zh-CN' ? [] : [{ href: 'https://www.dhgate.com/store/sagemro', label: 'Store' }]),
         { href: publicHome.requestCtas.assist.href, label: publicHome.requestCtas.assist.label },
       ],
     },
     structuredData: { '@type': 'WebSite', name: 'SAGEMRO', url: `${HOSTS[locale]}/`, publisher: organizationRef(locale) },
   });
+  // 渠道商页面只对国际站发布；CN 不露出招商内容（见 COM/CN 受众定位方案 §3）。
+  // 正文从 publicHome.partnerPage 取，与可见页面同源，避免两处漂移。
+  const partnerRoutes = locale === 'zh-CN' ? [] : [route(locale, {
+    path: '/partners',
+    type: 'partners',
+    title: 'Dealer and Service Partner Support | SAGEMRO',
+    description: publicHome.partnerPage.description,
+    modified: RELEASE_DATE,
+    body: {
+      h1: publicHome.partnerPage.title,
+      paragraphs: [publicHome.partnerPage.description],
+      sections: publicHome.partnerPage.sections.map((section) => ({ heading: section.heading, body: section.body })),
+      links: [
+        { href: '/services/', label: 'Services' },
+        { href: '/insights/', label: 'Insights' },
+      ],
+    },
+    structuredData: { '@type': 'Service', name: 'Dealer and service partner support', serviceType: 'Equipment service and parts support for dealers', provider: organizationRef(locale) },
+  })];
   const toolRoutes = tools.map((tool) => toolRoute(locale, tool));
   const insightRoutes = insights.map((insight) => route(locale, {
     path: `/insights/${insight.slug}`,
@@ -303,35 +329,6 @@ function buildRoutes(locale) {
       },
     });
   });
-  const brandRoutes = brands.map((brand) => route(locale, {
-    path: `/brands/${brand.slug}`,
-    type: 'brand',
-    title: brand.seoTitle,
-    description: brand.description,
-    modified: brand.reviewedAt,
-    label: brand.brandName,
-    body: {
-      h1: brand.title,
-      paragraphs: [brand.summary, brand.serviceBoundary, brand.independenceNotice],
-      sections: [
-        { heading: locale === 'zh-CN' ? '支持范围' : 'Support scope', body: brand.supportScope.join(' ') },
-        { heading: locale === 'zh-CN' ? '常见服务需求' : 'Common service needs', body: brand.commonNeeds.join(' ') },
-        { heading: locale === 'zh-CN' ? '需准备的信息' : 'Information to prepare', body: brand.customerInputs.join(' ') },
-      ],
-      links: brand.relatedServiceSlugs.map((slug) => {
-        const service = getServicePage(slug, locale);
-        return service ? { href: `/services/${service.slug}/`, label: service.title } : null;
-      }).filter(Boolean),
-    },
-    structuredData: {
-      '@type': 'Service',
-      name: brand.title,
-      description: brand.description,
-      url: publicUrl(HOSTS[locale], `/brands/${brand.slug}`),
-      provider: organizationRef(locale),
-      ...(locale === 'zh-CN' ? { areaServed: 'CN' } : {}),
-    },
-  }));
   const guideRoutes = guides.map((guide) => {
     const author = getTechnicalAuthor(guide.authorId, locale);
     const reviewer = getTechnicalAuthor(guide.reviewedBy, locale);
@@ -400,9 +397,8 @@ function buildRoutes(locale) {
   });
   const toolsHub = collection('/tools', 'tools-hub', copy.tools, toolRoutes);
   const servicesHub = collection('/services', 'services-hub', copy.services, serviceRoutes);
-  const brandsHub = collection('/brands', 'brands-hub', copy.brands, brandRoutes);
   const insightsHub = collection('/insights', 'insights-hub', copy.insights, [...insightRoutes, ...guideRoutes]);
-  const routes = [home, servicesHub, ...serviceRoutes, brandsHub, ...brandRoutes, toolsHub, ...toolRoutes, insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute];
+  const routes = [home, ...partnerRoutes, servicesHub, ...serviceRoutes, toolsHub, ...toolRoutes, insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute];
 
   return withSchemaGraphs(routes, locale);
 }

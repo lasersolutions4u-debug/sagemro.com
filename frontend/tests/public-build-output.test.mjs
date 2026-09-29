@@ -39,7 +39,6 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   assert.deepEqual(hubs, [
     '- https://sagemro.com/',
     '- https://sagemro.com/services/',
-    '- https://sagemro.com/brands/',
     '- https://sagemro.com/tools/',
     '- https://sagemro.com/insights/',
   ]);

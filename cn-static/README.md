@@ -9,7 +9,7 @@
 | --- | --- |
 | nginx 配置 | **只在阿里云 ECS 上**，不在本仓库、也不由 workflow 管理（workflow 只构建产物 + 切符号链接 + `nginx -t && reload`） |
 | `sagemro.cn` 指向 CN 子站的按钮 | 仅 2 个：`ai.sagemro.cn/service-request?mode=assist` 与 `?mode=manual` |
-| CN 站是否有 `/contact` | **没有**（站内只有 `/services/`、`/brands/`、`/tools/`、`/insights/`） |
+| CN 站是否有 `/contact` | **没有**（站内只有 `/services/`、`/tools/`、`/insights/`；`/brands/` 已于 2026-09-29 下线） |
 | CN D1 | 存在，2.1 MB，含少量数据（3 工单 / 1 客户 / 1 线索 / 2 工程师 / 78 对话 / 23 次 AI 调用），`admin_staff_accounts` 为 0 |
 
 ## 本目录文件

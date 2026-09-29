@@ -649,3 +649,24 @@ export async function submitConsultation(data) {
   }
   return response.json();
 }
+
+// 渠道商 / 服务伙伴申请（仅国际站 /partners/ 页面）：同样写入 leads，用 source 区分。
+export async function submitPartnerApplication(data) {
+  const response = await fetch(`${API_BASE}/api/partners`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: typeof data?.name === 'string' ? data.name.trim() : '',
+      company: typeof data?.company === 'string' ? data.company.trim() : '',
+      email: typeof data?.email === 'string' ? data.email.trim() : '',
+      phone: typeof data?.phone === 'string' ? data.phone.trim() : '',
+      country: typeof data?.country === 'string' ? data.country.trim() : '',
+      message: typeof data?.message === 'string' ? data.message.trim() : '',
+    }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}

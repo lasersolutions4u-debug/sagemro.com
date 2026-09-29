@@ -27,6 +27,8 @@ function handlers() {
     handleChatTranscribe: () => response('transcribe'),
     handleChat: () => response('chat'),
     handleSubmitLead: () => response('lead'),
+    handleSubmitConsultation: () => response('contact'),
+    handleSubmitPartner: () => response('partner'),
     handleSubmitBendSimulationReview: () => response('bend-simulation'),
     handleSubmitEngineerApplication: () => response('application'),
     handleFunnelEvent: () => response('funnel'),
@@ -39,6 +41,10 @@ test('public route dispatcher selects exact method and path handlers', async () 
   assert.equal(await (await handlePublicRoute(request('/api/auth/login', 'POST'), {}, {}, routeHandlers)).text(), 'login');
   assert.equal(await (await handlePublicRoute(request('/api/chat', 'POST'), {}, {}, routeHandlers)).text(), 'chat');
   assert.equal(await (await handlePublicRoute(request('/api/leads', 'POST'), {}, {}, routeHandlers)).text(), 'lead');
+  assert.equal(await (await handlePublicRoute(request('/api/contact', 'POST'), {}, {}, routeHandlers)).text(), 'contact');
+  assert.equal(await (await handlePublicRoute(request('/api/partners', 'POST'), {}, {}, routeHandlers)).text(), 'partner');
+  // 渠道商申请只接受 POST。
+  assert.equal(await handlePublicRoute(request('/api/partners'), {}, {}, routeHandlers), null);
   assert.equal(await (await handlePublicRoute(request('/api/leads/bend-simulation', 'POST'), {}, {}, routeHandlers)).text(), 'bend-simulation');
   assert.equal(await (await handlePublicRoute(request('/health'), {}, {}, routeHandlers)).text(), 'health');
   assert.equal(await handlePublicRoute(request('/api/auth/login'), {}, {}, routeHandlers), null);

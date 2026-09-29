@@ -29,9 +29,11 @@ test('public content entry pages reuse the shared public site shell', () => {
 test('shared public navigation exposes every public hub and the market portal', () => {
   const shell = read('src/components/Public/PublicSiteShell.jsx');
 
-  for (const href of ['/services/', '/brands/', '/tools/', '/insights/']) {
+  for (const href of ['/services/', '/tools/', '/insights/']) {
     assert.match(shell, new RegExp(`['"]${href.replaceAll('/', '\\/')}['"]`));
   }
+  // 品牌页已下线：公开导航不再暴露 /brands/。
+  assert.doesNotMatch(shell, /\/brands\//);
   assert.match(shell, /https:\/\/ai\.sagemro\.cn/);
   assert.match(shell, /https:\/\/ai\.sagemro\.com/);
   assert.match(shell, /https:\/\/www\.dhgate\.com\/store\/sagemro/);

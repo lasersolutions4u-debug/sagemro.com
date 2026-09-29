@@ -7,13 +7,11 @@ const INTERNATIONAL_STORE_URL = 'https://www.dhgate.com/store/sagemro';
 const navigation = {
   cn: [
     ['服务项目', '/services/'],
-    ['支持品牌', '/brands/'],
     ['实用工具', '/tools/'],
     ['技术洞察', '/insights/'],
   ],
   com: [
     ['Services', '/services/'],
-    ['Brands', '/brands/'],
     ['Tools', '/tools/'],
     ['Insights', '/insights/'],
   ],

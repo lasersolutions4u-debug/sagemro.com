@@ -41,18 +41,25 @@ test('public home renders the approved service-first section order and real navi
 
   assert.deepEqual(sections, [
     'hero',
+    'maker',
+    'user-entry',
     'problems',
     'services',
     'reasons',
     'process',
-    'brands',
     'tools',
     'insights',
     'faqs',
     'final-cta',
   ]);
-  assert.match(html, /<h1[^>]*>设备出现故障？从问题判断到服务执行，帮你明确下一步。<\/h1>/);
-  for (const href of ['/services/', '/brands/', '/tools/', '/insights/']) {
+  assert.match(html, /<h1[^>]*>承接整机厂售后交付，不占你的编制。<\/h1>/);
+  // 设备用户口径下沉为次入口，文案保持不变。
+  assert.match(html, /设备出现故障？从问题判断到服务执行，帮你明确下一步。/);
+  // 整机厂 4 条 + 设备用户 10 条，两类 FAQ 分开成组。
+  assert.equal((html.match(/<details\b/g) || []).length, 14);
+  // 渠道商招商只在国际站露出。
+  assert.doesNotMatch(html, /href="\/partners\/"/);
+  for (const href of ['/services/', '/tools/', '/insights/']) {
     assert.match(html, new RegExp(`href="${href}"`));
   }
   assert.match(html, /href="https:\/\/ai\.sagemro\.cn\/\?mode=assist"/);
@@ -60,12 +67,10 @@ test('public home renders the approved service-first section order and real navi
   assert.doesNotMatch(html, /service-request/);
   assert.match(html, /<button[^>]*>提交咨询需求<\/button>/);
   assert.match(html, /href="mailto:support@sagemro\.com"/);
-  // 首屏直接嵌入 AI 对话框：输入框 + 发送按钮 + 问题建议都在 hero 区。
-  assert.match(html, /data-home-chat="panel"/);
-  assert.match(html, /id="home-chat-input"/);
-  assert.match(html, /data-home-chat="send"/);
-  assert.match(html, /向 SAGEMRO AI 提问/);
-  assert.match(html, /报警代码含义/);
+  // CN 首页不嵌入 AI 对话框：面向整机厂受众的页面上不放终端用户诊断组件。
+  // 设备用户仍通过次入口 CTA 进入 AI 门户（上行已断言该链接存在）。
+  assert.doesNotMatch(html, /data-home-chat=/);
+  assert.doesNotMatch(html, /home-chat-input/);
   for (const [title, href] of [
     ['激光切割速度参考', '/tools/laser-cutting-speed-reference/'],
     ['冷水机和除尘器选型参考', '/tools/laser-chiller-dust-collector-sizing-checklist/'],
@@ -83,6 +88,14 @@ test('public home exposes six service links, ten direct FAQs, and no competing i
   assert.doesNotMatch(html, /<form\b|role="dialog"|WorkOrderModal|type="tel"|wa\.me|WhatsApp/i);
   assert.match(html, /AI only helps organize submitted information/);
   assert.match(html, /href="https:\/\/ai\.sagemro\.com\/\?mode=assist"/);
+  // 国际站首页出现渠道商入口，指向 /partners/。
+  assert.match(html, /data-home-section="partner-entry"/);
+  assert.match(html, /href="\/partners\/"/);
+  // 国际站首屏保留 AI 对话框：输入框 + 发送按钮 + 问题建议。
+  assert.match(html, /data-home-chat="panel"/);
+  assert.match(html, /id="home-chat-input"/);
+  assert.match(html, /data-home-chat="send"/);
+  assert.match(html, /Ask SAGEMRO AI/);
 });
 
 test('App routes only the resolved public build target to the public home', async () => {

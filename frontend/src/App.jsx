@@ -32,7 +32,7 @@ const ChatArea = lazy(() => import('./components/Chat/ChatArea').then(m => ({ de
 const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
 const InsightsPage = lazy(() => import('./components/Insights/InsightsPage').then(m => ({ default: m.InsightsPage })));
 const ServicePages = lazy(() => import('./components/Services/ServicePages').then(m => ({ default: m.ServicePages })));
-const BrandServicePages = lazy(() => import('./components/Brands/BrandServicePages').then(m => ({ default: m.BrandServicePages })));
+const PartnersPage = lazy(() => import('./components/Public/PartnersPage').then(m => ({ default: m.PartnersPage })));
 const TechnicalReviewPage = lazy(() => import('./components/About/TechnicalReviewPage').then(m => ({ default: m.TechnicalReviewPage })));
 const EngineerRecruitingPage = lazy(() => import('./components/Engineer/EngineerRecruitingPage').then(m => ({ default: m.EngineerRecruitingPage })));
 
@@ -81,13 +81,12 @@ function App() {
     const isToolsOrInsights = currentPath === '/tools' || currentPath.startsWith('/tools/')
       || currentPath === '/insights' || currentPath.startsWith('/insights/')
       || currentPath === '/services' || currentPath.startsWith('/services/')
-      || currentPath === '/brands' || currentPath.startsWith('/brands/')
       || isTechnicalReviewPath;
     if (isToolsOrInsights || (isEngineerHost && currentPath === '/' && !userType)) return;
 
     const isPublicPath = portalTarget === 'public' && ((currentPath === '/')
       || currentPath === '/services' || currentPath.startsWith('/services/')
-      || currentPath === '/brands' || currentPath.startsWith('/brands/')
+      || currentPath === '/partners'
       || isTechnicalReviewPath);
     const title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
     const description = isCn
@@ -180,7 +179,7 @@ function App() {
   } = useChat();
 
   const currentConversation = conversationId ? getConversation(conversationId) : null;
-  const currentTitle = currentConversation?.title || 'Service Chat';
+  const currentTitle = currentConversation?.title || (isCn ? '服务对话' : 'Service Chat');
 
   const handleNewChat = useCallback(() => {
     clearMessages();
@@ -365,10 +364,11 @@ function App() {
 
   const isToolsPath = portalTarget === 'public' && (currentPath === '/tools' || currentPath.startsWith('/tools/'));
   const isInsightsPath = portalTarget === 'public' && (currentPath === '/insights' || currentPath.startsWith('/insights/'));
-  const isBrandsPath = portalTarget === 'public' && (currentPath === '/brands' || currentPath.startsWith('/brands/'));
+  // 渠道商页面只在国际站存在；CN 访问 /partners 走 NotFound。
+  const isPartnersPath = portalTarget === 'public' && !isCn && (currentPath === '/partners' || currentPath.startsWith('/partners/'));
   const serviceRoute = portalTarget === 'public' ? getServicePageRoute(currentPath) : null;
   const isServicesPath = serviceRoute !== null;
-  const isKnownPublicPath = currentPath === '/' || isToolsPath || isInsightsPath || isBrandsPath || isServicesPath || isTechnicalReviewPath;
+  const isKnownPublicPath = currentPath === '/' || isToolsPath || isInsightsPath || isPartnersPath || isServicesPath || isTechnicalReviewPath;
 
   if (portalTarget === 'public' && !isKnownPublicPath) {
     return <NotFoundPage isCn={isCn} />;
@@ -444,15 +444,11 @@ function App() {
     );
   }
 
-  if (isBrandsPath) {
+  if (isPartnersPath) {
     return (
       <ErrorBoundary>
         <Suspense fallback={null}>
-          <BrandServicePages
-            pathname={currentPath}
-            locale={isCn ? 'zh-CN' : 'en'}
-            onOpenLegal={openLegal}
-          />
+          <PartnersPage onOpenLegal={openLegal} />
           {legalModal}
         </Suspense>
         <FeedbackHost />
@@ -552,7 +548,7 @@ function App() {
           <Modal
             isOpen={historyModalOpen}
             onClose={() => setHistoryModalOpen(false)}
-            title="Conversation History"
+            title={isCn ? '会话历史' : 'Conversation History'}
             size="2xl"
           >
             <ChatHistory

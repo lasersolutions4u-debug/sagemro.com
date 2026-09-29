@@ -6231,6 +6231,49 @@ async function handleSubmitConsultation(request, env) {
   }
 }
 
+// 渠道商 / 服务伙伴申请（仅国际站 /partners/ 页面）。
+// 复用 leads 表并用 source 区分渠道：source='website_partner'、source_type='partner_application'，
+// 因此不新增表、不需要 migration。
+async function handleSubmitPartner(request, env) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const name = cleanText(body.name, 120);
+    const company = cleanText(body.company, 160);
+    const email = cleanText(body.email, 160);
+    const phone = cleanText(body.phone, 60);
+    const country = cleanText(body.country, 80);
+    const message = cleanText(body.message, 3000);
+
+    if (!name) return errorResponse('Please provide your name', 400);
+    if (!company) return errorResponse('Please provide your company name', 400);
+    if (!email && !phone) {
+      return errorResponse('Please provide an email or a phone number', 400);
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return errorResponse('Please provide a valid email address', 400);
+    }
+
+    const id = generateId();
+    const interest = country ? `${company} · dealer/partner (${country})` : `${company} · dealer/partner`;
+    await env.DB.prepare(`
+      INSERT INTO leads (
+        id, name, email, phone, source, interest, message, source_type, assignment_status, region
+      ) VALUES (?, ?, ?, ?, 'website_partner', ?, ?, 'partner_application', 'unassigned', ?)
+    `).bind(
+      id,
+      name,
+      email || null,
+      phone || null,
+      interest,
+      message || null,
+      country || '',
+    ).run();
+
+    return jsonResponse({ success: true, lead_id: id });
+  } catch (error) {
+    return errorResponse(error.message, 500);
+  }
+}
 const BEND_SIMULATION_MATERIALS = new Map([
   ['carbon_steel', 'carbon_steel'],
   ['carbon steel', 'carbon_steel'],
@@ -8944,6 +8987,7 @@ async function routeRequest(request, env, ctx) {
       handleChat,
       handleSubmitLead,
       handleSubmitConsultation,
+      handleSubmitPartner,
       handleSubmitBendSimulationReview,
       handleSubmitEngineerApplication,
       handleFunnelEvent,

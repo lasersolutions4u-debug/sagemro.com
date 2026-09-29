@@ -43,6 +43,9 @@ export async function handlePublicRoute(request, env, ctx, handlers) {
   if (path === '/api/contact' && request.method === 'POST') {
     return handlers.handleSubmitConsultation(request, env);
   }
+  if (path === '/api/partners' && request.method === 'POST') {
+    return handlers.handleSubmitPartner(request, env);
+  }
   if (path === '/api/leads/bend-simulation' && request.method === 'POST') {
     return handlers.handleSubmitBendSimulationReview(request, env);
   }
