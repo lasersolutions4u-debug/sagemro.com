@@ -1,13 +1,19 @@
-import { useEffect, useRef } from 'react';
-import { Menu, Info, Home } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, Menu, Info, Home } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { WelcomePage } from './WelcomePage';
 import { InputArea } from './InputArea';
 import { Footer } from '../common/Footer';
 import { isCnLocale } from '../../utils/locale';
 
+function isNearChatBottom(element) {
+  if (!element) return true;
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= 48;
+}
+
 export function ChatArea({
   messages,
+  conversationId,
   isStreaming,
   onSendMessage,
   onStopGeneration,
@@ -15,23 +21,49 @@ export function ChatArea({
   currentTitle,
   onToggleSidebar,
   onOpenLegal,
-  serviceRequestContext,
-  onPrepareServiceRequest,
-  onOpenServiceRequest,
-  preparingRequest = false,
-  prepareRequestError,
 }) {
-  const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
-
-  // 自动滚动到底部
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
-
+  const pinnedToBottomRef = useRef(true);
+  const viewedConversationRef = useRef(conversationId);
+  const [showNewMessages, setShowNewMessages] = useState(false);
   const hasMessages = messages.length > 0;
+
+  const scrollChatToBottom = useCallback((behavior = 'smooth') => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+    pinnedToBottomRef.current = true;
+    setShowNewMessages(false);
+  }, []);
+
+  useEffect(() => {
+    if (viewedConversationRef.current === conversationId) return;
+    viewedConversationRef.current = conversationId;
+    pinnedToBottomRef.current = true;
+    setShowNewMessages(false);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!hasMessages) {
+      setShowNewMessages(false);
+      return undefined;
+    }
+    if (pinnedToBottomRef.current) {
+      const frame = requestAnimationFrame(() => {
+        if (pinnedToBottomRef.current) scrollChatToBottom('auto');
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    setShowNewMessages(true);
+    return undefined;
+  }, [hasMessages, messages, scrollChatToBottom]);
+
+  const handleChatScroll = () => {
+    const nearBottom = isNearChatBottom(messagesContainerRef.current);
+    pinnedToBottomRef.current = nearBottom;
+    if (nearBottom) setShowNewMessages(false);
+  };
+
   const isCn = isCnLocale();
   const serviceName = isCn ? 'SAGEMRO AI 设备服务平台' : 'SAGEMRO AI Equipment Service';
   const pageTitle = hasMessages
@@ -45,6 +77,7 @@ export function ChatArea({
     ? '内容由 AI 生成，仅供参考。最终诊断、报价和现场安全需经 SAGEMRO 服务流程确认。'
     : 'AI-generated content is for reference only. Final diagnosis, pricing, and safety decisions follow the SAGEMRO service process.';
   const detailsLabel = isCn ? '详情' : 'Details';
+  const newMessagesLabel = isCn ? '有新消息' : 'New messages';
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-chat-bg)]">
@@ -95,53 +128,38 @@ export function ChatArea({
       )}
 
       {/* 消息区域 */}
-      <div
-        ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto px-4 py-6"
-      >
-        {hasMessages ? (
-          <div className="max-w-4xl mx-auto space-y-6">
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        ) : (
-          <WelcomePage />
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={messagesContainerRef}
+          onScroll={handleChatScroll}
+          className="h-full overflow-y-auto px-4 py-6"
+        >
+          {hasMessages ? (
+            <div className="max-w-4xl mx-auto space-y-6">
+              {messages.map((message) => (
+                <MessageBubble key={message.id} message={message} />
+              ))}
+            </div>
+          ) : (
+            <WelcomePage />
+          )}
+        </div>
+        {showNewMessages && (
+          <button
+            type="button"
+            onClick={() => scrollChatToBottom()}
+            className="absolute bottom-4 left-1/2 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary)] shadow-sm"
+          >
+            <ChevronDown size={14} />
+            {newMessagesLabel}
+          </button>
         )}
       </div>
-
-      {onPrepareServiceRequest && (hasMessages || serviceRequestContext) && (
-        <section className="border-t border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:px-6" aria-label={isCn ? '整理服务请求' : 'Prepare a service request'}>
-          <div className="mx-auto max-w-4xl flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="truncate text-xs font-semibold text-[var(--color-text-primary)]">
-                  {serviceRequestContext
-                    ? `${isCn ? '当前需求：' : 'Request: '}${serviceRequestContext}`
-                    : (isCn ? '服务请求' : 'Service request')}
-                </p>
-                <p className="hidden truncate text-xs text-[var(--color-text-secondary)] lg:block">
-                  {isCn ? 'AI 会把本次对话整理到现有服务表单。' : 'AI prepares the existing form from this chat.'}
-                </p>
-              </div>
-              <p className="sr-only">
-                {isCn ? '描述设备和需求后，AI 会协助梳理。提交前请核对服务表单；聊天图片需要在表单中重新上传。' : 'Describe your equipment and needs. AI helps clarify the request before you review and submit the existing service form. Chat images need to be uploaded again in the form.'}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={onPrepareServiceRequest} disabled={preparingRequest || isStreaming || !messages.some((message) => message.role === 'user' && message.content?.trim())} className="min-h-9 rounded-lg bg-[var(--color-primary)] px-3 text-xs font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50">{preparingRequest ? (isCn ? '正在整理…' : 'Preparing…') : (isCn ? '整理并填写服务单' : 'Prepare service form')}</button>
-              <button type="button" onClick={onOpenServiceRequest} disabled={preparingRequest} className="min-h-9 rounded-lg border border-[var(--color-border)] px-3 text-xs font-medium text-[var(--color-text-primary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50">{isCn ? '直接手动填写' : 'Fill manually instead'}</button>
-            </div>
-          </div>
-          {prepareRequestError && <p role="alert" className="mx-auto mt-1 max-w-4xl text-xs text-red-600">{prepareRequestError}</p>}
-        </section>
-      )}
 
       <InputArea
         onSend={onSendMessage}
         onStop={onStopGeneration}
-        disabled={preparingRequest}
+        disabled={false}
         isStreaming={isStreaming}
       />
       <div className="hidden sm:block border-t border-[var(--color-border)] bg-white/80 px-4 py-2">

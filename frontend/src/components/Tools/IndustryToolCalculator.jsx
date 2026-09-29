@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { ArrowRight, Ruler } from 'lucide-react';
 import {
-  assistGasOptions,
   buildIndustryToolReviewPrompt,
   calculateIndustryToolResult,
   defaultIndustryToolForms,
-  dustLoadOptions,
-  materialDensities,
+  getLocalizedAssistGasOptions,
+  getLocalizedDustLoadOptions,
+  getLocalizedMaterialDensities,
+  getLocalizedShapeProfiles,
+  getLocalizedSteelPriceReferences,
+  getLocalizedTool,
   shapeProfiles,
   steelPriceReferences,
 } from '../../data/industryTools';
+import { isCnLocale } from '../../utils/locale';
 
 const FIELD_LABELS = {
   material: 'Material',
@@ -28,6 +32,7 @@ const FIELD_LABELS = {
   webThicknessMm: 'Web thickness (mm)',
   flangeThicknessMm: 'Flange thickness (mm)',
   referenceUsdPerTon: 'Reference price (USD / metric ton)',
+  referenceCnyPerTon: 'Reference price (CNY / metric ton)',
   cutLengthM: 'Cut length (m)',
   cuttingSpeedMMin: 'Cutting speed (m/min)',
   pierces: 'Pierces',
@@ -65,13 +70,69 @@ const FIELD_LABELS = {
   dustLoad: 'Dust load',
 };
 
-function getFieldsForTool(toolId, values) {
+const FIELD_LABELS_CN = {
+  material: '材料',
+  shape: '型材',
+  quantity: '数量',
+  lengthMm: '长度 (mm)',
+  widthMm: '宽度 (mm)',
+  thicknessMm: '厚度 (mm)',
+  diameterMm: '直径 (mm)',
+  outerDiameterMm: '外径 (mm)',
+  wallThicknessMm: '壁厚 (mm)',
+  heightMm: '高度 (mm)',
+  legAMm: '边 A (mm)',
+  legBMm: '边 B (mm)',
+  flangeWidthMm: '翼缘宽度 (mm)',
+  webThicknessMm: '腹板厚度 (mm)',
+  flangeThicknessMm: '翼缘厚度 (mm)',
+  referenceUsdPerTon: '参考价格 (USD / 公吨)',
+  referenceCnyPerTon: '参考价格 (CNY / 公吨)',
+  cutLengthM: '切割长度 (m)',
+  cuttingSpeedMMin: '切割速度 (m/min)',
+  pierces: '穿孔数量',
+  pierceSeconds: '单次穿孔时间 (秒)',
+  machineRateUsdHour: '设备小时费率 (USD/hr)',
+  gasRateUsdHour: '气体费率 (USD/hr)',
+  setupMinutes: '调机时间 (min)',
+  materialFactor: '材料系数',
+  bendLengthMm: '折弯长度 (mm)',
+  vDieMm: 'V 槽开口 (mm)',
+  safetyFactor: '安全系数',
+  assistGas: '辅助气体',
+  nozzleDiameterMm: '喷嘴直径 (mm)',
+  pressureBar: '压力 (bar)',
+  cuttingMinutes: '切割时间 (min)',
+  dutyCyclePercent: '占空比 (%)',
+  gasCostUsdM3: '气体单价 (USD / m3)',
+  laserPowerKw: '激光功率 (kW)',
+  insideRadiusMm: '内 R (mm)',
+  bendAngleDeg: '折弯角度 (deg)',
+  kFactor: 'K 因子',
+  bendCount: '折弯次数',
+  flangeAMm: '边长 A (mm)',
+  flangeBMm: '边长 B (mm)',
+  outsourceCostUsdMonth: '外协成本 (USD/月)',
+  machinePaymentUsdMonth: '设备月供 (USD/月)',
+  operatorCostUsdMonth: '操作人员成本 (USD/月)',
+  maintenanceUsdMonth: '维护成本 (USD/月)',
+  utilitiesUsdMonth: '水电气成本 (USD/月)',
+  addedRevenueUsdMonth: '新增收入 (USD/月)',
+  upfrontCostUsd: '前期投入 (USD)',
+  tableLengthMm: '台面长度 (mm)',
+  tableWidthMm: '台面宽度 (mm)',
+  cuttingHoursDay: '每日切割小时数',
+  dustLoad: '粉尘负荷',
+};
+
+function getFieldsForTool(toolId, values, profiles = shapeProfiles, locale = 'en') {
   if (toolId === 'metal-weight') {
-    return ['material', 'shape', ...shapeProfiles[values.shape || 'sheet_plate'].fields, 'quantity'];
+    return ['material', 'shape', ...profiles[values.shape || 'sheet_plate'].fields, 'quantity'];
   }
 
   if (toolId === 'steel-price') {
-    return ['material', 'shape', ...shapeProfiles[values.shape || 'sheet_plate'].fields, 'quantity', 'referenceUsdPerTon'];
+    const priceField = locale === 'zh-CN' ? 'referenceCnyPerTon' : 'referenceUsdPerTon';
+    return ['material', 'shape', ...profiles[values.shape || 'sheet_plate'].fields, 'quantity', priceField];
   }
 
   if (toolId === 'laser-cost') {
@@ -112,9 +173,34 @@ function hasValidResult(result) {
 }
 
 export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, onAfterSend, onToolStarted, onToolCompleted, showReviewCta = true, reviewActionLabel = 'Ask SAGEMRO AI to review this result' }) {
+  const locale = isCnLocale() ? 'zh-CN' : 'en';
+  const visibleTool = getLocalizedTool(tool, locale);
   const currentValues = values || defaultIndustryToolForms[tool.id];
-  const result = useMemo(() => calculateIndustryToolResult(tool.id, currentValues), [tool.id, currentValues]);
-  const fields = getFieldsForTool(tool.id, currentValues);
+  const result = useMemo(() => calculateIndustryToolResult(tool.id, currentValues, locale), [tool.id, currentValues, locale]);
+  const materials = getLocalizedMaterialDensities(locale);
+  const profiles = getLocalizedShapeProfiles(locale);
+  const assistGases = getLocalizedAssistGasOptions(locale);
+  const dustLoads = getLocalizedDustLoadOptions(locale);
+  const priceReferences = locale === 'zh-CN' ? getLocalizedSteelPriceReferences(locale) : steelPriceReferences;
+  const fieldLabels = locale === 'zh-CN' ? FIELD_LABELS_CN : FIELD_LABELS;
+  const copy = locale === 'zh-CN'
+    ? {
+        eyebrow: '免费行业工具',
+        profileNote: '型材说明',
+        marketReferences: '市场参考',
+        estimateTitle: '规划估算',
+        estimateSuffix: '生产或采购前请再次确认。',
+        reviewButton: '让 SAGEMRO AI 分析这个结果',
+      }
+    : {
+        eyebrow: 'Free industry tool',
+        profileNote: 'Profile note',
+        marketReferences: 'Market references',
+        estimateTitle: 'Planning estimate',
+        estimateSuffix: 'Confirm before production or purchasing.',
+        reviewButton: 'Ask SAGEMRO AI to review this result',
+      };
+  const fields = getFieldsForTool(tool.id, currentValues, profiles, locale);
   const startedToolRef = useRef(null);
   const completedToolRef = useRef(null);
 
@@ -138,7 +224,7 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
   };
 
   const sendForReview = () => {
-    onSendMessage?.(buildIndustryToolReviewPrompt(tool, result));
+    onSendMessage?.(buildIndustryToolReviewPrompt(visibleTool, result));
     onAfterSend?.();
   };
 
@@ -146,9 +232,9 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
         <div className="mb-4">
-          <div className="text-xs uppercase text-[var(--color-text-muted)]">Free industry tool</div>
-          <h3 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{tool.label}</h3>
-          <p className="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">{tool.leadAction}</p>
+          <div className="text-xs uppercase text-[var(--color-text-muted)]">{copy.eyebrow}</div>
+          <h3 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{visibleTool.label}</h3>
+          <p className="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">{visibleTool.leadAction}</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -157,10 +243,10 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
               return (
                 <SelectField
                   key={field}
-                  label={FIELD_LABELS[field]}
+                  label={fieldLabels[field]}
                   value={currentValues.material}
                   onChange={(value) => updateValue('material', value)}
-                  options={Object.entries(materialDensities).map(([value, material]) => ({ value, label: material.label }))}
+                  options={Object.entries(materials).map(([value, material]) => ({ value, label: material.label }))}
                 />
               );
             }
@@ -169,10 +255,10 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
               return (
                 <SelectField
                   key={field}
-                  label={FIELD_LABELS[field]}
+                  label={fieldLabels[field]}
                   value={currentValues.shape}
                   onChange={(value) => updateValue('shape', value)}
-                  options={Object.entries(shapeProfiles).map(([value, shape]) => ({ value, label: shape.label }))}
+                  options={Object.entries(profiles).map(([value, shape]) => ({ value, label: shape.label }))}
                 />
               );
             }
@@ -181,10 +267,10 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
               return (
                 <SelectField
                   key={field}
-                  label={FIELD_LABELS[field]}
+                  label={fieldLabels[field]}
                   value={currentValues.assistGas}
                   onChange={(value) => updateValue('assistGas', value)}
-                  options={Object.entries(assistGasOptions).map(([value, gas]) => ({ value, label: gas.label }))}
+                  options={Object.entries(assistGases).map(([value, gas]) => ({ value, label: gas.label }))}
                 />
               );
             }
@@ -193,10 +279,10 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
               return (
                 <SelectField
                   key={field}
-                  label={FIELD_LABELS[field]}
+                  label={fieldLabels[field]}
                   value={currentValues.dustLoad}
                   onChange={(value) => updateValue('dustLoad', value)}
-                  options={Object.entries(dustLoadOptions).map(([value, load]) => ({ value, label: load.label }))}
+                  options={Object.entries(dustLoads).map(([value, load]) => ({ value, label: load.label }))}
                 />
               );
             }
@@ -204,7 +290,7 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
             return (
               <InputField
                 key={field}
-                label={FIELD_LABELS[field] || field}
+                label={fieldLabels[field] || field}
                 value={currentValues[field] || ''}
                 onChange={(value) => updateValue(field, value)}
               />
@@ -215,19 +301,19 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
         {(tool.id === 'metal-weight' || tool.id === 'steel-price') && (
           <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
             <div className="mb-2 text-xs font-semibold uppercase text-[var(--color-text-muted)]">
-              Profile note
+              {copy.profileNote}
             </div>
             <p className="text-xs leading-relaxed text-[var(--color-text-secondary)]">
-              {shapeProfiles[currentValues.shape || 'sheet_plate'].description}
+              {profiles[currentValues.shape || 'sheet_plate'].description}
             </p>
           </div>
         )}
 
         {tool.id === 'steel-price' && (
           <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-            <div className="mb-2 text-xs font-semibold uppercase text-[var(--color-text-muted)]">Market references</div>
+            <div className="mb-2 text-xs font-semibold uppercase text-[var(--color-text-muted)]">{copy.marketReferences}</div>
             <div className="grid gap-2">
-              {steelPriceReferences.map((item) => (
+              {priceReferences.map((item) => (
                 <a
                   key={item.label}
                   href={item.url || undefined}
@@ -258,8 +344,8 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
           ))}
         </div>
         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
-          <strong className="block font-semibold">Planning estimate</strong>
-          <span>{result.note} Confirm before production or purchasing.</span>
+          <strong className="block font-semibold">{copy.estimateTitle}</strong>
+          <span>{result.note} {copy.estimateSuffix}</span>
         </div>
         {showReviewCta && onSendMessage && (
           <button

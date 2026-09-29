@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
+import { isCnLocale } from '../../utils/locale';
 
-export function TagInput({ label, options = [], value = [], onChange, placeholder = 'Type and press Enter to add...' }) {
+export function TagInput({ label, options = [], value = [], onChange, placeholder }) {
   const [inputValue, setInputValue] = useState('');
+  const inputPlaceholder = placeholder ?? (isCnLocale() ? '输入并按回车添加...' : 'Type and press Enter to add...');
 
   const addTag = (tag) => {
     const trimmed = tag.trim();
@@ -65,7 +67,7 @@ export function TagInput({ label, options = [], value = [], onChange, placeholde
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          placeholder={inputPlaceholder}
           className="w-full px-3 py-1.5 text-sm border border-[var(--color-border)] dark:border-[var(--color-border-strong)] rounded-lg bg-[var(--color-surface)] dark:bg-[var(--color-surface-elevated)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] placeholder:text-xs"
         />
       </div>

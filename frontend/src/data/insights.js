@@ -115,11 +115,17 @@ const insightCn = {
   },
 };
 
-export function getLocalizedInsights(locale = 'en') {
-  if (locale !== 'zh-CN') return insights;
-  return insights.map((insight) => ({ ...insight, ...(insightCn[insight.slug] || {}) }));
-}
-
 export function getInsightBySlug(slug) {
   return insights.find((item) => item.slug === slug) || null;
+}
+
+export function getLocalizedInsight(slug, locale = 'en') {
+  const insight = getInsightBySlug(slug);
+  if (!insight || locale !== 'zh-CN') return insight;
+  return { ...insight, ...(insightCn[insight.slug] || {}) };
+}
+
+export function getLocalizedInsights(locale = 'en') {
+  if (locale !== 'zh-CN') return insights;
+  return insights.map((item) => ({ ...item, ...(insightCn[item.slug] || {}) }));
 }

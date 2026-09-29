@@ -50,7 +50,7 @@ const toolsPageCopy = {
   en: {
     hubTitle: 'Free Sheet Metal and Laser Cutting Calculators',
     hubDescription: 'Use free SAGEMRO calculators for metal weight, steel price planning, laser cutting cost, gas use, speed reference, bending, ROI, and auxiliary sizing.',
-    back: 'Back to SAGEMRO AI',
+    back: 'Back to service',
     eyebrow: 'Shop-floor tools',
     h1: 'Free tools for sheet metal, laser cutting, bending, ROI, and auxiliary planning.',
     intro: 'Start with numbers you can check: material weight, reference budget, cutting time, assist gas, bending assumptions, equipment ROI, and support equipment needs. Each tool keeps assumptions visible so you can review the next decision with better context.',
@@ -58,6 +58,10 @@ const toolsPageCopy = {
     profiles: 'Profile coverage',
     boundary: 'Planning boundary',
     boundaryText: 'Planning references only. Supplier quotes and qualified review decide final production choices.',
+    aiChat: 'AI Chat',
+    aiChatTitle: 'Not sure which tool fits your case?',
+    aiChatBody: 'Describe your material, specs, and production scenario in the AI chat. It will recommend the right tool and explain the assumptions behind each number.',
+    askAiChat: 'Ask AI Chat',
     insights: 'Insights',
     insightTitle: 'Read practical notes behind the calculators',
     insightBody: 'Short equipment and process articles connect the tools to real production decisions.',
@@ -74,7 +78,7 @@ const toolsPageCopy = {
   'zh-CN': {
     hubTitle: '钣金、激光切割和折弯行业工具',
     hubDescription: '使用 SAGEMRO 行业工具估算材料重量、钢材预算、激光切割成本、辅助气体用量、切割速度、折弯、设备 ROI 和辅机选型参考。',
-    back: '返回 SAGEMRO AI',
+    back: '返回服务首页',
     eyebrow: '行业工具',
     h1: '钣金、切割、折弯与设备规划工具。',
     intro: '先从可检查的数据开始：材料重量、预算参考、切割时间、辅助气体、折弯假设、设备 ROI 和辅机需求。每个工具都会把假设列出来，方便你再做下一步判断。',
@@ -82,6 +86,10 @@ const toolsPageCopy = {
     profiles: '型材覆盖',
     boundary: '使用边界',
     boundaryText: '仅作为规划参考。最终生产选择仍需结合供应商报价和合格人员复核。',
+    aiChat: 'AI 对话',
+    aiChatTitle: '不确定哪个工具适合你的情况？',
+    aiChatBody: '在 AI 聊天中描述你的材料、规格和生产场景，AI 会推荐合适的工具并解释每个数字背后的假设。',
+    askAiChat: '询问 AI',
     insights: '洞察',
     insightTitle: '查看计算器背后的实务说明',
     insightBody: '用简短文章把工具结果和真实生产、采购、服务判断连接起来。',
@@ -119,7 +127,7 @@ export function IndustryToolsPage({ pathname = '/tools', acquisitionContext, onO
   useEffect(() => {
     const seoMetadata = getIndustryToolsSeoMetadata({ canonical, page, selectedTool, slug }, locale);
     setSeoMetadata({
-      title: `${pageTitle} | SAGEMRO`,
+      title: isMissing ? '工具未找到 | SAGEMRO' : `${pageTitle} | SAGEMRO`,
       description: pageDescription,
       canonical: seoMetadata.canonical,
       alternates: seoMetadata.alternates,
@@ -127,7 +135,7 @@ export function IndustryToolsPage({ pathname = '/tools', acquisitionContext, onO
       robots: seoMetadata.robots,
       structuredData: seoMetadata.structuredData,
     });
-  }, [canonical, locale, page, pageDescription, pageTitle, selectedTool, slug]);
+  }, [canonical, isMissing, locale, page, pageDescription, pageTitle, selectedTool, slug]);
 
   if (isMissing) {
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
@@ -192,7 +200,7 @@ function ToolsHub({ copy, locale }) {
       title: `${copy.hubTitle} | SAGEMRO`,
       description: copy.hubDescription,
       canonical: `${canonicalHost}/tools/`,
-      lang: locale === 'zh-CN' ? 'zh-CN' : 'en',
+      lang: locale,
     });
   }, [canonicalHost, copy, locale]);
 
@@ -232,6 +240,21 @@ function ToolsHub({ copy, locale }) {
           {referenceItems.map((item, index) => (
             <ToolReferenceItem key={item.label} item={item} isFirst={index === 0} />
           ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4 sm:flex sm:items-center sm:justify-between sm:gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-text-muted)]">{copy.aiChat}</div>
+            <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{copy.aiChatTitle}</h2>
+            <p className="mt-1 text-sm leading-6 text-[var(--color-text-secondary)]">
+              {copy.aiChatBody}
+            </p>
+          </div>
+          <a href="/" className="mt-4 inline-flex rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-secondary)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] sm:mt-0">
+            {copy.askAiChat}
+          </a>
         </div>
       </section>
 
@@ -303,7 +326,7 @@ function ToolDetail({ tool, copy, locale, values, onChange, onSendMessage, onNav
     }
     window.location.assign(portalUrl);
   };
-  const currentResult = useMemo(() => calculateIndustryToolResult(tool.id, values), [tool.id, values]);
+  const currentResult = useMemo(() => calculateIndustryToolResult(tool.id, values, locale), [locale, tool.id, values]);
   const handleEvidenceReview = () => handleSendToolReview(buildIndustryToolReviewPrompt(tool, currentResult));
 
   return (
@@ -315,8 +338,8 @@ function ToolDetail({ tool, copy, locale, values, onChange, onSendMessage, onNav
           </a>
         </div>
 
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div>
+        <section>
+          <div className="min-w-0">
             <div className="inline-flex items-center gap-2 rounded-lg border border-[#263238] bg-[#111820] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white">
               <Calculator size={14} className="text-[var(--color-primary)]" />
               {copy.detailEyebrow}

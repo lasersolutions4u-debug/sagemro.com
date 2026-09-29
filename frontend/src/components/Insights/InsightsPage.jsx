@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { ArrowLeft, BookOpen, Calculator, Newspaper } from 'lucide-react';
 import { NotFoundPage } from '../common/NotFoundPage';
-import { getLocalizedInsights, insights } from '../../data/insights';
+import { getLocalizedInsight, getLocalizedInsights } from '../../data/insights';
 import { getDiagnosticGuide } from '../../data/diagnosticGuides';
 import { getPublicSeoRoute } from '../../data/publicSeoRoutes';
 import { DiagnosticGuide } from './DiagnosticGuide';
@@ -9,30 +9,67 @@ import { isCnLocale } from '../../utils/locale';
 import { setSeoMetadata } from '../../utils/seo';
 import { PublicSiteShell } from '../Public/PublicSiteShell';
 
+const insightsCopy = {
+  en: {
+    hubTitle: 'SAGEMRO Insights for Laser and Metal Forming Equipment',
+    hubDescription: 'Practical notes, calculators, and decision guides for laser and metal forming equipment.',
+    back: 'Back to service',
+    eyebrow: 'SAGEMRO Insights',
+    h1: 'Practical notes for machine decisions, service risk, and shop-floor planning.',
+    intro: 'Short, checkable guides connected to the calculators and AI workspace. The goal is to clarify assumptions before service, purchasing, or production decisions.',
+    aiBridge: 'Reading an insight? When your AI analysis mentions a concept you haven\'t seen before, jump straight to the matching article for a quick reference.',
+    allInsights: 'All insights',
+    relatedCalculator: 'Related calculator',
+    navTools: 'Tools',
+    navInsights: 'Insights',
+    navChat: 'AI chat',
+  },
+  'zh-CN': {
+    hubTitle: 'SAGEMRO 洞察：激光和成型设备',
+    hubDescription: '面向激光和成型设备的实务说明、计算工具和判断参考。',
+    back: '返回服务首页',
+    eyebrow: 'SAGEMRO 洞察',
+    h1: '关于设备判断、服务风险和车间规划的实务说明。',
+    intro: '这些简短、可检查的内容会连接计算器和 AI 工作区，帮助你在服务、采购或生产决策前先把假设说清楚。',
+    aiBridge: '正在阅读一篇洞察？当 AI 分析提到你还不熟悉的概念时，直接跳到对应的文章快速查阅。',
+    allInsights: '全部洞察',
+    relatedCalculator: '相关计算器',
+    navTools: '工具',
+    navInsights: '洞察',
+    navChat: 'AI 对话',
+  },
+};
+
 export function InsightsPage({ pathname = '/insights', acquisitionContext, onOpenLegal, onStartDiagnosis, onOpenServiceRequest }) {
-  const slug = pathname.split('/insights/')[1]?.replace(/\/$/, '') || '';
   const locale = isCnLocale() ? 'zh-CN' : 'en';
+  const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
+  const copy = insightsCopy[locale];
+  const slug = pathname.split('/insights/')[1]?.replace(/\/$/, '') || '';
   const guide = getDiagnosticGuide(slug, locale);
   const insight = getLocalizedInsight(slug, locale);
+  const localizedInsights = getLocalizedInsights(locale);
 
   useEffect(() => {
     const content = guide || insight;
-    const title = content ? content.title : 'SAGEMRO Insights for Laser and Metal Forming Equipment';
+    const title = content ? content.title : copy.hubTitle;
     const description = content
       ? content.description
-      : 'Practical notes, calculators, and decision guides for laser and metal forming equipment.';
-    const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
+      : copy.hubDescription;
     const isMissing = Boolean(slug && !content);
     const publicRoute = getPublicSeoRoute(content ? `/insights/${content.slug}` : '/insights', locale);
     setSeoMetadata({
-      title: isMissing ? 'Insight Not Found | SAGEMRO' : `${title} | SAGEMRO`,
-      description: isMissing ? 'The requested SAGEMRO insight could not be found.' : description,
+      title: isMissing
+        ? locale === 'zh-CN' ? '洞察未找到 | SAGEMRO' : 'Insight Not Found | SAGEMRO'
+        : `${title} | SAGEMRO`,
+      description: isMissing
+        ? locale === 'zh-CN' ? '找不到请求的 SAGEMRO 洞察文章。' : 'The requested SAGEMRO insight could not be found.'
+        : description,
       canonical: isMissing ? `${canonicalHost}/insights/${slug}` : publicRoute?.canonical,
       lang: locale,
       robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
       structuredData: isMissing ? null : publicRoute?.structuredData,
     });
-  }, [guide, insight, locale, slug]);
+  }, [canonicalHost, copy, guide, insight, slug, locale]);
 
   if (slug && !insight && !guide) {
     return <NotFoundPage isCn={locale === 'zh-CN'} />;
@@ -41,38 +78,34 @@ export function InsightsPage({ pathname = '/insights', acquisitionContext, onOpe
   const content = guide
     ? <DiagnosticGuide guide={guide} locale={locale} acquisitionContext={acquisitionContext} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} />
     : insight
-      ? <InsightDetail insight={insight} />
-      : <InsightsHub />;
+      ? <InsightDetail copy={copy} insight={insight} />
+      : <InsightsHub copy={copy} insights={localizedInsights} />;
 
   return <PublicSiteShell isCn={locale === 'zh-CN'} onOpenLegal={onOpenLegal}>{content}</PublicSiteShell>;
 }
 
-function getLocalizedInsight(slug, locale) {
-  return getLocalizedInsights(locale).find((item) => item.slug === slug) || null;
-}
-
-function InsightsHub() {
+function InsightsHub({ copy, insights }) {
   return (
-      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
         <a href="/" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
           <ArrowLeft size={16} />
-          Back to service
+          {copy.back}
         </a>
         <section className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
           <div>
             <div className="inline-flex items-center gap-2 rounded-lg border border-[#263238] bg-[#111820] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white">
               <Newspaper size={14} className="text-[var(--color-primary)]" />
-              SAGEMRO Insights
+              {copy.eyebrow}
             </div>
             <h1 className="mt-5 text-3xl font-semibold leading-tight text-[var(--color-text-primary)] sm:text-5xl">
-              Practical notes for machine decisions, service risk, and shop-floor planning.
+              {copy.h1}
             </h1>
             <p className="mt-4 max-w-2xl text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">
-              Short, checkable guides connected to the calculators and AI workspace. The goal is to clarify assumptions before service, purchasing, or production decisions.
+              {copy.intro}
             </p>
             <div className="mt-5 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/5 px-4 py-3">
               <p className="text-sm leading-6 text-[var(--color-text-secondary)]">
-                <span className="font-medium text-[var(--color-text-primary)]">Reading an insight?</span> When your AI analysis mentions a concept you haven\'t seen before, jump straight to the matching article for a quick reference.
+                {copy.aiBridge}
               </p>
             </div>
           </div>
@@ -86,12 +119,12 @@ function InsightsHub() {
   );
 }
 
-function InsightDetail({ insight }) {
+function InsightDetail({ copy, insight }) {
   return (
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-10">
+    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-10">
         <a href="/insights/" className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]">
           <ArrowLeft size={16} />
-          All insights
+          {copy.allInsights}
         </a>
         <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-5 sm:p-7">
           <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-text-muted)]">
@@ -109,7 +142,7 @@ function InsightDetail({ insight }) {
             <div className="flex items-start gap-3">
               <Calculator size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" />
               <div>
-                <div className="text-sm font-semibold text-[var(--color-text-primary)]">Related calculator</div>
+                <div className="text-sm font-semibold text-[var(--color-text-primary)]">{copy.relatedCalculator}</div>
                 <a href={`/tools/${insight.toolSlug}/`} className="mt-1 inline-flex text-sm text-[var(--color-primary)] hover:underline">
                   {insight.toolLabel}
                 </a>

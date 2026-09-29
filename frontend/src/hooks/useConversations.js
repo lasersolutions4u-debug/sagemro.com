@@ -4,6 +4,7 @@ import {
   getConversations,
   renameConversation as apiRenameConversation,
 } from '../services/api';
+import { isCnLocale } from '../utils/locale';
 import { generateId } from '../utils/helpers';
 
 export function useConversations({ isAuthenticated = false } = {}) {
@@ -11,7 +12,7 @@ export function useConversations({ isAuthenticated = false } = {}) {
   const [loading, setLoading] = useState(true);
   const error = null;
 
-  // 从 localStorage 加载对话
+  // 访客保留本地草稿；登录用户始终以服务端列表为准。
   const loadFromStorage = useCallback(() => {
     try {
       const stored = localStorage.getItem('sagemro_conversations');
@@ -48,9 +49,10 @@ export function useConversations({ isAuthenticated = false } = {}) {
 
   // 创建新对话
   const createConversation = useCallback(() => {
+    const title = isCnLocale() ? '新对话' : 'New Chat';
     const newConv = {
       id: generateId(),
-      title: 'New Chat',
+      title,
       last_message: '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

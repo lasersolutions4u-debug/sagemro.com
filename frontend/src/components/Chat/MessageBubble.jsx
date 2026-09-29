@@ -3,10 +3,12 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Bot, User, Copy, Check, X } from 'lucide-react';
 import { formatTime, normalizeMarkdownTable } from '../../utils/helpers';
+import { isCnLocale } from '../../utils/locale';
 
 export function MessageBubble({ message }) {
   const [copied, setCopied] = useState(false);
   const [previewImg, setPreviewImg] = useState(null);
+  const isCn = isCnLocale();
   const isUser = message.role === 'user';
   const hasImages = message.images && message.images.length > 0;
 
@@ -48,7 +50,7 @@ export function MessageBubble({ message }) {
                   <img
                     key={i}
                     src={url}
-                    alt={`Uploaded image ${i + 1}`}
+                    alt={isCn ? `上传图片 ${i + 1}` : `Uploaded image ${i + 1}`}
                     className="rounded-lg max-h-48 object-cover cursor-pointer hover:opacity-90 transition-opacity"
                     onClick={() => setPreviewImg(url)}
                     loading="lazy"
@@ -72,7 +74,7 @@ export function MessageBubble({ message }) {
               <button
                 onClick={handleCopy}
                 className="p-1 rounded hover:bg-[var(--color-hover)] text-[var(--color-text-muted)] transition-colors"
-                title="Copy"
+                title={isCn ? '复制' : 'Copy'}
               >
                 {copied ? <Check size={12} className="text-green-500" /> : <Copy size={12} />}
               </button>
@@ -95,7 +97,7 @@ export function MessageBubble({ message }) {
           </button>
           <img
             src={previewImg}
-            alt="Preview"
+            alt={isCn ? '图片预览' : 'Preview'}
             className="max-w-[90vw] max-h-[90vh] object-contain"
             onClick={(e) => e.stopPropagation()}
           />
