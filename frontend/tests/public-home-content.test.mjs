@@ -31,8 +31,19 @@ test('public home content exposes the approved bilingual service-first structure
   assert.deepEqual(zh.hero, {
     eyebrow: '面向激光与金属成形设备整机厂',
     title: '承接整机厂售后交付，不占你的编制。',
-    description: '承接保内上门、出厂调试与安装、出口设备海外装机与调试、返修件流转与备件支持。工程师由我们组织，按项目或按次结算。',
+    titleLines: ['承接整机厂售后交付，', '不占你的编制。'],
+    description: '保内上门、出口装机、返修件流转，按项目或按次承接。工程师与备件由我们组织，检测数据与服务结论留档回传。',
+    image: {
+      src: '/hero-field-service.jpg',
+      alt: '激光切割设备切割金属板材的现场，切割点火花四溅',
+      caption: '现场交付 · 装机调试 · 保内上门',
+    },
   });
+  // titleLines 只负责断行，拼起来必须逐字等于 title，否则标题会被静默改坏。
+  assert.equal(zh.hero.titleLines.join(''), zh.hero.title);
+  // 实拍图只服务中国版：图放在 public-cn/ 叠加目录，国际版首屏不得带上它。
+  assert.equal(en.hero.image, undefined);
+  assert.equal(en.hero.titleLines, undefined);
   assert.deepEqual(zh.services.items.map((item) => item.title), zhServiceTitles);
 
   assert.deepEqual(zh.audiences, {

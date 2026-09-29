@@ -52,7 +52,10 @@ test('public home renders the approved service-first section order and real navi
     'faqs',
     'final-cta',
   ]);
-  assert.match(html, /<h1[^>]*>承接整机厂售后交付，不占你的编制。<\/h1>/);
+  // h1 内部用 span 控制断行（避免「制。」孤字一行），断言先剥标签再比对全文。
+  const heroHeading = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/);
+  assert.ok(heroHeading, '首屏应包含 h1');
+  assert.equal(heroHeading[1].replace(/<[^>]+>/g, ''), '承接整机厂售后交付，不占你的编制。');
   // 设备用户口径下沉为次入口，文案保持不变。
   assert.match(html, /设备出现故障？从问题判断到服务执行，帮你明确下一步。/);
   // 整机厂 4 条 + 设备用户 10 条，两类 FAQ 分开成组。
@@ -71,6 +74,10 @@ test('public home renders the approved service-first section order and real navi
   // 设备用户仍通过次入口 CTA 进入 AI 门户（上行已断言该链接存在）。
   assert.doesNotMatch(html, /data-home-chat=/);
   assert.doesNotMatch(html, /home-chat-input/);
+  // CN 首屏实拍图：资源来自 public-cn/ 叠加目录，必须带 alt 与说明条。
+  assert.match(html, /<img[^>]*src="\/hero-field-service\.jpg"/);
+  assert.match(html, /<img[^>]*alt="[^"]+"/);
+  assert.match(html, /现场交付 · 装机调试 · 保内上门/);
   for (const [title, href] of [
     ['激光切割速度参考', '/tools/laser-cutting-speed-reference/'],
     ['冷水机和除尘器选型参考', '/tools/laser-chiller-dust-collector-sizing-checklist/'],
@@ -96,6 +103,8 @@ test('public home exposes six service links, ten direct FAQs, and no competing i
   assert.match(html, /id="home-chat-input"/);
   assert.match(html, /data-home-chat="send"/);
   assert.match(html, /Ask SAGEMRO AI/);
+  // 中国版专属实拍图不得出现在国际站首屏。
+  assert.doesNotMatch(html, /hero-field-service/);
 });
 
 test('App routes only the resolved public build target to the public home', async () => {

@@ -120,10 +120,21 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
     <PublicSiteShell isCn={isCn} onOpenLegal={onOpenLegal}>
       <section data-home-section="hero" className="relative overflow-hidden border-b border-[#e6dccf] bg-[#f7f3ed] px-5 py-16 md:py-24">
         <div className="pointer-events-none absolute inset-0 opacity-45" style={{ backgroundImage: 'linear-gradient(#e8ded2 1px, transparent 1px), linear-gradient(90deg, #e8ded2 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
-        <div className={`relative mx-auto grid max-w-[1240px] gap-10 lg:px-3 ${isCn ? '' : 'lg:grid-cols-[1.35fr_0.65fr]'}`}>
+        <div className={`relative mx-auto grid max-w-[1240px] gap-10 lg:px-3 ${isCn ? 'lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-10 xl:grid-cols-[minmax(0,1fr)_400px] xl:gap-14' : 'lg:grid-cols-[1.35fr_0.65fr]'}`}>
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#d97706]">{content.hero.eyebrow}</p>
-            <h1 className="mt-5 max-w-4xl text-4xl font-semibold leading-[1.12] tracking-[-0.04em] text-[#21160c] md:text-6xl">{content.hero.title}</h1>
+            {/* CN 标题断行由 titleLines 显式给定，所以字号必须保证最长那行（10 字 ≈ 9.6em）放得进文字列，
+                否则 span 会二次折行、把「交付，」甩成单独一行。实测可用宽度：390px → 340；
+                md 单列 → 728；lg 双列（图 280）→ 614；xl 双列（图 400）→ 760~784。 */}
+            <h1 className={`mt-5 max-w-4xl font-semibold leading-[1.12] tracking-[-0.04em] text-[#21160c] ${isCn ? 'text-2xl md:text-5xl xl:text-6xl' : 'text-4xl md:text-6xl'}`}>
+              {isCn
+                ? content.hero.titleLines.map((line) => (
+                    <span key={line} className="block">
+                      {line}
+                    </span>
+                  ))
+                : content.hero.title}
+            </h1>
             <p className="mt-6 max-w-3xl text-base leading-8 text-[#6b5a48] md:text-lg">{content.hero.description}</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button type="button" onClick={openConsultationForm} className="flex min-h-12 items-center justify-center rounded-lg bg-[#f59e0b] px-6 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24]">
@@ -149,6 +160,28 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
             <div className="lg:pt-2">
               <HomeChatPanel isCn={isCn} onOpenLegal={onOpenLegal} />
             </div>
+          )}
+          {isCn && content.hero.image && (
+            <figure className="flex lg:pt-2">
+              <div className="flex w-full flex-col overflow-hidden rounded-xl border border-[#e6dccf] bg-[#21160c] shadow-[0_18px_50px_rgba(45,33,22,0.14)]">
+                {/* 移动端由 aspect-[3/2] 定高；lg 起 figure 被 grid 拉伸到与文字列等高，
+                    这里用 flex-1 让图吃掉剩余高度（object-cover 裁两侧），
+                    否则卡片底部会空出一大块。 */}
+                <img
+                  src={content.hero.image.src}
+                  alt={content.hero.image.alt}
+                  width={943}
+                  height={640}
+                  loading="eager"
+                  fetchPriority="high"
+                  decoding="async"
+                  className="aspect-[3/2] w-full min-h-0 flex-1 object-cover"
+                />
+                <figcaption className="border-t border-[#43382d] px-4 py-3 font-mono text-[11px] tracking-[0.12em] text-[#fbbf24] xl:text-xs xl:tracking-[0.14em]">
+                  {content.hero.image.caption}
+                </figcaption>
+              </div>
+            </figure>
           )}
         </div>
       </section>
