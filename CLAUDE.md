@@ -25,7 +25,7 @@
 
 | 站点 | 保留的功能 | 说明 |
 | --- | --- | --- |
-| sagemro.com / sagemro.cn | **宣传推广落地页** + 咨询线索表单 + Store 链接 + AI 助手入口（跳 ai 站） | 营销页：首页 / 服务 / 工具 / 技术洞察（**`/brands/` 品牌页已于 2026-09-29 下线**，见 `docs/superpowers/specs/2026-09-29-com-cn-audience-positioning-design.md` §9.1）；咨询表单写入 `leads`（`POST /api/contact`），不创建工单 |
+| sagemro.com / sagemro.cn | **宣传推广落地页** + 咨询线索表单 + Store 链接 + AI 助手入口（跳 ai 站） | 营销页：首页 / 服务 / 工具 / 技术洞察（**`/brands/` 品牌页已于 2026-09-29 下线**，见本地非公开文档 `docs/research/2026-09-29-com-cn-audience-positioning-design.md` §9.1）；咨询表单写入 `leads`（`POST /api/contact`），不创建工单 |
 | ai.sagemro.com / ai.sagemro.cn | **AI 门户**：AI 对话 + 会话历史 | 客户登录/注册保留（由 AI 门户与主站共用） |
 | admin.sagemro.com / admin.sagemro.cn | **知识中枢**：登录 + 知识库 + 知识候选 + 内部员工账号 + 注册用户统计与管理 | 其余 9 个后台页面已删除；非 admin 内部员工（含商务角色）登录后只有知识库 |
 | engineer.sagemro.com / engineer.sagemro.cn | **工程师招募落地页 + 申请表单** | 工程师工作台、工单、派工、定价、服务资料全部下线 |
@@ -103,7 +103,7 @@ CN 分支独有 **13** 个 `frontend/` 文件——其中 **11 个是 main 明�
 **22 个共享 `frontend/src` 文件里 14 个含 CN 独有内容**——中国价格参考源（我的钢铁网/上期所/中钢协 + CNY 单位）、
 中国合规条款（`LegalModal` 的数据保存期限/跨境传输/GDPR 权利）、中文界面实现、`ChatArea` 的置顶滚动与
 「有新消息」气泡。**只按"文件是否只存在于一侧"做审计会完全漏掉这一层。**
-完整清单见 `docs/superpowers/specs/2026-09-29-china-edition-audit.md` §3.2。
+完整清单见本地非公开文档 `docs/research/2026-09-29-china-edition-audit.md` §3.2。
 
 🔴 **把阿里云发布入口切到 main 时，三件必须同时改**——只改 ref 校验会静默产出 COM 产物并发到 CN：
 
@@ -118,7 +118,7 @@ CN 分支独有 **13** 个 `frontend/` 文件——其中 **11 个是 main 明�
 > 拿到 404 → 断言 `!= 400` → `::error::` **直接失败**。**正确动作是把 CN 版 workflow 移植进 main**，再改 ref 校验。
 > 另：**Worker 只由 main 部署**（`deploy-worker` 的守卫是 `refs/heads/main`），CN 的 workflow 不构建 Worker，
 > 因此 **CN 分支上数百处 `worker/**` 差异对生产无影响**。
-> 详见 `docs/superpowers/specs/2026-09-29-china-edition-audit.md` §2.3 / §2.4。
+> 详见本地非公开文档 `docs/research/2026-09-29-china-edition-audit.md` §2.3 / §2.4。
 
 失败机制（已逐行核对代码）：main 上 `runBuild` **总是**把 market 推导出的 locale 显式传给
 `buildPublicPages`（`MARKETS[selected].locale`，默认 `com` → `en`），所以 `buildPublicPages:81` 的
