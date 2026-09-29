@@ -27,8 +27,12 @@ test('Aliyun China portal waits for the shared API and D1 contract', () => {
   assert.match(workflow, /wrangler d1 execute sagemro-db-cn --env production --remote/);
   assert.match(workflow, /047_structured_service_request_intake/);
   assert.match(workflow, /048_service_request_assist_quota/);
-  assert.match(workflow, /POST https:\/\/api\.sagemro\.cn\/api\/service-request-assist/);
-  assert.match(workflow, /assist_status.*400/s);
+  // 就绪探测必须指向【保留】的接口：服务请求/工单/物料已随 2026-09-24 裁剪下架，
+  // 探测它们会稳定拿到 404 并卡死发布（china-edition 上曾因此失败）。
+  // 现改用 /api/contact 作为「新 Worker 已上线」的保留契约：空 body 期望 400，而非 401/404。
+  assert.match(workflow, /-X POST https:\/\/api\.sagemro\.cn\/api\/contact/);
+  assert.match(workflow, /contact_status.*400/s);
+  assert.doesNotMatch(workflow, /api\/service-request-assist/);
 });
 
 test('Aliyun activation atomically maps each host to the approved artifact', () => {
@@ -60,9 +64,13 @@ test('Aliyun health checks and summary include the AI portal without dropping ex
   for (const url of urls) {
     assert.match(workflow, new RegExp(url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
-  assert.match(workflow, /ai\.sagemro\.cn\/service-request\?mode=manual/);
-  assert.match(workflow, /noindex,nofollow,noarchive/);
+  // 取代已下线的 service-request 探测：改用 X-Robots-Tag 与三类冒烟探针。
+  assert.match(workflow, /X-Robots-Tag/);
+  assert.match(workflow, /deploy-admin-smoke/);
+  assert.match(workflow, /expected HTTP 404/);
+  assert.match(workflow, /unexpected\.invalid/);
   assert.match(workflow, /- AI: https:\/\/ai\.sagemro\.cn\//);
+  assert.doesNotMatch(workflow, /service-request\?mode=manual/);
 });
 
 test('the China publish entry never builds with the default com market', () => {
@@ -78,4 +86,9 @@ test('the China publish entry never builds with the default com market', () => {
     buildsForCnMarket || pinnedToCnTemplate,
     'either build explicitly for the cn market, or keep the china-edition ref guard whose checkout template is lang="zh-CN"',
   );
+
+  // 2026-09-29 切换：发布入口改由 main 构建，因此必须【同时】满足两条——
+  // 显式选 cn 市场，且 ref 守卫已是 main。缺任一条都会把英文产物静默发到 CN。
+  assert.match(workflow, /GITHUB_REF_NAME.*!=.*"main"/);
+  assert.doesNotMatch(workflow, /GITHUB_REF_NAME.*!=.*china-edition/);
 });
