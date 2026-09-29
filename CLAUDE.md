@@ -25,7 +25,7 @@
 
 | 站点 | 保留的功能 | 说明 |
 | --- | --- | --- |
-| sagemro.com / sagemro.cn | **宣传推广落地页** + 咨询线索表单 + Store 链接 + AI 助手入口（跳 ai 站） | 营销页：首页 / 服务 / 品牌 / 工具 / 技术洞察；咨询表单写入 `leads`（`POST /api/contact`），不创建工单 |
+| sagemro.com / sagemro.cn | **宣传推广落地页** + 咨询线索表单 + Store 链接 + AI 助手入口（跳 ai 站） | 营销页：首页 / 服务 / 工具 / 技术洞察（**`/brands/` 品牌页已于 2026-09-29 下线**，见 `docs/superpowers/specs/2026-09-29-com-cn-audience-positioning-design.md` §9.1）；咨询表单写入 `leads`（`POST /api/contact`），不创建工单 |
 | ai.sagemro.com / ai.sagemro.cn | **AI 门户**：AI 对话 + 会话历史 | 客户登录/注册保留（由 AI 门户与主站共用） |
 | admin.sagemro.com / admin.sagemro.cn | **知识中枢**：登录 + 知识库 + 知识候选 + 内部员工账号 + 注册用户统计与管理 | 其余 9 个后台页面已删除；非 admin 内部员工（含商务角色）登录后只有知识库 |
 | engineer.sagemro.com / engineer.sagemro.cn | **工程师招募落地页 + 申请表单** | 工程师工作台、工单、派工、定价、服务资料全部下线 |
@@ -37,7 +37,11 @@
 - **D1 表与数据一律保留**，migration 文件不删：历史工单/物料/客户数据仍可查询与备份，只是没有 API 入口。
 - `worker/src/index.js` 里被下架路由的 handler 函数暂时仍是**不可达死代码**，后续可单独做一轮清理。
 - 删除是把功能下线，不是迁移：需要恢复某个功能时，参考 git 历史而不是从记忆里重写。
-- **CN 侧尚未同步这次裁剪**：`china-edition` 分支仍带着完整旧功能，CN 的裁剪是紧接的第二步。
+- **CN 侧的裁剪已完成**（2026-09-29 实测，取代此前"尚未同步"的描述）：`china-edition` 上
+  `0d0fb1f`（前端主站裁剪为营销落地页 + AI 门户 + 工程师招募页）、`10043a3`（worker 下架工单/物料/客户/商务/
+  推广/评价/工程师路由，新增 `/api/contact`）、`edad9ec`（后台裁剪为知识中枢）三连提交已完成 CN 侧下架；
+  `WorkOrder` / `Material` / `BusinessWorkspace` / `EngineerServiceProfileForm` 等路径在 CN 上文件数均为 0。
+  **"CN 的裁剪是紧接的第二步"这项待办已不存在。**
 
 ## 三、部署流程
 
@@ -88,10 +92,18 @@ market **默认 `com`**，所有现有调用方式行为不变。国内版专属
 于是走模板兜底 `localeFromTemplate()`，读到该分支 `index.html` 的 `lang="zh-CN"` → 中文产物。
 **这份正确性是历史巧合，不是设计保证。**
 
-⚠️ **它与 main 是双向分叉，不是「落后」。** 2026-09-17 核对：共同 merge-base `0edb0cf`，
-CN 独有提交 **479** 个、main 独有提交 **483** 个；CN 分支独有 28 个 `frontend/` 文件
-（含 main 完全没有的 CN 专属特性与 6 个 flywheel 媒体文件），测试文件 66 个 vs main 60 个。
-**因此「把 CN 切到 main」不等于切换开关，而会丢掉 CN 分支独有的内容**——必须先做逐项审计与移植。
+⚠️ **它与 main 是双向分叉，不是「落后」。** 2026-09-29 实测：共同 merge-base `0edb0cf`，
+CN 独有提交 **490** 个、main 独有提交 **509** 个（此数字持续变化，**以 `git rev-list --count` 实测为准，勿硬编码**）。
+CN 分支独有 **13** 个 `frontend/` 文件——其中 **11 个是 main 明令必须不存在的退役文件**
+（6 个 flywheel 媒体 + `ToolBar.jsx` / `Button.jsx` / `loginPresets.js` / `tokens.css`，
+以及 `cookie-auth-compatibility-contract.test.mjs` 这个 main 同名测试的子集），**真正的整份独有资产只有 2 个**
+（`nginx-http2-config.test.mjs`、`nginx-public-routes-workflow.test.mjs`）。
+
+🔴 **但 CN 的真正内容不在这 13 个文件里，而在两侧都有的共享文件中。** 2026-09-29 逐文件审计确认：
+**22 个共享 `frontend/src` 文件里 14 个含 CN 独有内容**——中国价格参考源（我的钢铁网/上期所/中钢协 + CNY 单位）、
+中国合规条款（`LegalModal` 的数据保存期限/跨境传输/GDPR 权利）、中文界面实现、`ChatArea` 的置顶滚动与
+「有新消息」气泡。**只按"文件是否只存在于一侧"做审计会完全漏掉这一层。**
+完整清单见 `docs/superpowers/specs/2026-09-29-china-edition-audit.md` §3.2。
 
 🔴 **把阿里云发布入口切到 main 时，三件必须同时改**——只改 ref 校验会静默产出 COM 产物并发到 CN：
 
@@ -99,13 +111,28 @@ CN 独有提交 **479** 个、main 独有提交 **483** 个；CN 分支独有 28
 2. 构建步骤加 `SAGEMRO_BUILD_MARKET: cn`，或改用 `build:public:cn` / `build:portal:cn`
 3. `frontend/tests/aliyun-deploy-workflow-contract.test.mjs` 中对应的断言
 
+> ⚠️ **2026-09-29 审计补充：第 1 项不该只是"改 ref 校验"。** CN 版 `aliyun-cn-deploy.yml` 比 main 版
+> **多 252 行**，含 `expected_sha` 必填（精确锁定已评审的那一个 commit）、`preflight_only` **默认 true**
+> （先空跑不发布）、以及 `Roll back failed China release` 自动回滚四链接；而 **main 版有两个探针指向已下线的端点**
+> （`/api/service-request-assist`、`ai.sagemro.cn/service-request?mode=manual`），拿 main 版发 CN 会因探针
+> 拿到 404 → 断言 `!= 400` → `::error::` **直接失败**。**正确动作是把 CN 版 workflow 移植进 main**，再改 ref 校验。
+> 另：**Worker 只由 main 部署**（`deploy-worker` 的守卫是 `refs/heads/main`），CN 的 workflow 不构建 Worker，
+> 因此 **CN 分支上数百处 `worker/**` 差异对生产无影响**。
+> 详见 `docs/superpowers/specs/2026-09-29-china-edition-audit.md` §2.3 / §2.4。
+
 失败机制（已逐行核对代码）：main 上 `runBuild` **总是**把 market 推导出的 locale 显式传给
 `buildPublicPages`（`MARKETS[selected].locale`，默认 `com` → `en`），所以 `buildPublicPages:81` 的
 模板兜底分支**在 main 上是死代码**。在 main 上不加开关构建 CN，会得到英文预渲染 +
 sitemap/llms.txt 指向 `sagemro.com` + `Baiduspider: Disallow: /`，且不叠加 `public-cn/`。
 
-**`china-edition` 现状：冻结、不再同步，但仍是 CN 的唯一构建来源（见上）。**
-CN 的最终形态（继续冻结 / 正式并入 main / 关停）**尚未决定**——在决定前，不要把它当成待同步的分支。
+**`china-edition` 现状：仍在被主动逐条同步，且仍是 CN 的唯一构建来源（见上）。**
+2026-09-29 实测 `git cherry main china-edition`：**151 个 CN 提交已在 main 中等价**，且 CN 最近 3 个提交
+就是同步 main 的工程师招募页改动（`5a81154` / `295c46e` / `8263973`）。
+**因此"已冻结、零维护"这个描述与事实不符**——同步成本每月都在发生。
+
+CN 的最终形态（继续同步 / 正式并入 main / 关停）**尚未决定**；但 2026-09-29 的只读审计已证明
+**并入 main 的风险低于原估计**（要丢的主要是退役文件、550 张验收截图与 3 个私人笔记），
+真正的移植面是 **14 个共享文件内的 CN 内容 + CN 版发布 workflow**。详见该审计 §5。
 
 **关键事实**：
 - **CN 生产发布必须手动 dispatch，且只能从 `china-edition` 触发**（ref 硬校验）；不发布就不会更新。
