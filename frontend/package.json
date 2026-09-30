@@ -11,6 +11,7 @@
     "build:public:cn": "node scripts/runBuild.mjs public cn",
     "build:portal:cn": "node scripts/runBuild.mjs portal cn",
     "generate:seo-route-index": "node scripts/generatePublicSeoRouteIndex.mjs",
+    "generate:home-featured-tools": "node scripts/generateHomeFeaturedTools.mjs",
     "pretest": "npm run build",
     "test": "node --test tests/*.test.mjs",
     "lint": "eslint .",

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { getDiagnosticGuide, getDiagnosticGuides } from '../src/data/diagnosticGuides.js';
@@ -101,50 +101,3 @@ test('the acquisition hook keeps the heavy route and guide data off the eager im
   assert.doesNotMatch(source, /from\s+'[^']*diagnosticGuides/, '不要在埋点模块里 import 完整指南数据');
   assert.match(source, /from\s+'\.\.\/data\/publicSeoRouteIndex\.js'/);
 });
-
-test('the eager module graph reachable from App.jsx never includes the route manifest', () => {
-  // 从入口出发，只沿**静态** import 走（`lazy(() => import(...))` 是动态的，因此天然不会被跟随），
-  // 断言 132 KB 的路由正文与 38 KB 的指南数据都不在首屏图里。
-  // 这比"检查某一个文件有没有写 import"强：它证明的是整张首屏图。
-  const { files, reached } = walkStaticImports(path.join(root, 'src', 'App.jsx'));
-
-  const heavy = [...reached].filter((file) => /data[\\/](publicSeoRoutes|diagnosticGuides)\.js$/.test(file));
-  assert.deepEqual(heavy, [], '首屏图里出现了重量级数据模块');
-  assert.ok(files.length > 10, `只走到 ${files.length} 个文件，解析大概坏了`);
-
-  // 索引模块必须在图里 —— 否则说明上面的遍历把 import 都漏掉了。
-  assert.ok(
-    [...reached].some((file) => /data[\\/]publicSeoRouteIndex\.js$/.test(file)),
-    '索引模块应当是首屏图的一部分',
-  );
-});
-
-const IMPORT_PATTERN = /(?:^|[\s;{(])import\s+(?:[^'"]*?\sfrom\s+)?['"]([^'"]+)['"]/g;
-const SCRIPT_EXTENSIONS = ['.js', '.jsx', '.mjs'];
-
-function resolveSpecifier(fromFile, specifier) {
-  if (!specifier.startsWith('.')) return null;
-  const base = path.resolve(path.dirname(fromFile), specifier);
-  const candidates = [
-    base,
-    ...SCRIPT_EXTENSIONS.map((extension) => `${base}${extension}`),
-    ...SCRIPT_EXTENSIONS.map((extension) => path.join(base, `index${extension}`)),
-  ];
-  return candidates.find((candidate) => existsSync(candidate) && !candidate.endsWith(path.sep)) || null;
-}
-
-function walkStaticImports(entry) {
-  const reached = new Set();
-  const queue = [entry];
-  while (queue.length) {
-    const file = queue.pop();
-    if (reached.has(file)) continue;
-    reached.add(file);
-    const source = readFileSync(file, 'utf8');
-    for (const match of source.matchAll(IMPORT_PATTERN)) {
-      const resolved = resolveSpecifier(file, match[1]);
-      if (resolved && !reached.has(resolved)) queue.push(resolved);
-    }
-  }
-  return { files: [...reached], reached };
-}

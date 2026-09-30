@@ -1,5 +1,8 @@
 import { getPublicHomeContent } from '../../data/publicHomeContent';
-import { getLocalizedTool, industryTools } from '../../data/industryTools';
+// 三张工具卡片的数据来自生成模块。**不能**改回 import data/industryTools.js：
+// 那是 61 KB（全部工具的 SEO 证据 + 计算器），而首页是静态导入的 —— 它会被放进
+// 入口分块，让每一个营销页都多付一次。见 tests/home-featured-tools.test.mjs。
+import { getHomeFeaturedTools } from '../../data/homeFeaturedTools';
 import { PublicSiteShell } from './PublicSiteShell';
 import { HomeChatPanel } from './HomeChatPanel';
 import { openConsultationForm } from '../../utils/consultation';
@@ -21,8 +24,6 @@ const problemRoutes = {
   maintenance: serviceRoutes.maintenance,
   parts: serviceRoutes.parts,
 };
-
-const featuredToolIds = ['cutting-speed', 'auxiliary-sizing', 'metal-weight'];
 
 const insightRoutes = {
   diagnosis: '/insights/laser-protective-lens-burning/',
@@ -111,10 +112,7 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
   const content = getPublicHomeContent(isCn);
   const market = isCn ? 'cn' : 'com';
   const copy = labels[market];
-  const featuredTools = featuredToolIds
-    .map((id) => industryTools.find((tool) => tool.id === id))
-    .filter(Boolean)
-    .map((tool) => getLocalizedTool(tool, isCn ? 'zh-CN' : 'en'));
+  const featuredTools = getHomeFeaturedTools(isCn ? 'zh-CN' : 'en');
 
   return (
     <PublicSiteShell isCn={isCn} onOpenLegal={onOpenLegal}>
