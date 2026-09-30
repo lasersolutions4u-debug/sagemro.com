@@ -77,6 +77,34 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/services/spare-parts-consumables/" />
   </url>
   <url>
+    <loc>https://sagemro.com/services/oem-service-partner/</loc>
+    <lastmod>2026-09-29</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/services/oem-service-partner/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/services/oem-service-partner/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/services/oem-service-partner/" />
+  </url>
+  <url>
+    <loc>https://sagemro.com/services/after-sales-outsourcing/</loc>
+    <lastmod>2026-09-29</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/services/after-sales-outsourcing/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/services/after-sales-outsourcing/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/services/after-sales-outsourcing/" />
+  </url>
+  <url>
+    <loc>https://sagemro.com/services/overseas-delivery/</loc>
+    <lastmod>2026-09-29</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/services/overseas-delivery/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/services/overseas-delivery/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/services/overseas-delivery/" />
+  </url>
+  <url>
+    <loc>https://sagemro.com/services/third-party-service/</loc>
+    <lastmod>2026-09-29</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/services/third-party-service/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://sagemro.cn/services/third-party-service/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://sagemro.com/services/third-party-service/" />
+  </url>
+  <url>
     <loc>https://sagemro.com/tools/</loc>
     <lastmod>2026-09-29</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://sagemro.com/tools/" />

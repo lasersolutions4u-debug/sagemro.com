@@ -94,6 +94,10 @@ SAGEMRO 承接激光与金属成形设备整机厂自己做不过来的售后交
 - ${host}/services/preventive-maintenance/ — 激光切割机与折弯机预防性维护
 - ${host}/services/machine-relocation-installation/ — 激光切割机拆机、移位、安装与调试
 - ${host}/services/spare-parts-consumables/ — 激光切割机备件与耗材供应
+- ${host}/services/oem-service-partner/ — 整机厂售后合作与保内服务外包
+- ${host}/services/after-sales-outsourcing/ — 设备委外维修与售后外包
+- ${host}/services/overseas-delivery/ — 出口设备海外安装调试与交付
+- ${host}/services/third-party-service/ — 第三方与多品牌设备服务
 - ${host}/tools/ — 材料重量、切割成本、折弯与辅机选型计算器
 - ${host}/insights/ — 实务说明与故障处理指南
 - ${host}/about/technical-review/ — 技术内容审核政策
@@ -128,6 +132,10 @@ in advance.
 - ${host}/services/preventive-maintenance/ — laser cutting machine and press brake maintenance
 - ${host}/services/machine-relocation-installation/ — relocation, installation, and commissioning
 - ${host}/services/spare-parts-consumables/ — spare parts and consumables, including exchange units
+- ${host}/services/oem-service-partner/ — OEM after-sales service partner
+- ${host}/services/after-sales-outsourcing/ — outsourced laser equipment field service
+- ${host}/services/overseas-delivery/ — overseas installation, commissioning, and warranty response
+- ${host}/services/third-party-service/ — third-party and multi-brand equipment service
 - ${host}/tools/ — free laser cutting, press brake, and material calculators
 - ${host}/insights/ — practical service notes and troubleshooting guides
 - ${host}/about/technical-review/ — technical content review policy

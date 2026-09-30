@@ -15,6 +15,12 @@ const expectedSlugs = [
   'machine-relocation-installation',
   'used-equipment-evaluation',
   'spare-parts-consumables',
+  // 后四条按「以什么身份、按什么方式买」划分：前八条覆盖机型/部件，这四条覆盖
+  // 整机厂合作、委外、海外交付与第三方身份——关键词调研显示这四簇几乎无人做落地页。
+  'oem-service-partner',
+  'after-sales-outsourcing',
+  'overseas-delivery',
+  'third-party-service',
 ];
 
 const expectedTitles = {
@@ -27,6 +33,10 @@ const expectedTitles = {
     'Machine Relocation, Installation & Commissioning',
     'Used Equipment Evaluation & Disposal Planning',
     'Spare Parts & Consumables Support',
+    'OEM After-Sales Service Partner',
+    'Outsourced Field Service for Laser Equipment',
+    'Overseas Installation, Commissioning, and Warranty Response',
+    'Third-Party and Multi-Brand Equipment Service',
   ],
   'zh-CN': [
     '激光切割机维修与故障诊断',
@@ -37,6 +47,10 @@ const expectedTitles = {
     '设备拆机、移位、安装与调试',
     '二手设备评估与处置建议',
     '备件与耗材供应支持',
+    '整机厂售后合作',
+    '设备委外维修与售后外包',
+    '出口设备海外交付',
+    '第三方与多品牌设备服务',
   ],
 };
 
@@ -201,6 +215,12 @@ test('service pages link all and only relevant published diagnostic guides', asy
     'machine-relocation-installation': [],
     'used-equipment-evaluation': [],
     'spare-parts-consumables': [],
+    // 新增的四条「按身份/商业形态」入口目前不挂诊断指南——它们没有对应的故障处置内容，
+    // 硬挂会给出不相关的链接。
+    'oem-service-partner': [],
+    'after-sales-outsourcing': [],
+    'overseas-delivery': [],
+    'third-party-service': [],
   };
 
   for (const locale of ['en', 'zh-CN']) {

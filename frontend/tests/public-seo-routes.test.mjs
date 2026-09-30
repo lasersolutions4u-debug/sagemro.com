@@ -404,6 +404,10 @@ test('manifest internal links never expose draft or irrelevant diagnostic guides
     'machine-relocation-installation': [],
     'used-equipment-evaluation': [],
     'spare-parts-consumables': [],
+    'oem-service-partner': [],
+    'after-sales-outsourcing': [],
+    'overseas-delivery': [],
+    'third-party-service': [],
   };
 
   for (const locale of ['en', 'zh-CN']) {

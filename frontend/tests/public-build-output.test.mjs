@@ -39,12 +39,13 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   // 校验它确实覆盖了业务、服务页与渠道商页——这三样是 AI 判断"这家到底做什么"的依据。
   const llms = await read('llms.txt');
   const hubs = llms.match(/^\- https:\/\/[^\n]+$/gm);
-  assert.equal(hubs.length, 12);
+  assert.equal(hubs.length, 16);
   for (const path of ['/', '/partners/', '/services/', '/tools/', '/insights/', '/about/technical-review/']) {
     assert.ok(hubs.some((line) => line.startsWith(`- https://sagemro.com${path} `)), `llms.txt 缺少 ${path}`);
   }
   for (const slug of ['laser-cutting-machine-repair', 'press-brake-repair', 'remote-diagnostics',
-    'preventive-maintenance', 'machine-relocation-installation', 'spare-parts-consumables']) {
+    'preventive-maintenance', 'machine-relocation-installation', 'spare-parts-consumables',
+    'oem-service-partner', 'after-sales-outsourcing', 'overseas-delivery', 'third-party-service']) {
     assert.ok(hubs.some((line) => line.startsWith(`- https://sagemro.com/services/${slug}/ `)), `llms.txt 缺少服务页 ${slug}`);
   }
   assert.match(llms, /takes over the after-sales delivery that laser and metal-forming equipment builders/);
@@ -57,7 +58,7 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   // 服务页以前完全没有 lastmod，而缺 lastmod 会让抓取优先级失真——现在每一页都必须带。
   // （这条断言原本是反过来的：它把"服务页没有 lastmod"当成了规格。）
   const serviceEntries = [...sitemap.matchAll(/<url>\s*<loc>https:\/\/sagemro\.com\/services\/[^<]+<\/loc>[\s\S]*?<\/url>/g)];
-  assert.equal(serviceEntries.length, 8, '应匹配到 8 个服务详情页');
+  assert.equal(serviceEntries.length, 12, '应匹配到 12 个服务详情页');
   for (const serviceEntry of serviceEntries) {
     assert.match(serviceEntry[0], /<lastmod>2026-09-29<\/lastmod>/, `服务页缺 lastmod: ${serviceEntry[0].slice(0, 90)}`);
   }
