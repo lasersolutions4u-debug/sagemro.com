@@ -45,7 +45,17 @@ const CRITICAL_SHELL_STYLES = `<style data-seo-shell-critical>
     max-width: 62rem;
     margin: 0;
     font-size: clamp(2.4rem, 5vw, 4.6rem);
-    line-height: 1.04;
+    /*
+     * 行高取 1.25，与 App 里标题所用的最大行高比一致（text-3xl / text-5xl 的默认行高即 1.25；
+     * 个别页面显式用 leading-[1.12]，仍低于此值）。
+     * 与 __intro 同一个道理：React 会用 createRoot() 丢弃重建壳，同一块内容被画两次，
+     * 面积更大的那次会反超成为新的 LCP 候选。实测（390px）壳 h1 原为 1.04（41.6px）、
+     * React 为 1.25（46.875px），于是 h1 成为决定元素的那几页
+     * （CN /services/、CN /insights/、EN /insights/）移动端全部被反超。
+     * 取 1.25 保证壳的 h1 在两端都不小于 React，同时这是单向改动：只需更大，
+     * 不会让任何本来由壳胜出的页面反过来被反超。
+     */
+    line-height: 1.25;
     letter-spacing: -0.045em;
   }
   /*
