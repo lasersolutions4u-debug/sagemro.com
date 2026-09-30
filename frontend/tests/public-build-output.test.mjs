@@ -48,7 +48,7 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
     'oem-service-partner', 'after-sales-outsourcing', 'overseas-delivery', 'third-party-service']) {
     assert.ok(hubs.some((line) => line.startsWith(`- https://sagemro.com/services/${slug}/ `)), `llms.txt 缺少服务页 ${slug}`);
   }
-  assert.match(llms, /takes over the after-sales delivery that laser and metal-forming equipment builders/);
+  assert.match(llms, /takes over the after-sales delivery that laser and metal forming equipment builders/);
   // "我们不是设备商"是定位的核心区分，必须在自述里写清楚。
   assert.match(llms, /not a machine manufacturer or a machine seller/);
   assert.doesNotMatch(llms, /planning references for industrial equipment users/);

@@ -15,7 +15,7 @@ export const LEGAL_ENTITY = {
     country: 'CN',
     // 国际站面向海外整机厂与渠道商，不宣称在某一国有本地实体。
     areaServed: 'Worldwide',
-    description: 'SAGEMRO takes over the after-sales delivery that laser and metal-forming equipment builders and their overseas dealers cannot cover themselves: in-warranty on-site service, export commissioning and customer training, and returned-part exchange flow. Engineers and parts are organized by SAGEMRO, billed per project or per visit.',
+    description: 'SAGEMRO takes over the after-sales delivery that laser and metal forming equipment builders and their overseas dealers cannot cover themselves: in-warranty on-site service, export commissioning and customer training, and returned-part exchange flow. Engineers and parts are organized by SAGEMRO, billed per project or per visit.',
   },
   'zh-CN': {
     name: 'SAGEMRO',

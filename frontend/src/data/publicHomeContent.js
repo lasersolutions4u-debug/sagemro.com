@@ -166,7 +166,7 @@ const zhContent = {
 
 const enContent = {
   hero: {
-    eyebrow: 'Laser and metal-forming equipment service',
+    eyebrow: 'Laser and metal forming equipment service',
     title: 'Equipment down? Get a clear next step — from assessment to service delivery.',
     description: 'Service support for laser cutters, press brakes, and related industrial equipment, including diagnostics, repair, upgrades, relocation, maintenance, used-equipment assessment, and parts.',
   },
@@ -174,7 +174,7 @@ const enContent = {
   partnerEntry: {
     eyebrow: 'Dealers and service partners',
     title: 'A service and parts backstop for the machines you sell.',
-    description: 'We support overseas dealers and agents handling Chinese-built laser and metal-forming equipment — remote diagnosis, spare parts, exchange units, and coordinated field service.',
+    description: 'We support overseas dealers and agents handling Chinese-built laser and metal forming equipment — remote diagnosis, spare parts, exchange units, and coordinated field service.',
     cta: 'See how partner support works',
     href: '/partners/',
   },
@@ -182,7 +182,7 @@ const enContent = {
   partnerPage: {
     eyebrow: 'For overseas dealers and service partners',
     title: 'A service and parts backstop for the machines you sell.',
-    description: 'We support dealers and agents handling Chinese-built laser and metal-forming equipment — remote diagnosis, spare parts, exchange units, and coordinated field service, so a fault does not cost you the account.',
+    description: 'We support dealers and agents handling Chinese-built laser and metal forming equipment — remote diagnosis, spare parts, exchange units, and coordinated field service, so a fault does not cost you the account.',
     sections: [
       { key: 'coverage', heading: 'What partner support covers', body: 'Remote diagnosis before a trip is booked. Spare parts and exchange units to cut downtime. Coordinated field service where a site visit is unavoidable. Escalation to the equipment maker with the evidence already collected.' },
       { key: 'need', heading: 'What we need from you', body: 'Machine brand and model. Alarm code or fault symptom. Machine year or serial. Site country and access conditions.' },

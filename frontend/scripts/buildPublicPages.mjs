@@ -112,7 +112,7 @@ SAGEMRO 承接激光与金属成形设备整机厂自己做不过来的售后交
   }
   return `# SAGEMRO (Jinan Euchio Machinery Co., Ltd.)
 
-SAGEMRO takes over the after-sales delivery that laser and metal-forming equipment builders and their
+SAGEMRO takes over the after-sales delivery that laser and metal forming equipment builders and their
 overseas dealers cannot cover themselves: in-warranty on-site service, export commissioning and customer
 training, and exchange-unit flow for returned parts. Engineers and parts are organized by SAGEMRO;
 work is billed per project or per visit. We do not sell machines.

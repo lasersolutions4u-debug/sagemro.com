@@ -164,6 +164,14 @@ test('equipment category narrative uses laser and metal forming equipment consis
   const violations = copyFiles.filter((filePath) => forbiddenNarrative.test(read(filePath)));
 
   assert.deepEqual(violations, []);
+
+  // 这个测试的名字一直写着 "consistently"，但实际只校验上面的禁用词表——名不副实。
+  // 现在真的校验一致性：品类叙事统一用不带连字符的写法。
+  // 依据是既有的品牌文档（Marketing/assets/brand-guidelines.md、group-operating-manual.md）
+  // 与 worker/src/index.js 的对外文案都用这个写法；带连字符的写法是一次漂移。
+  const hyphenated = /metal-forming equipment/i;
+  const drift = copyFiles.filter((filePath) => hyphenated.test(read(filePath)));
+  assert.deepEqual(drift, [], `以下文件用了带连字符的写法，应与品牌文档统一：${drift.join(', ')}`);
 });
 
 test('AI service copy keeps service preparation neutral instead of sales routing', () => {
