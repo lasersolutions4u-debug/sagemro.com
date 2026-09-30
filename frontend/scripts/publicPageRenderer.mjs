@@ -141,7 +141,7 @@ function renderBody(route) {
   return `<div id="root" data-prerendered="true">
   <main class="seo-static-shell">
     <aside class="seo-static-shell__brand">
-      <a href="/"><img src="/sagemro-logo.png" alt="" width="60" height="60" /><span>SAGEMRO</span></a>
+      <a href="/"><img src="/sagemro-logo-192.png" alt="" width="60" height="60" /><span>SAGEMRO</span></a>
     </aside>
     <div class="seo-static-shell__content">
       <div class="seo-static-shell__frame">

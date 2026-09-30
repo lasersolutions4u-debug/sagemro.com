@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -50,8 +50,21 @@ test('customer, engineer, admin, and browser icons use the approved full SAGEMRO
     assert.equal(hash, approvedLogoHash, `${assetPath} should be the approved full robot logo`);
   }
 
-  assert.match(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-logo\.png/);
+  // 公开站渲染改用批准 logo 的 192px 派生副本。
+  // 背景：512px 原图是 124 KB，而且是**每个页面最大的资源**——因为 favicon 也指向它，
+  // 而它的最大显示尺寸只有 60px（壳）/ 44px（BrandMark）。3 倍屏分别需要 180px / 132px，
+  // 192px 够用（已在真实显示尺寸下逐尺寸比对画质）。
+  // 原件仍必须存在且哈希不变：它继续服务 Organization.logo 结构化数据，
+  // 也保证派生副本一定是从这本 logo 缩出来的，而不是被别的图替换。
+  const derivative = 'frontend/public/sagemro-logo-192.png';
+  assert.equal(existsSync(path.join(root, derivative)), true, '应存在 192px 派生副本');
+  assert.ok(statSync(path.join(root, derivative)).size < 48 * 1024, '派生副本应小于 48 KB');
+
+  assert.match(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-logo-192\.png/);
   assert.doesNotMatch(read('frontend/src/components/common/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
+  // favicon.svg 与 sagemro-brand-mark.svg 是同一个**更简化的**标记（只有头部轮廓，没有身体与记录板），
+  // 不是这本 logo。不要再为了省字节拿它去替换——那会把品牌标记悄悄换掉。这条守卫就是那个教训。
+  assert.doesNotMatch(read('frontend/index.html'), /rel="icon"[^>]*favicon\.svg/);
   assert.match(read('admin/src/components/BrandMark.jsx'), /sagemro-logo\.png/);
   assert.doesNotMatch(read('admin/src/components/BrandMark.jsx'), /sagemro-brand-mark\.svg/);
 

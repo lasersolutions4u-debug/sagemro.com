@@ -65,11 +65,20 @@ test('Markdown stays behind a lazy vendor boundary reachable only from ChatArea'
 });
 
 test('rendered branding uses the approved full robot PNG logo', async () => {
-  const [html, logo] = await Promise.all([
+  const [html, logo, derivative] = await Promise.all([
     readFile(resolve(distRoot, 'index.html'), 'utf8'),
     stat(resolve(distRoot, 'sagemro-logo.png')),
+    stat(resolve(distRoot, 'sagemro-logo-192.png')),
   ]);
 
+  // 批准版 512px 原图仍在产物里（Organization.logo 结构化数据用它），且声明为 512 尺寸的图标。
   assert.match(html, /type="image\/png" href="\/sagemro-logo\.png"/);
   assert.ok(logo.size < 160 * 1024, `PNG logo must stay below 160 KB (received ${logo.size} bytes)`);
+
+  // 页面实际加载的是 192px 派生副本：浏览器为标签页选最接近所需尺寸（16/32px）的图标，
+  // 所以标签页取 192 而不是 512，页面渲染也走它——每页少传约 95 KB。
+  assert.match(html, /sizes="192x192" href="\/sagemro-logo-192\.png"/);
+  assert.ok(derivative.size < 48 * 1024, `192px 派生副本应小于 48 KB（实际 ${derivative.size} 字节）`);
+  assert.ok(derivative.size < logo.size / 2, '派生副本至少应比原图小一半');
+  assert.match(html, /src="\/sagemro-logo-192\.png"/);
 });

@@ -335,7 +335,8 @@ test('prerendered public content has a visible branded first-paint contract', ()
     assert.match(html, /class="seo-static-shell__details"/);
     assert.match(html, /<h2>Service process<\/h2>|<h2>\u670d\u52a1\u6d41\u7a0b<\/h2>/);
     assert.match(html, /How are inspection and service charges determined\?|\u4e0a\u95e8\u68c0\u6d4b\u548c\u670d\u52a1\u600e\u4e48\u6536\u8d39\uff1f/);
-    assert.match(html, /<img src="\/sagemro-logo\.png" alt=""/);
+    // 首屏品牌标用 192px 派生副本（512px 原图 124 KB，且它的最大显示尺寸只有 60px）。
+  assert.match(html, /<img src="\/sagemro-logo-192\.png" alt=""/);
     assert.doesNotMatch(html, /seo-static-shell__eyebrow/);
     assert.match(html, /min-height:\s*100vh/);
     assert.match(html, /@media \(max-width:\s*720px\)/);
