@@ -140,7 +140,7 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.match(companyProfile, /export const ICP_RECORD_NUMBER = '鲁ICP备2026032904号-1';/);
   assert.match(companyProfile, /legalName: '济南钰峭机械有限公司'/);
   assert.match(companyProfile, /legalName: 'Jinan Euchio Machinery Co\., Ltd\.'/);
-  assert.match(footer, /import \{ ICP_RECORD_NUMBER \} from '\.\.\/\.\.\/data\/companyProfile';/);
+  assert.match(footer, /import \{ ICP_RECORD_NUMBER \} from '\.\.\/\.\.\/data\/companyProfile\.js';/);
   assert.match(footer, /\{ICP_RECORD_NUMBER\}/);
   assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
   assert.match(engineerRecruiting, /客服工程师品牌共创平台/);

@@ -1,3 +1,5 @@
+import { OG_LOCALES, SOCIAL_IMAGE_PATH } from '../data/companyProfile.js';
+
 const SEO_JSON_LD_ID = 'sagemro-seo-jsonld';
 
 function setMeta(name, content) {
@@ -90,7 +92,9 @@ function deriveImage(canonical) {
   if (!canonical) return null;
 
   try {
-    return new URL('/sagemro-logo.png', canonical).href;
+    // 以前这里指向 512×512 的方形 logo，分享出去是一张糊掉的小方图。
+    // 现在统一用 1200×630 的分享卡。
+    return new URL(SOCIAL_IMAGE_PATH, canonical).href;
   } catch {
     return null;
   }
@@ -143,7 +147,9 @@ export function setSeoMetadata({
   setMetaProperty('og:url', canonical);
   const resolvedImage = image === undefined ? deriveImage(canonical) : image;
   setMetaProperty('og:image', resolvedImage);
-  setMeta('twitter:card', 'summary');
+  setMetaProperty('og:locale', OG_LOCALES[lang] ?? OG_LOCALES.en);
+  // 分享卡是 1200×630 的横幅，用 summary 会被裁成小方图。
+  setMeta('twitter:card', 'summary_large_image');
   setMeta('twitter:title', title);
   setMeta('twitter:description', description);
   setMeta('twitter:image', resolvedImage);

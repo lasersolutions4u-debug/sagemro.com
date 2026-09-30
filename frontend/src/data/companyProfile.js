@@ -32,6 +32,15 @@ export const ICP_FILING_URL = 'https://beian.miit.gov.cn/';
 
 export const SUPPORT_EMAIL = 'support@sagemro.com';
 
+/**
+ * 社交分享卡（1200×630，见 frontend/public/og-sagemro.jpg）。
+ * og:image 与 twitter:image 共用；构建期静态壳与客户端运行时都从这里取，避免两处各写一份。
+ */
+export const SOCIAL_IMAGE_PATH = '/og-sagemro.jpg';
+
+/** og:locale 用的是下划线形式，和 html lang 的连字符不同。 */
+export const OG_LOCALES = { en: 'en_US', 'zh-CN': 'zh_CN' };
+
 export function getLegalEntity(locale) {
   return LEGAL_ENTITY[locale === 'zh-CN' ? 'zh-CN' : 'en'];
 }

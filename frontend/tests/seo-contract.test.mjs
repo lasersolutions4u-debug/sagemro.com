@@ -118,7 +118,8 @@ test('client navigation keeps route metadata in parity with prerendered pages', 
   assert.match(seo, /setMetaProperty\('og:url', canonical\)/);
   assert.match(seo, /setMetaProperty\('og:image', resolvedImage\)/);
   assert.match(seo, /setMeta\('twitter:title', title\)/);
-  assert.match(seo, /setMeta\('twitter:card', 'summary'\)/);
+  assert.match(seo, /setMeta\('twitter:card', 'summary_large_image'\)/);
+  assert.match(seo, /setMetaProperty\('og:locale', OG_LOCALES\[lang\] \?\? OG_LOCALES\.en\)/);
   assert.match(seo, /setMeta\('twitter:description', description\)/);
   assert.match(seo, /setMeta\('twitter:image', resolvedImage\)/);
   assert.match(seo, /JSON\.stringify\(structuredData\)/);
@@ -154,7 +155,10 @@ test('client metadata reconciles prerendered tags and clears stale route metadat
   assert.equal(schemaTags[0].id, 'sagemro-seo-jsonld');
   assert.equal(schemaTags[0].textContent, JSON.stringify(schema));
   assert.equal(document.querySelector('meta[property="og:type"]').getAttribute('content'), 'article');
-  assert.equal(document.querySelector('meta[property="og:image"]').getAttribute('content'), 'https://sagemro.com/sagemro-logo.png');
+  // 分享图改用 1200×630 的分享卡（原先指向 512×512 的方形 logo）。
+  assert.equal(document.querySelector('meta[property="og:image"]').getAttribute('content'), 'https://sagemro.com/og-sagemro.jpg');
+  assert.equal(document.querySelector('meta[property="og:locale"]').getAttribute('content'), 'en_US');
+  assert.equal(document.querySelector('meta[name="twitter:card"]').getAttribute('content'), 'summary_large_image');
   assert.deepEqual(
     Object.fromEntries(document.querySelectorAll('link[hreflang]').map((tag) => [tag.getAttribute('hreflang'), tag.getAttribute('href')])),
     {

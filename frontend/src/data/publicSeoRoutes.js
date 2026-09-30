@@ -235,7 +235,13 @@ function buildRoutes(locale) {
     description: content.description,
     modified: RELEASE_DATE,
     children,
-    body: { h1: content.h1, paragraphs: content.paragraphs, list: children.map((child) => child.label || child.title) },
+    body: {
+      h1: content.h1,
+      paragraphs: content.paragraphs,
+      // 带 href：静态壳才能把子页标题渲染成链接。原先只给纯文本，
+      // 于是 /services/、/tools/、/insights/ 三个枢纽页在壳里一个内链都没有。
+      list: children.map((child) => ({ href: new URL(child.canonical).pathname, label: child.label || child.title })),
+    },
     structuredData: {
       '@type': 'CollectionPage',
       name: content.title,
@@ -298,6 +304,12 @@ function buildRoutes(locale) {
             ...publicHome.insights.items.map((item) => item.title),
           ].join(' · '),
         },
+        // 渠道商内容以前只在客户端渲染，静态壳里完全不存在——爬虫与 AI 看不到这条业务线，
+        // 而它是国际站最重要的差异化。CN 不露出招商内容，所以只在国际站加。
+        ...(locale === 'zh-CN' || !publicHome.partnerEntry ? [] : [{
+          heading: publicHome.partnerEntry.title,
+          body: publicHome.partnerEntry.description,
+        }]),
       ],
       faqs: publicHome.faqs.items,
       links: [

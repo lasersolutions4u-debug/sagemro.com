@@ -151,8 +151,12 @@ test('manifest body mirrors visible homepage and tool headings', () => {
   // 国际站四节；中国版首页额外把三类售后交付各自拆成一节，再加协作流程与边界两节。
   // 断言"拆开且没丢东西"，而不是只数节数：以前这三块被拼成一整个 <p>，
   // AI 取不出其中任何一条独立事实。
-  assert.equal(home.body.sections.length, 4);
+  assert.equal(home.body.sections.length, 5);
   assert.equal(homeCn.body.sections.length, 9);
+  // 渠道商那节以前只存在于客户端渲染，静态壳里完全没有——爬虫与 AI 看不到这条业务线。
+  const partnerSection = home.body.sections.find((entry) => entry.heading === visibleHome.partnerEntry.title);
+  assert.ok(partnerSection, '国际站静态壳应包含渠道商协作一节');
+  assert.ok(partnerSection.body.includes(visibleHome.partnerEntry.description));
   for (const item of visibleHomeCn.makerEngagements.items) {
     const section = homeCn.body.sections.find((entry) => entry.heading === item.title);
     assert.ok(section, `中国版首页应有一节以「${item.title}」为标题`);
@@ -178,6 +182,25 @@ test('manifest body mirrors visible homepage and tool headings', () => {
     for (const tool of publicIndustryTools) {
       const route = getPublicSeoRoute(`/tools/${tool.slug}`, locale);
       assert.equal(route.body.h1, getLocalizedTool(tool, locale).seoTitle);
+    }
+  }
+});
+
+test('hub pages expose their child pages as real links in the static shell', () => {
+  // 以前枢纽页把子页标题当纯文本输出，整个壳里一个指向详情页的 <a> 都没有：
+  // 爬虫读壳时跟不下去，只能靠 sitemap 兜底发现，内链权重与锚文本全丢。
+  for (const locale of ['en', 'zh-CN']) {
+    for (const [hubPath, childPrefix] of [['/services', '/services/'], ['/tools', '/tools/'], ['/insights', '/insights/']]) {
+      const hub = getPublicSeoRoute(hubPath, locale);
+      assert.ok(hub, `${locale} 缺少 ${hubPath}`);
+      assert.ok(Array.isArray(hub.body.list) && hub.body.list.length > 0, `${locale} ${hubPath} 应有条目列表`);
+      for (const item of hub.body.list) {
+        assert.equal(typeof item.href, 'string', `${locale} ${hubPath}: 条目缺 href`);
+        assert.ok(item.href.startsWith(childPrefix), `${locale} ${hubPath}: href ${item.href} 前缀不符`);
+        assert.ok(item.label.length > 0, `${locale} ${hubPath}: 条目缺 label`);
+        // 壳里的每个 href 都必须解析到真实路由，否则就是一条死链。
+        assert.ok(getPublicSeoRoute(item.href.replace(/\/$/, ''), locale), `${locale} 壳内死链: ${item.href}`);
+      }
     }
   }
 });

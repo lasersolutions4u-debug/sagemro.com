@@ -1,3 +1,5 @@
+import { OG_LOCALES, SOCIAL_IMAGE_PATH } from '../src/data/companyProfile.js';
+
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
 
 const CRITICAL_SHELL_STYLES = `<style data-seo-shell-critical>
@@ -93,6 +95,23 @@ function safeJson(value) {
   return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
+/**
+ * 壳里的条目列表。
+ *
+ * 枢纽页（/services/、/tools/、/insights/）以前把子页标题当纯文本 <p> 输出，
+ * 整个壳里一个指向详情页的 <a> 都没有——爬虫读壳时跟不下去，只能靠 sitemap 兜底发现，
+ * 内链权重与锚文本全部丢掉。带 href 的条目现在渲染成真正的链接。
+ */
+function renderList(items) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const entries = items.map((item) => {
+    const label = typeof item === 'string' ? item : String(item.label ?? '');
+    const href = typeof item === 'string' ? null : item.href;
+    return `<li>${href ? `<a href="${escapeHtml(href)}">${escapeHtml(label)}</a>` : escapeHtml(label)}</li>`;
+  }).join('');
+  return [`<ul>${entries}</ul>`];
+}
+
 function renderBody(route) {
   const body = route.body || {};
   const paragraphs = body.paragraphs || [];
@@ -102,7 +121,7 @@ function renderBody(route) {
       ? `<p>${escapeHtml(section)}</p>`
       : `<h2>${escapeHtml(section.heading || section.title)}</h2><p>${escapeHtml(section.body)}</p>`),
     ...(body.resources || []).map((resource) => `<p>${escapeHtml(typeof resource === 'string' ? resource : resource.title || resource.label)}</p>`),
-    ...(body.list || []).map((item) => `<p>${escapeHtml(item)}</p>`),
+    ...renderList(body.list),
     ...(body.faqs || []).map((faq) => {
       const [question, answer] = Array.isArray(faq) ? faq : [faq.question, faq.answer];
       return `<h2>${escapeHtml(question)}</h2><p>${escapeHtml(answer)}</p>`;
@@ -149,7 +168,7 @@ function headTags(route, locale) {
   const alternates = Object.entries(route.alternates)
     .map(([language, href]) => `<link rel="alternate" hreflang="${escapeHtml(language)}" href="${escapeHtml(href)}" />`)
     .join('\n    ');
-  const image = `${HOSTS[locale]}/sagemro-logo.png`;
+  const image = `${HOSTS[locale]}${SOCIAL_IMAGE_PATH}`;
   return [
     `<link rel="canonical" href="${escapeHtml(route.canonical)}" />`,
     alternates,
@@ -158,7 +177,9 @@ function headTags(route, locale) {
     `<meta property="og:description" content="${escapeHtml(route.description)}" />`,
     `<meta property="og:url" content="${escapeHtml(route.canonical)}" />`,
     `<meta property="og:image" content="${escapeHtml(image)}" />`,
-    '<meta name="twitter:card" content="summary" />',
+    `<meta property="og:locale" content="${escapeHtml(OG_LOCALES[locale] ?? OG_LOCALES.en)}" />`,
+    // 分享卡是 1200×630 横幅，用 summary 会被平台裁成小方图。
+    '<meta name="twitter:card" content="summary_large_image" />',
     `<meta name="twitter:title" content="${escapeHtml(route.title)}" />`,
     `<meta name="twitter:description" content="${escapeHtml(route.description)}" />`,
     `<meta name="twitter:image" content="${escapeHtml(image)}" />`,
