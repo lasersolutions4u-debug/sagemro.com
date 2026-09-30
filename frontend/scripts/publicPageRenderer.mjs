@@ -48,12 +48,24 @@ const CRITICAL_SHELL_STYLES = `<style data-seo-shell-critical>
     line-height: 1.04;
     letter-spacing: -0.045em;
   }
+  /*
+   * line-height 刻意取 2，与 App 里导读的 leading-8（根字号 20px → 40px）一致。
+   *
+   * 为什么这一条是关键：React 用 createRoot().render() 会把整个壳丢弃重建（不是 hydrate），
+   * 所以同一段导读会被画两次，而**更大**的那次会反超成为新的 LCP 候选。
+   * 实测（移动端 390px，两侧同文案）：壳 34px 行高 → 面积比 React 小 17.6%，
+   * 于是 LCP 从 1.48s 被推到 2.94s。改成 40px 后两边面积相等，先画出的壳保持为 LCP 候选
+   * （等大不替换），交接时也不再有多余的排版跳动。
+   *
+   * 字号与 max-width 保持原样不动：clamp 让壳在桌面端比 App 更大，本来就安全；
+   * 上一版把它们一起调小，反而让 React 在桌面端反超（0.656 → 1.045），所以撤回那部分。
+   */
   .seo-static-shell__intro {
     max-width: 58rem;
     margin: 1.5rem 0 0;
     color: #66616f;
     font-size: clamp(1rem, 1.8vw, 1.25rem);
-    line-height: 1.7;
+    line-height: 2;
   }
   .seo-static-shell__details {
     display: grid;
