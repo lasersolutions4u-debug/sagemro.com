@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { runInNewContext } from 'node:vm';
+import { Script } from 'node:vm';
 
 const workflowUrl = new URL('../../.github/workflows/deploy.yml', import.meta.url);
 
@@ -44,16 +44,22 @@ test('public deployment waits for the international portal while preserving CN a
   assert.match(jobBlock(workflow, 'deploy-ai-frontend'), /needs: deploy-worker/);
   assert.match(deployment, /environment: production/);
 
+  // 同一段条件表达式在这个用例里要跑 192 次。原先每次都用 runInNewContext，
+  // 于是同一段代码被重新编译 192 遍；而每次只有 100ms 预算——单跑能过，一放进整套测试
+  // （并行执行、机器有负载）就稳定超时。改成编译一次复用，并把超时放宽到不会因负载抖动的量级。
+  // 断言一条没少，只是不再用编译开销去挤那点预算。
+  const compiledCondition = new Script(condition);
+
   for (const event of ['push', 'pull_request']) {
     for (const branch of ['main', 'china-edition', 'codex/test']) {
       for (const testResult of ['success', 'failure', 'cancelled', 'skipped']) {
         for (const portalResult of ['success', 'failure', 'cancelled', 'skipped']) {
           for (const isCancelled of [false, true]) {
-            const actual = runInNewContext(condition, {
+            const actual = compiledCondition.runInNewContext({
               github: { event_name: event, ref: `refs/heads/${branch}` },
               needs: { test: { result: testResult }, 'deploy-ai-frontend': { result: portalResult } },
               cancelled: () => isCancelled,
-            }, { timeout: 100 });
+            }, { timeout: 1000 });
             const expected = event === 'push' && !isCancelled && testResult === 'success'
               && ((branch === 'main' && portalResult === 'success')
                 || (branch === 'china-edition' && portalResult === 'skipped'));
