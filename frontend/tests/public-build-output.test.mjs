@@ -39,8 +39,8 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   // 校验它确实覆盖了业务、服务页与渠道商页——这三样是 AI 判断"这家到底做什么"的依据。
   const llms = await read('llms.txt');
   const hubs = llms.match(/^\- https:\/\/[^\n]+$/gm);
-  assert.equal(hubs.length, 17);
-  for (const path of ['/', '/partners/', '/services/', '/tools/', '/insights/', '/topics/', '/about/technical-review/']) {
+  assert.equal(hubs.length, 18);
+  for (const path of ['/', '/partners/', '/services/', '/tools/', '/insights/', '/topics/', '/about/', '/about/technical-review/']) {
     assert.ok(hubs.some((line) => line.startsWith(`- https://sagemro.com${path} `)), `llms.txt 缺少 ${path}`);
   }
   for (const slug of ['laser-cutting-machine-repair', 'press-brake-repair', 'remote-diagnostics',

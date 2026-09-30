@@ -25,11 +25,11 @@ export function getAcquisitionContentType(route, locale = 'en') {
   if (route.type === 'partners') return 'service';
   if (route.type === 'tool' || route.type === 'tools-hub') return 'tool';
   if (route.type === 'insight' && getDiagnosticGuide(getPublicContentSlug(route), locale)) return 'diagnostic_guide';
-  // 主题聚合页跨类别聚合服务/工具/洞察，本身不属于任何一个类别。Worker 端把 content_type
-  // 白名单锁在 service/diagnostic_guide/insight/tool 四个值上（worker/src/index.js:245），
-  // 不能新增类型；按既有约定（home 与 technical-review 这类信息型枢纽都计 insight）归入 insight。
+  // 主题聚合页与关于页跨类别 / 非类别，本身不属于 service/tool/insight 任何一个。
+  // Worker 端把 content_type 白名单锁在四个值上（worker/src/index.js:245），不能新增类型；
+  // 按既有约定（home 与 technical-review 这类信息型页都计 insight）归入 insight。
   return route.type === 'home' || route.type === 'insight' || route.type === 'insights-hub' || route.type === 'technical-review'
-    || route.type === 'topics'
+    || route.type === 'topics' || route.type === 'about'
     ? 'insight'
     : '';
 }

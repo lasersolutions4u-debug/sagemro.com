@@ -6,6 +6,7 @@ import { getLocalizedTool, publicIndustryTools } from '../src/data/industryTools
 import { getDiagnosticGuides } from '../src/data/diagnosticGuides.js';
 import { getDirectAccessNoindexToolRoutes, getPublicSeoRoute, getPublicSeoRoutes, getRuntimeSeoRoute } from '../src/data/publicSeoRoutes.js';
 import { getServicePages } from '../src/data/servicePages.js';
+import { getLegalEntity } from '../src/data/companyProfile.js';
 import { getTechnicalAuthor } from '../src/data/technicalAuthors.js';
 import { getTechnicalReviewPolicy } from '../src/data/technicalReviewPolicy.js';
 import { getPublicHomeContent } from '../src/data/publicHomeContent.js';
@@ -239,6 +240,41 @@ test('topic hub regroups existing pages without dead links or invented entries',
   const shell = await readFile(new URL('../src/components/Public/PublicSiteShell.jsx', import.meta.url), 'utf8');
   assert.match(shell, /\['Topics', '\/topics\/'\]/);
   assert.match(shell, /\['按主题', '\/topics\/'\]/);
+});
+
+test('about page states the entity and keeps visible headings in parity with the shell', async () => {
+  for (const locale of ['en', 'zh-CN']) {
+    const about = getPublicSeoRoute('/about', locale);
+    assert.ok(about, `${locale} 缺少 /about`);
+    assert.equal(about.type, 'about');
+    // 实体自我描述页必须真的写出法人实体名（单一来源：companyProfile.js），
+    // 否则 AI 拿到的还是一串没有归属的文本。
+    const entity = getLegalEntity(locale);
+    assert.ok(about.description.includes(entity.name), `${locale} /about 描述里没有品牌名`);
+    assert.ok(about.body.paragraphs.join(' ').includes(entity.legalName), `${locale} /about 没有写出法人实体名`);
+    // 每一节都要有标题与正文，不能只挂标题。
+    assert.ok(about.body.sections.length >= 5);
+    for (const section of about.body.sections) {
+      assert.ok(section.heading.length > 0);
+      assert.ok(section.body.length > 0);
+    }
+    // /about 与 /about/technical-review 是两条独立路由，不能互相吞掉。
+    const review = getPublicSeoRoute('/about/technical-review', locale);
+    assert.ok(review, `${locale} /about/technical-review 丢失`);
+    assert.notEqual(review.canonical, about.canonical);
+
+    assert.ok(getPublicSeoRoute('/', locale).body.links.some((link) => link.href === '/about/'));
+  }
+
+  // 可见页面必须与静态壳一样有标题层级。这里曾用 dl/dt/dd 写这几节，
+  // 结果静态壳有 6 个 h2、渲染后的页面一个都没有——爬虫与用户看到的层级对不上。
+  const component = await readFile(new URL('../src/components/About/AboutPage.jsx', import.meta.url), 'utf8');
+  assert.match(component, /<h2[^>]*>\{section\.heading\}/);
+  assert.doesNotMatch(component, /<dt\b|<dd\b/);
+
+  // 页脚是这一页在站内的自然入口。
+  const footer = await readFile(new URL('../src/components/common/Footer.jsx', import.meta.url), 'utf8');
+  assert.match(footer, /href="\/about\/"/);
 });
 
 test('partner intake page is published on the international host only', () => {

@@ -8,6 +8,7 @@ export function Footer({ onOpenLegal, compact = false }) {
   const companyLineCn = '© 2026 SAGEMRO — AI 驱动的设备服务平台';
   const legalLabel = isCn ? '规则与说明' : 'Terms, Privacy & AI Notice';
   const technicalReviewLabel = isCn ? '技术审核' : 'Technical review';
+  const aboutLabel = isCn ? '关于我们' : 'About';
   const icpLink = isCn ? (
     <>
       <span className="text-[var(--color-border)]">|</span>
@@ -28,6 +29,8 @@ export function Footer({ onOpenLegal, compact = false }) {
         <span>{isCn ? companyLineCn : companyLine}</span>
         {icpLink}
         <span className="text-[var(--color-border)]">|</span>
+        <a href="/about/" className="hover:text-[var(--color-primary)] transition-colors">{aboutLabel}</a>
+        <span className="text-[var(--color-border)]">|</span>
         <a href="/about/technical-review/" className="hover:text-[var(--color-primary)] transition-colors">{technicalReviewLabel}</a>
         <span className="text-[var(--color-border)]">|</span>
         <button onClick={() => onOpenLegal?.('agreement')} className="hover:text-[var(--color-primary)] transition-colors">{legalLabel}</button>
@@ -38,6 +41,7 @@ export function Footer({ onOpenLegal, compact = false }) {
   return (
     <footer className="border-t border-[var(--color-border)] bg-[var(--color-sidebar)] px-4 py-3 text-center space-y-1">
       <div className="flex items-center justify-center gap-3 text-[11px] text-[var(--color-text-muted)]">
+        <a href="/about/" className="hover:text-[var(--color-primary)] transition-colors">{aboutLabel}</a>
         <a href="/about/technical-review/" className="hover:text-[var(--color-primary)] transition-colors">{technicalReviewLabel}</a>
         <button onClick={() => onOpenLegal?.('agreement')} className="hover:text-[var(--color-primary)] transition-colors">{legalLabel}</button>
       </div>

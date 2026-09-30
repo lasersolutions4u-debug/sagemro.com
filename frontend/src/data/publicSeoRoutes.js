@@ -11,6 +11,7 @@ import { getTechnicalAuthor } from './technicalAuthors.js';
 import { getTechnicalReviewPolicy } from './technicalReviewPolicy.js';
 import { getPublicHomeContent } from './publicHomeContent.js';
 import { getTopicGroups } from './topicGroups.js';
+import { getCompanyAbout } from './companyAbout.js';
 import { getLegalEntity, ICP_RECORD_NUMBER, SUPPORT_EMAIL } from './companyProfile.js';
 
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
@@ -318,6 +319,7 @@ function buildRoutes(locale) {
         { href: '/tools/', label: locale === 'zh-CN' ? '实用工具' : 'Tools' },
         { href: '/insights/', label: locale === 'zh-CN' ? '技术洞察' : 'Insights' },
         { href: '/topics/', label: locale === 'zh-CN' ? '按主题浏览' : 'Browse by topic' },
+        { href: '/about/', label: locale === 'zh-CN' ? '关于我们' : 'About SAGEMRO' },
         ...(locale === 'zh-CN' ? [] : [{ href: '/partners/', label: 'Dealers and service partners' }]),
         ...(locale === 'zh-CN' ? [] : [{ href: 'https://www.dhgate.com/store/sagemro', label: 'Store' }]),
         { href: publicHome.requestCtas.assist.href, label: publicHome.requestCtas.assist.label },
@@ -467,11 +469,45 @@ function buildRoutes(locale) {
       publisher: { '@id': technicalTeam['@id'] },
     },
   });
+  // 公司 / 关于页。
+  // 审计指出站点里只有技术审核政策、没有一页回答「SAGEMRO 是谁」。对 GEO 而言这是实体权威的
+  // 缺口：AI 要把这个名字解析成真实经营实体，就需要一个可引用的自我描述页。
+  // 内容全部来自已核实事实（法人名与备案号来自 companyProfile.js），不写客户名称、不写案例、
+  // 不写任何时效或能力承诺。
+  const about = getCompanyAbout(locale);
+  const aboutEntity = getLegalEntity(locale);
+  const aboutRoute = route(locale, {
+    path: '/about',
+    type: 'about',
+    title: locale === 'zh-CN'
+      ? `关于 ${aboutEntity.name}：整机厂售后交付外包`
+      : `About ${aboutEntity.name}: After-Sales Delivery for OEMs`,
+    description: about.intro,
+    modified: RELEASE_DATE,
+    body: {
+      h1: about.h1,
+      paragraphs: [about.intro],
+      sections: about.sections.map((section) => ({ heading: section.heading, body: section.body })),
+      links: [
+        { href: '/services/', label: locale === 'zh-CN' ? '服务项目' : 'Services' },
+        { href: '/topics/', label: locale === 'zh-CN' ? '按主题浏览' : 'Browse by topic' },
+        ...(locale === 'zh-CN' ? [] : [{ href: '/partners/', label: 'Dealers and service partners' }]),
+        { href: '/about/technical-review/', label: locale === 'zh-CN' ? '技术内容审核政策' : 'Technical content review policy' },
+      ],
+    },
+    structuredData: {
+      '@type': 'AboutPage',
+      name: about.h1,
+      description: about.intro,
+      url: publicUrl(HOSTS[locale], '/about'),
+      about: organizationRef(locale),
+    },
+  });
   const toolsHub = collection('/tools', 'tools-hub', copy.tools, toolRoutes);
   const servicesHub = collection('/services', 'services-hub', copy.services, serviceRoutes);
   const insightsHub = collection('/insights', 'insights-hub', copy.insights, [...insightRoutes, ...guideRoutes]);
   const contentRoutes = [home, ...partnerRoutes, servicesHub, ...serviceRoutes, toolsHub, ...toolRoutes,
-    insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute];
+    insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute, aboutRoute];
 
   // 主题聚合页。放在最后构建，因为链接文字要从目标页自己的标题解析——
   // 标题改了聚合页不会挂着旧文字。这一页不新增任何事实。
