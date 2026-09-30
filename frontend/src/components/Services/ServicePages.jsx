@@ -124,6 +124,13 @@ function ServiceDetail({ page, copy: selectedCopy, locale, acquisitionContext })
       </section>
       <section className="mt-8"><SectionTitle icon={ClipboardList} title={selectedCopy.process} /><ol className="mt-3 space-y-3">{page.process.map((step, index) => <li key={step} className="flex gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm leading-6"><span className="font-semibold text-[var(--color-primary)]">{index + 1}</span><span>{step}</span></li>)}</ol></section>
       <section className="mt-8"><SectionTitle title={selectedCopy.checklist} /><ul className="mt-3 grid gap-2 sm:grid-cols-2">{page.customerInputs.map((item) => <li key={item} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">{item}</li>)}</ul></section>
+      {/* 额外小节（如备件页的交换件）。带锚点，便于从渠道商页等处直接链到这一节。 */}
+      {(page.extraSections ?? []).map((section) => (
+        <section key={section.anchor ?? section.heading} id={section.anchor} className="mt-8">
+          <SectionTitle title={section.heading} />
+          <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">{section.body}</p>
+        </section>
+      ))}
       <section className="mt-8 grid gap-4 md:grid-cols-2"><InfoCard title={selectedCopy.remote} body={page.remoteBoundary} /><InfoCard title={selectedCopy.onsite} body={page.onsiteBoundary} /></section>
       <section className="mt-8 border-t border-[var(--color-border)] pt-5 text-sm leading-6 text-[var(--color-text-secondary)]"><p>{page.evidenceNotes}</p></section>
       {relatedGuides.length > 0 && <section className="mt-8"><SectionTitle title={selectedCopy.relatedGuides} /><div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedGuides.map((guide) => <a key={guide.slug} href={`/insights/${guide.slug}/`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{guide.title}</a>)}</div></section>}

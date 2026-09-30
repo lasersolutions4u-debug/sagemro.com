@@ -152,6 +152,14 @@ const SERVICE_PAGES = {
       issues: ['Part number or compatibility is unclear', 'A failed component needs replacement planning', 'Consumable selection or replacement affects operation'],
       process: EN_PROCESS,
       customerInputs: ['Equipment model and configuration', 'Part number, label, or drawing if available', 'Photos of the part and installation position', 'Failure symptom, required quantity, and delivery location'],
+      // 交换件是备件服务的一个机制，不是独立服务——单独开页会把内链权重劈到两个 URL 争同一主题，
+      // 而这些词的已验证需求近乎零。折中做法：在本页给一个带锚点的实质小节，
+      // 相关词写进本节，日后真的产出询盘再升级为独立页。
+      extraSections: [{
+        anchor: 'exchange-unit',
+        heading: 'Exchange units and advance replacement',
+        body: 'Where a failed part would stop production, a working unit can be supplied first so the machine runs again, and the returned part is then repaired and put back into circulation. The condition of the returned part, the inspection result, and the warranty terms travel with the unit and are recorded.',
+      }],
       remoteBoundary: EN_REMOTE_BOUNDARY,
       onsiteBoundary: EN_ONSITE_BOUNDARY,
       evidenceNotes: 'Compatibility, availability, price, and replacement scope are confirmed for each request before supply or onsite work.',
@@ -376,6 +384,12 @@ const SERVICE_PAGES = {
       issues: ['零件编号或兼容关系不明确', '故障部件需要制定更换方案', '耗材选型或更换影响设备运行'],
       process: ZH_PROCESS,
       customerInputs: ['设备型号和当前配置', '可获得的零件号、铭牌或图纸', '零件和安装位置照片', '故障现象、所需数量和收货地区'],
+      // 与英文侧同义：交换件作为备件页的一个带锚点小节，不另开页。
+      extraSections: [{
+        anchor: 'exchange-unit',
+        heading: '交换件与先发后修',
+        body: '当故障件会导致停产时，可以先发可用件让设备恢复运行，坏件回收维修后再入库周转。回收件的状态、检测结果与保修条款随件留档。',
+      }],
       remoteBoundary: ZH_REMOTE_BOUNDARY,
       onsiteBoundary: ZH_ONSITE_BOUNDARY,
       evidenceNotes: '每项需求的兼容性、供应情况、价格和更换范围将在供货或现场作业前单独确认。',
@@ -492,6 +506,7 @@ function clonePage(page, locale) {
     issues: [...page.issues],
     process: [...page.process],
     customerInputs: [...page.customerInputs],
+    extraSections: (page.extraSections ?? []).map((section) => ({ ...section })),
   };
 }
 

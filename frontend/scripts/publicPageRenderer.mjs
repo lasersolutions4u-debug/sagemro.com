@@ -119,7 +119,8 @@ function renderBody(route) {
     ...paragraphs.slice(1).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`),
     ...(body.sections || []).map((section) => typeof section === 'string'
       ? `<p>${escapeHtml(section)}</p>`
-      : `<h2>${escapeHtml(section.heading || section.title)}</h2><p>${escapeHtml(section.body)}</p>`),
+      // 带 anchor 的小节渲染出 id，页面内的 #锚点 才能落到壳里的同一位置。
+      : `<h2${section.anchor ? ` id="${escapeHtml(section.anchor)}"` : ''}>${escapeHtml(section.heading || section.title)}</h2><p>${escapeHtml(section.body)}</p>`),
     ...(body.resources || []).map((resource) => `<p>${escapeHtml(typeof resource === 'string' ? resource : resource.title || resource.label)}</p>`),
     ...renderList(body.list),
     ...(body.faqs || []).map((faq) => {

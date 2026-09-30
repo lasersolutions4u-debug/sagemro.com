@@ -145,6 +145,8 @@ test('service content avoids unsupported claims and numeric service promises', (
         page.primaryCta,
         page.secondaryCta,
         page.evidenceNotes,
+        // 额外小节同样是公开文案，必须一起过零数字与措辞检查。
+        ...(page.extraSections ?? []).flatMap((section) => [section.heading, section.body]),
       ].join(' ');
 
       assert.doesNotMatch(publicCopy, /\d/);
@@ -244,6 +246,30 @@ test('service pages link all and only relevant published diagnostic guides', asy
   assert.doesNotMatch(pages, /More reviewed guides will be added when their evidence is complete/);
   assert.doesNotMatch(pages, /更多指南将在证据完整并通过审核后发布/);
   assert.match(pages, /relatedGuides\.length > 0 &&/);
+});
+
+test('exchange units live as an anchored section of the parts page, not a separate page', () => {
+  // 交换件是备件服务的一个机制，不是独立服务：单独开页会把内链权重劈到两个 URL 争同一主题，
+  // 而这些词的已验证需求近乎零。所以它以一个带锚点的小节存在，日后真出询盘再升级为独立页。
+  for (const locale of ['en', 'zh-CN']) {
+    const parts = getServicePage('spare-parts-consumables', locale);
+    assert.equal(parts.extraSections.length, 1);
+    const [section] = parts.extraSections;
+    assert.equal(section.anchor, 'exchange-unit');
+    assert.ok(section.heading.length > 0);
+    assert.ok(section.body.length > 0);
+
+    // 其它服务页不带额外小节——否则这个机制会到处复制。
+    for (const page of getServicePages(locale)) {
+      if (page.slug === 'spare-parts-consumables') continue;
+      assert.deepEqual(page.extraSections, [], `${page.slug} 不应有额外小节`);
+    }
+
+    // 返回的是副本，改一处不会污染下一次读取。
+    const fresh = getServicePage('spare-parts-consumables', locale);
+    fresh.extraSections[0].heading = 'changed';
+    assert.notEqual(getServicePage('spare-parts-consumables', locale).extraSections[0].heading, 'changed');
+  }
 });
 
 test('the public technical-review route and footer entry are bilingual runtime contracts', async () => {

@@ -384,6 +384,8 @@ function buildRoutes(locale) {
           { heading: locale === 'zh-CN' ? '问题范围' : 'Issue scope', body: service.issues.join(' ') },
           { heading: locale === 'zh-CN' ? '服务评估流程' : 'How the review works', body: service.process.join(' ') },
           { heading: locale === 'zh-CN' ? '需准备的信息' : 'Information to prepare', body: service.customerInputs.join(' ') },
+          // 页面上额外的小节（如备件页的交换件），带锚点，壳里渲染成 <h2 id="…">。
+          ...(service.extraSections ?? []).map((section) => ({ heading: section.heading, body: section.body, anchor: section.anchor })),
         ],
         links: relatedGuides.map((guide) => ({ kind: 'guide', href: `/insights/${guide.slug}/`, label: guide.title })),
         emptyState: '',

@@ -59,6 +59,10 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   // （这条断言原本是反过来的：它把"服务页没有 lastmod"当成了规格。）
   const serviceEntries = [...sitemap.matchAll(/<url>\s*<loc>https:\/\/sagemro\.com\/services\/[^<]+<\/loc>[\s\S]*?<\/url>/g)];
   assert.equal(serviceEntries.length, 12, '应匹配到 12 个服务详情页');
+  // 交换件小节带锚点，必须落到构建产物的 HTML 里（页面内 #exchange-unit 才能解析），
+  // 且只应出现在备件页，不要在其它服务页复制。
+  assert.match(await read('services/spare-parts-consumables/index.html'), /<h2 id="exchange-unit">/);
+  assert.doesNotMatch(await read('services/laser-cutting-machine-repair/index.html'), /id="exchange-unit"/);
   for (const serviceEntry of serviceEntries) {
     assert.match(serviceEntry[0], /<lastmod>2026-09-29<\/lastmod>/, `服务页缺 lastmod: ${serviceEntry[0].slice(0, 90)}`);
   }
