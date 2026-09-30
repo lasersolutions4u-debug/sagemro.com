@@ -112,15 +112,22 @@ function renderList(items) {
   return [`<ul>${entries}</ul>`];
 }
 
+function renderSection(section) {
+  if (typeof section === 'string') return `<p>${escapeHtml(section)}</p>`;
+  const heading = escapeHtml(section.heading || section.title || '');
+  // 带 anchor 的小节渲染出 id，页面内的 #锚点 才能落到壳里的同一位置。
+  const id = section.anchor ? ` id="${escapeHtml(section.anchor)}"` : '';
+  // 小节也可以带一个链接列表（主题聚合页靠它把子页串起来），此时不输出正文段落。
+  if (Array.isArray(section.items)) return `<h2${id}>${heading}</h2>${renderList(section.items).join('')}`;
+  return `<h2${id}>${heading}</h2><p>${escapeHtml(section.body)}</p>`;
+}
+
 function renderBody(route) {
   const body = route.body || {};
   const paragraphs = body.paragraphs || [];
   const detail = [
     ...paragraphs.slice(1).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`),
-    ...(body.sections || []).map((section) => typeof section === 'string'
-      ? `<p>${escapeHtml(section)}</p>`
-      // 带 anchor 的小节渲染出 id，页面内的 #锚点 才能落到壳里的同一位置。
-      : `<h2${section.anchor ? ` id="${escapeHtml(section.anchor)}"` : ''}>${escapeHtml(section.heading || section.title)}</h2><p>${escapeHtml(section.body)}</p>`),
+    ...(body.sections || []).map(renderSection),
     ...(body.resources || []).map((resource) => `<p>${escapeHtml(typeof resource === 'string' ? resource : resource.title || resource.label)}</p>`),
     ...renderList(body.list),
     ...(body.faqs || []).map((faq) => {

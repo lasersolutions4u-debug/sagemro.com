@@ -100,6 +100,7 @@ SAGEMRO 承接激光与金属成形设备整机厂自己做不过来的售后交
 - ${host}/services/third-party-service/ — 第三方与多品牌设备服务
 - ${host}/tools/ — 材料重量、切割成本、折弯与辅机选型计算器
 - ${host}/insights/ — 实务说明与故障处理指南
+- ${host}/topics/ — 按机型、服务形态与问题类型浏览
 - ${host}/about/technical-review/ — 技术内容审核政策
 
 ## 适用范围
@@ -138,6 +139,7 @@ in advance.
 - ${host}/services/third-party-service/ — third-party and multi-brand equipment service
 - ${host}/tools/ — free laser cutting, press brake, and material calculators
 - ${host}/insights/ — practical service notes and troubleshooting guides
+- ${host}/topics/ — browse service and technical content by topic
 - ${host}/about/technical-review/ — technical content review policy
 
 ## Scope

@@ -26,6 +26,7 @@ in advance.
 - https://sagemro.com/services/third-party-service/ — third-party and multi-brand equipment service
 - https://sagemro.com/tools/ — free laser cutting, press brake, and material calculators
 - https://sagemro.com/insights/ — practical service notes and troubleshooting guides
+- https://sagemro.com/topics/ — browse service and technical content by topic
 - https://sagemro.com/about/technical-review/ — technical content review policy
 
 ## Scope

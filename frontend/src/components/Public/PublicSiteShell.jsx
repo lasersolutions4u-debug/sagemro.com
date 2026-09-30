@@ -9,11 +9,15 @@ const navigation = {
     ['服务项目', '/services/'],
     ['实用工具', '/tools/'],
     ['技术洞察', '/insights/'],
+    // 主题聚合页必须有一个站内可见入口：静态壳里的 body.links 是爬虫专用，
+    // 客户端渲染的首页并不渲染它们——只靠 sitemap 发现的页面等于孤立页面，排不上名。
+    ['按主题', '/topics/'],
   ],
   com: [
     ['Services', '/services/'],
     ['Tools', '/tools/'],
     ['Insights', '/insights/'],
+    ['Topics', '/topics/'],
   ],
 };
 

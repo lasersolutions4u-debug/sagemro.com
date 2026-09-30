@@ -10,6 +10,7 @@ import { getServicePage, getServicePages } from './servicePages.js';
 import { getTechnicalAuthor } from './technicalAuthors.js';
 import { getTechnicalReviewPolicy } from './technicalReviewPolicy.js';
 import { getPublicHomeContent } from './publicHomeContent.js';
+import { getTopicGroups } from './topicGroups.js';
 import { getLegalEntity, ICP_RECORD_NUMBER, SUPPORT_EMAIL } from './companyProfile.js';
 
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
@@ -316,6 +317,7 @@ function buildRoutes(locale) {
         { href: '/services/', label: locale === 'zh-CN' ? '服务项目' : 'Services' },
         { href: '/tools/', label: locale === 'zh-CN' ? '实用工具' : 'Tools' },
         { href: '/insights/', label: locale === 'zh-CN' ? '技术洞察' : 'Insights' },
+        { href: '/topics/', label: locale === 'zh-CN' ? '按主题浏览' : 'Browse by topic' },
         ...(locale === 'zh-CN' ? [] : [{ href: '/partners/', label: 'Dealers and service partners' }]),
         ...(locale === 'zh-CN' ? [] : [{ href: 'https://www.dhgate.com/store/sagemro', label: 'Store' }]),
         { href: publicHome.requestCtas.assist.href, label: publicHome.requestCtas.assist.label },
@@ -468,9 +470,55 @@ function buildRoutes(locale) {
   const toolsHub = collection('/tools', 'tools-hub', copy.tools, toolRoutes);
   const servicesHub = collection('/services', 'services-hub', copy.services, serviceRoutes);
   const insightsHub = collection('/insights', 'insights-hub', copy.insights, [...insightRoutes, ...guideRoutes]);
-  const routes = [home, ...partnerRoutes, servicesHub, ...serviceRoutes, toolsHub, ...toolRoutes, insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute];
+  const contentRoutes = [home, ...partnerRoutes, servicesHub, ...serviceRoutes, toolsHub, ...toolRoutes,
+    insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute];
 
-  return withSchemaGraphs(routes, locale);
+  // 主题聚合页。放在最后构建，因为链接文字要从目标页自己的标题解析——
+  // 标题改了聚合页不会挂着旧文字。这一页不新增任何事实。
+  const labelByPath = new Map(contentRoutes.map((routeValue) => [routeValue.path, routeValue.body?.h1 || routeValue.title]));
+  const topicMembers = [...new Set(getTopicGroups(locale).flatMap((section) => section.groups.flatMap((group) => group.members)))];
+  const topicRoute = route(locale, {
+    path: '/topics',
+    type: 'topics',
+    title: locale === 'zh-CN'
+      ? '按机型、服务形态与问题类型查找服务'
+      : 'Find Service by Machine, Service Form, and Problem Type',
+    description: locale === 'zh-CN'
+      ? '把服务项目、常用工具与技术洞察按机型、服务形态和问题类型重新聚合，便于按现场实际情况找到对应内容。'
+      : 'Service records, calculators, and technical notes regrouped by machine type, service form, and problem type.',
+    modified: RELEASE_DATE,
+    body: {
+      h1: locale === 'zh-CN' ? '按现场情况查找服务与技术内容' : 'Find service and technical content by the situation in front of you',
+      paragraphs: [locale === 'zh-CN'
+        ? '同一台设备的问题往往同时属于几个类别：机型、服务形态与故障类型。下面按这三条线索把已有内容重新分组，每组只列出确实属于该主题的页面。'
+        : 'A single problem usually belongs to more than one category: the machine, the service form, and the type of fault. These groups reorganise the existing pages along those lines, and each group lists only pages that genuinely belong to it.'],
+      sections: getTopicGroups(locale).flatMap((section) => section.groups.map((group) => ({
+        heading: locale === 'zh-CN' ? `${section.heading}：${group.heading}` : `${section.heading}: ${group.heading}`,
+        items: group.members.map((path) => ({ href: `${path}/`, label: labelByPath.get(path) ?? path })),
+      }))),
+      links: [
+        { href: '/services/', label: locale === 'zh-CN' ? '全部服务项目' : 'All service records' },
+        { href: '/tools/', label: locale === 'zh-CN' ? '全部工具' : 'All tools' },
+        { href: '/insights/', label: locale === 'zh-CN' ? '全部技术洞察' : 'All insights' },
+      ],
+    },
+    structuredData: {
+      '@type': 'CollectionPage',
+      name: locale === 'zh-CN' ? '按主题浏览' : 'Browse by topic',
+      description: locale === 'zh-CN' ? '按机型、服务形态与问题类型聚合的服务与技术内容。' : 'Service and technical content grouped by machine, service form, and problem type.',
+      url: publicUrl(HOSTS[locale], '/topics'),
+      mainEntity: {
+        '@type': 'ItemList',
+        itemListElement: topicMembers.map((path, index) => ({
+          '@type': 'ListItem',
+          position: index + 1,
+          url: publicUrl(HOSTS[locale], path),
+        })),
+      },
+    },
+  });
+
+  return withSchemaGraphs([...contentRoutes, topicRoute], locale);
 }
 
 export function getPublicSeoRoutes(locale = 'en') {

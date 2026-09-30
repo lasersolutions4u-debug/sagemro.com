@@ -205,6 +205,42 @@ test('hub pages expose their child pages as real links in the static shell', () 
   }
 });
 
+test('topic hub regroups existing pages without dead links or invented entries', async () => {
+  // 主题聚合页不新增事实：它的每条链接都必须指向已存在的公开路由，
+  // 且链接文字取自目标页自己的标题（标题改了聚合页不会挂着旧文字）。
+  for (const locale of ['en', 'zh-CN']) {
+    const topic = getPublicSeoRoute('/topics', locale);
+    assert.ok(topic, `${locale} 缺少 /topics`);
+    assert.equal(topic.type, 'topics');
+    assert.ok(topic.body.sections.length >= 8, `${locale} 分组过少`);
+
+    const paths = new Set(getPublicSeoRoutes(locale).map((route) => route.path));
+    const titles = new Map(getPublicSeoRoutes(locale).map((route) => [route.path, route.body?.h1 || route.title]));
+    let linkCount = 0;
+    for (const section of topic.body.sections) {
+      assert.ok(section.heading.length > 0, `${locale} 分组缺标题`);
+      assert.ok(Array.isArray(section.items) && section.items.length > 0, `${locale} 分组 ${section.heading} 没有链接`);
+      for (const item of section.items) {
+        const path = item.href.replace(/\/$/, '');
+        assert.ok(paths.has(path), `${locale} 主题页死链: ${item.href}`);
+        // 链接文字必须与目标页标题一致，不允许在这里另写一套措辞。
+        assert.equal(item.label, titles.get(path), `${locale} ${path} 的链接文字与目标页标题不一致`);
+        linkCount += 1;
+      }
+    }
+    assert.ok(linkCount >= 20, `${locale} 主题页链接过少: ${linkCount}`);
+
+    // 首页与 llms.txt 都能找到它，否则这一页只会被 sitemap 发现。
+    assert.ok(getPublicSeoRoute('/', locale).body.links.some((link) => link.href === '/topics/'));
+  }
+
+  // 静态壳里的 body.links 是爬虫专用的，客户端渲染的首页并不渲染它们——
+  // 所以主题页必须同时出现在站点主导航里，否则对用户和 Google 渲染后的视图都是孤立页面。
+  const shell = await readFile(new URL('../src/components/Public/PublicSiteShell.jsx', import.meta.url), 'utf8');
+  assert.match(shell, /\['Topics', '\/topics\/'\]/);
+  assert.match(shell, /\['按主题', '\/topics\/'\]/);
+});
+
 test('partner intake page is published on the international host only', () => {
   const enRoutes = getPublicSeoRoutes('en');
   const cnRoutes = getPublicSeoRoutes('zh-CN');
