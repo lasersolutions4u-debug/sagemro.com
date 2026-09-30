@@ -2,24 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { pathToFileURL } from 'node:url';
-import { transformWithOxc } from 'vite';
 import { getPublicSeoRoutes } from '../src/data/publicSeoRoutes.js';
-
-const root = path.resolve(import.meta.dirname, '..');
-const funnelAnalyticsModule = pathToFileURL(path.join(root, 'src/services/funnelAnalytics.js')).href;
-
-function asDataUrl(source) {
-  return `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-}
-
-async function loadApi() {
-  const source = readFileSync(path.join(root, 'src/services/api.js'), 'utf8')
-    .replace("from './funnelAnalytics'", `from '${funnelAnalyticsModule}'`)
-    .replace("if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;", "return 'https://api.example.test';");
-  const transformed = await transformWithOxc(source, 'api.js', { lang: 'js', format: 'esm' });
-  return import(asDataUrl(transformed.code));
-}
+import { loadAcquisitionTracking, loadApi, root } from './helpers/acquisitionModule.mjs';
 
 class MemoryStorage {
   constructor() {
@@ -47,20 +31,6 @@ function installGlobal(name, value) {
 function readAllowlist(source, declaration) {
   const match = source.match(declaration);
   return match?.[1].match(/'([^']+)'/g)?.map((value) => value.slice(1, -1));
-}
-
-async function loadAcquisitionTracking(track) {
-  const reactModule = pathToFileURL((await import('node:module')).createRequire(import.meta.url).resolve('react')).href;
-  const diagnosticGuidesModule = pathToFileURL(path.join(root, 'src/data/diagnosticGuides.js')).href;
-  const publicSeoRoutesModule = pathToFileURL(path.join(root, 'src/data/publicSeoRoutes.js')).href;
-  const apiModule = asDataUrl(`export const trackFunnelEvent = ${track.toString()};`);
-  const source = readFileSync(path.join(root, 'src/hooks/useAcquisitionTracking.js'), 'utf8')
-    .replace("from 'react'", `from '${reactModule}'`)
-    .replace("from '../data/diagnosticGuides'", `from '${diagnosticGuidesModule}'`)
-    .replace("from '../data/publicSeoRoutes'", `from '${publicSeoRoutesModule}'`)
-    .replace("from '../services/api'", `from '${apiModule}'`);
-  const transformed = await transformWithOxc(source, 'useAcquisitionTracking.js', { lang: 'js', format: 'esm' });
-  return import(asDataUrl(transformed.code));
 }
 
 function createClock() {
@@ -203,6 +173,45 @@ test('central public route context covers every manifest route and excludes pend
   assert.equal(getPublicAcquisitionContext({ ...base, pathname: '/tools', userType: 'customer' }).indexable, false);
   assert.equal(getPublicAcquisitionContext({ ...base, pathname: '/private' }).indexable, false);
   assert.equal(getPublicAcquisitionContext({ ...base, pathname: '/tools/steel-price-watch' }).indexable, false);
+});
+
+test('the lightweight route index reproduces the injected-route context for every route in both locales', async () => {
+  // 这是那次改动的核心证明：首屏不再 import 132 KB 的 publicSeoRoutes 之后，
+  // 「走索引」算出来的埋点上下文必须与「注入完整 route 对象」逐字段相同——
+  // 两者不一致会是**静默**的错误归因（埋点照发，只是发错了内容类型）。
+  const { getPublicAcquisitionContext } = await loadAcquisitionTracking(() => {});
+
+  for (const locale of ['en', 'zh-CN']) {
+    const manifest = getPublicSeoRoutes(locale);
+    assert.ok(manifest.length > 0, locale);
+    for (const route of manifest) {
+      const options = { locale, sessionRestoreComplete: true, isEngineerHost: false, userType: null };
+      const viaIndex = getPublicAcquisitionContext({ ...options, pathname: route.path });
+      const viaRoute = getPublicAcquisitionContext({ ...options, pathname: route.path, route });
+      assert.deepEqual(viaIndex, viaRoute, `${locale} ${route.path}`);
+      // 带尾斜杠也必须命中同一条路由（静态壳与 sitemap 都用带斜杠的 URL）。
+      assert.deepEqual(
+        getPublicAcquisitionContext({ ...options, pathname: `${route.path}/` }),
+        viaRoute,
+        `${locale} ${route.path}/`,
+      );
+    }
+  }
+
+  // 未知路径、以及只在英文清单里存在的路由（`/partners`），在两边都必须落到"没有路由"。
+  // 注意 `route ?? 索引` 的写法意味着传 null **不等于**走完整路由表，所以这里对不存在的
+  // 路径改为断言"两条路都得出一致的 noindex 结果"，而不是拿 null 去比 null。
+  for (const pathname of ['/private', '/nope', '/partners', '/about/technical-review', '/tools/steel-price-watch']) {
+    for (const locale of ['en', 'zh-CN']) {
+      const options = { locale, sessionRestoreComplete: true, isEngineerHost: false, userType: null };
+      const manifestRoute = getPublicSeoRoutes(locale).find((route) => route.path === pathname) || null;
+      const viaIndex = getPublicAcquisitionContext({ ...options, pathname });
+      const viaRoute = manifestRoute
+        ? getPublicAcquisitionContext({ ...options, pathname, route: manifestRoute })
+        : { path: pathname, contentType: '', contentSlug: '', indexable: false };
+      assert.deepEqual(viaIndex, viaRoute, `${locale} ${pathname}`);
+    }
+  }
 });
 
 test('StrictMode probe cleanup leaves one landing and engagement event for the real mount', async () => {

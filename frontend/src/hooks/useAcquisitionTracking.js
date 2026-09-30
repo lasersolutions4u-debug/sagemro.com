@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import { getDiagnosticGuide } from '../data/diagnosticGuides';
-import { getPublicSeoRoute } from '../data/publicSeoRoutes';
+import { getPublicSeoRouteMeta, isDiagnosticGuideSlug } from '../data/publicSeoRouteIndex.js';
 import { trackFunnelEvent } from '../services/api';
 
 const PUBLIC_CONTENT_TYPES = new Set([
@@ -24,7 +23,7 @@ export function getAcquisitionContentType(route, locale = 'en') {
   // 渠道商页描述的是服务能力，与既有服务类页面同口径计入 service。
   if (route.type === 'partners') return 'service';
   if (route.type === 'tool' || route.type === 'tools-hub') return 'tool';
-  if (route.type === 'insight' && getDiagnosticGuide(getPublicContentSlug(route), locale)) return 'diagnostic_guide';
+  if (route.type === 'insight' && isDiagnosticGuideSlug(getPublicContentSlug(route), locale)) return 'diagnostic_guide';
   // 主题聚合页与关于页跨类别 / 非类别，本身不属于 service/tool/insight 任何一个。
   // Worker 端把 content_type 白名单锁在四个值上（worker/src/index.js:245），不能新增类型；
   // 按既有约定（home 与 technical-review 这类信息型页都计 insight）归入 insight。
@@ -43,7 +42,10 @@ export function getPublicAcquisitionContext({
   route,
 }) {
   const path = pathname === '/' ? '/' : String(pathname || '').replace(/\/$/, '');
-  const publicRoute = route ?? getPublicSeoRoute(path, locale);
+  // `route` 由调用方注入完整路由对象时仍然优先；否则走极小的索引模块。
+  // 这里**不能**改成 import 完整的 publicSeoRoutes：那会把 132 KB 的路由正文
+  // 挂到每一个营销页的首屏上（含根本不渲染正文的首页）。见 tests/public-seo-route-index.test.mjs。
+  const publicRoute = route ?? getPublicSeoRouteMeta(path, locale);
   const contentType = getAcquisitionContentType(publicRoute, locale);
   const contentSlug = getPublicContentSlug(publicRoute);
 
