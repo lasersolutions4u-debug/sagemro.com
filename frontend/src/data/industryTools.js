@@ -173,8 +173,10 @@ export const industryTools = [
     shortLabel: 'Metal Weight',
     description: 'Estimate sheet, plate, tube, angle, channel, beam, and bar weight from material density and dimensions.',
     leadAction: 'Use this weight to ask SAGEMRO AI about cutting, bending, freight, or machine capacity.',
-    seoTitle: 'Metal Weight Calculator for Sheet, Tube, Angle, Channel, and Beam',
-    seoDescription: 'Calculate theoretical metal weight for sheet, plate, round bar, tube, square tube, angle steel, channel steel, and H/I beam in carbon steel, stainless steel, aluminum, copper, brass, and titanium.',
+    // 这条同时是工具详情页的可见 H1 与 SERP 标题，所以必须短：原先 64 字符，
+    // SERP 里必定被截断，而六个型材名连读也像关键词堆砌。保留三个主要型材即可。
+    seoTitle: 'Metal Weight Calculator for Sheet, Tube, and Beam',
+    seoDescription: 'Calculate theoretical metal weight for sheet, plate, tube, angle, channel, beam, and bar in carbon steel, stainless steel, aluminum, and copper.',
     guideTitle: 'Calculate theoretical metal weight before quoting, cutting, bending, or shipping.',
     guideBody: 'Choose the material and profile, enter the dimensions, and use the result as a planning reference. Rolled corners, mill tolerance, coating, grade, and supplier standards can change actual weight.',
     faqs: [
@@ -392,7 +394,7 @@ const industryToolCn = {
     description: '按材料密度和尺寸估算板材、管材、角钢、槽钢、型钢和棒材重量。',
     leadAction: '把理论重量作为规划参考，再结合切割、折弯、运输或设备承载能力继续判断。',
     seoTitle: '板材、管材、角钢、槽钢和型钢材料重量计算器',
-    seoDescription: '按材料、型材和尺寸估算碳钢、不锈钢、铝、铜、黄铜、紫铜和钛合金的理论重量。',
+    seoDescription: '按材料、型材与尺寸估算碳钢、不锈钢、铝、铜、黄铜、紫铜和钛合金的理论重量，供报价与运输规划参考。',
     guideTitle: '在报价、切割、折弯或运输前先估算理论重量。',
     guideBody: '选择材料和型材，输入尺寸，把结果作为规划参考。轧制圆角、公差、涂层、牌号和供应商标准都会影响实际重量。',
     faqs: [

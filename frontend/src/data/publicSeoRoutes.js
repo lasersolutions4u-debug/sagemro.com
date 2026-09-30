@@ -44,7 +44,7 @@ const pages = {
       paragraphs: ['Choose the service context that best matches the equipment and operating concern. Each page explains the information to prepare and the boundary between remote and onsite support.'],
     },
     insights: {
-      title: 'SAGEMRO Insights for Laser and Metal Forming Equipment',
+      title: 'Insights for Laser and Metal Forming Equipment',
       description: 'Practical notes, calculators, and decision guides for laser and metal forming equipment.',
       h1: 'Practical notes for machine decisions, service risk, and shop-floor planning.',
       paragraphs: ['Short, checkable guides connected to the calculators and AI workspace. The goal is to clarify assumptions before service, purchasing, or production decisions.'],
@@ -63,14 +63,14 @@ const pages = {
     },
     services: {
       title: '工业设备服务支持',
-      description: '查看激光切割、折弯机、远程诊断和预防性维护的结构化服务支持。',
+      description: '激光切割机维修、折弯机维修、远程诊断、预防性维护与备件支持的服务场景总览，按项目或按次承接。',
       // 同 COM：原先的「用结构化设备服务支持，明确下一步行动。」零关键词。
       h1: '激光切割机维修、折弯机维修与设备维保的服务场景总览。',
       paragraphs: ['选择最符合设备和运行问题的服务场景。每个页面说明应准备的信息，以及远程与现场支持的边界。'],
     },
     insights: {
       title: 'SAGEMRO 激光与金属成型洞察',
-      description: '面向激光切割与金属成型设备的实务说明、计算器和决策指南。',
+      description: '面向激光切割与金属成型设备的实务说明、计算器与决策指南：材料与成本、维护与故障排查，均附可复核的假设。',
       h1: '关于设备决策、服务风险与车间规划的实务说明。',
       paragraphs: ['与计算器和 AI 工作区关联的简短、可复核指南，帮助在服务、采购或生产决策前澄清假设。'],
     },
@@ -266,7 +266,11 @@ function buildRoutes(locale) {
     path: '/',
     type: 'home',
     title: copy.home.title,
-    description: copy.home.description,
+    // 元数据要能放进 SERP：原先这一条 235 字符，头一句说完重点后剩下的全被截掉。
+    // 正文口径不受影响——首页正文来自 publicHomeContent.js，与这里无关。
+    description: locale === 'zh-CN'
+      ? copy.home.description
+      : 'SAGEMRO takes over the after-sales that equipment builders and their dealers cannot cover: in-warranty visits, export commissioning, and exchange-unit flow.',
     modified: RELEASE_DATE,
     body: {
       h1: publicHome.hero.title,
@@ -346,7 +350,7 @@ function buildRoutes(locale) {
     type: 'partners',
     // 渲染器会统一补 " | SAGEMRO"，这里再写一遍会得到 "... | SAGEMRO | SAGEMRO"。
     title: 'Laser & Press Brake Dealer Service Partner Support',
-    description: publicHome.partnerPage.description,
+    description: publicHome.partnerPage.seoDescription ?? publicHome.partnerPage.description,
     // CN 上这个路径是 404，不能声明 zh-CN 版本。
     alternates: englishOnlyAlternates('/partners'),
     modified: RELEASE_DATE,
@@ -365,12 +369,14 @@ function buildRoutes(locale) {
   const insightRoutes = insights.map((insight) => route(locale, {
     path: `/insights/${insight.slug}`,
     type: 'insight',
-    title: insight.title,
-    description: insight.description,
+    // 元数据与正文解耦：正文标题与首段可以长，SERP 标题与描述必须短。
+    // seoTitle/seoDescription 按需提供，缺省仍用正文文案；预算由 tests/seo-metadata-budget.test.mjs 兜底。
+    title: insight.seoTitle ?? insight.title,
+    description: insight.seoDescription ?? insight.description,
     modified: insight.updatedAt,
     body: { h1: insight.title, paragraphs: [insight.description], sections: insight.sections },
     structuredData: {
-      '@type': 'Article', headline: insight.title, description: insight.description,
+      '@type': 'Article', headline: insight.title, description: insight.seoDescription ?? insight.description,
       datePublished: insight.publishedAt, dateModified: insight.updatedAt,
       author: organizationRef(locale), publisher: organizationRef(locale),
       image: `${HOSTS[locale]}/sagemro-logo.png`, mainEntityOfPage: publicUrl(HOSTS[locale], `/insights/${insight.slug}`),
@@ -382,7 +388,9 @@ function buildRoutes(locale) {
       path: `/services/${service.slug}`,
       type: 'service',
       title: service.seoTitle.replace(/ \| SAGEMRO$/, ''),
-      description: service.description,
+      // 服务页的 description 同时是枢纽页卡片上的可见文案，所以可以长；
+      // 需要更短的 SERP 描述时由 seoDescription 单独提供。
+      description: service.seoDescription ?? service.description,
       modified: RELEASE_DATE,
       body: {
         h1: service.title,
@@ -400,7 +408,7 @@ function buildRoutes(locale) {
       structuredData: {
         '@type': 'Service',
         name: service.title,
-        description: service.description,
+        description: service.seoDescription ?? service.description,
         url: publicUrl(HOSTS[locale], `/services/${service.slug}`),
         provider: organizationRef(locale),
       },
@@ -415,8 +423,8 @@ function buildRoutes(locale) {
     return route(locale, {
       path: `/insights/${guide.slug}`,
       type: 'insight',
-      title: guide.title,
-      description: guide.description,
+      title: guide.seoTitle ?? guide.title,
+      description: guide.seoDescription ?? guide.description,
       modified: guide.reviewedAt,
       schemaOrganization: team,
       body: {
@@ -485,7 +493,7 @@ function buildRoutes(locale) {
     title: locale === 'zh-CN'
       ? `关于 ${aboutEntity.name}：整机厂售后交付外包`
       : `About ${aboutEntity.name}: After-Sales Delivery for OEMs`,
-    description: about.intro,
+    description: about.seoDescription ?? about.intro,
     modified: RELEASE_DATE,
     body: {
       h1: about.h1,
@@ -501,7 +509,7 @@ function buildRoutes(locale) {
     structuredData: {
       '@type': 'AboutPage',
       name: about.h1,
-      description: about.intro,
+      description: about.seoDescription ?? about.intro,
       url: publicUrl(HOSTS[locale], '/about'),
       about: organizationRef(locale),
     },
@@ -521,7 +529,7 @@ function buildRoutes(locale) {
     type: 'topics',
     title: locale === 'zh-CN'
       ? '按机型、服务形态与问题类型查找服务'
-      : 'Find Service by Machine, Service Form, and Problem Type',
+      : 'Find Service by Machine, Form, and Problem Type',
     description: locale === 'zh-CN'
       ? '把服务项目、常用工具与技术洞察按机型、服务形态和问题类型重新聚合，便于按现场实际情况找到对应内容。'
       : 'Service records, calculators, and technical notes regrouped by machine type, service form, and problem type.',

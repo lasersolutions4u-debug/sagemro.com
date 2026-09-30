@@ -3,6 +3,8 @@ export const insights = [
     slug: 'laser-cutting-cost-drivers',
     category: 'Laser cutting',
     title: 'Laser cutting cost drivers: cut length, pierces, gas, and setup time',
+    // 正文标题即 H1，可以长；SERP 标题有宽度限制，所以单独给一份 60 字符以内、关键词前置的。
+    seoTitle: 'Laser Cutting Cost Drivers: Length, Pierces, Gas',
     description: 'A practical breakdown of the inputs that usually move laser cutting cost before a formal shop quote.',
     toolSlug: 'laser-cutting-cost-calculator',
     toolLabel: 'Laser Cutting Cost Calculator',
@@ -28,6 +30,7 @@ export const insights = [
     slug: 'metal-weight-for-structural-profiles',
     category: 'Materials',
     title: 'How to estimate metal weight for sheet, tube, angle, channel, and beam',
+    seoTitle: 'Metal Weight Estimate for Sheet, Tube, and Beam',
     description: 'Use theoretical profile area, density, length, and quantity to estimate material weight before quoting or shipping.',
     toolSlug: 'metal-weight-calculator',
     toolLabel: 'Metal Weight Calculator',
@@ -80,7 +83,13 @@ const insightCn = {
   'laser-cutting-cost-drivers': {
     category: '激光切割',
     title: '激光切割成本因素：切割长度、穿孔、气体与调机时间',
+    // 基础（英文）对象上加了 seoTitle，本地化是"覆盖式合并"，不在这里显式覆盖就会
+    // 让中文页顶着英文标题——这正是元数据长度测试第一次跑出来的问题。
+    seoTitle: '激光切割成本因素：长度、穿孔与气体',
     description: '在获得正式车间报价前，梳理通常会影响激光切割成本的关键输入。',
+    // 中文 SERP 的宽度约为 78 个汉字，原描述只用了三成。这一条是独立的元数据文案，
+    // 内容全部取自本页正文，不新增任何事实。
+    seoDescription: '从切割长度、穿孔次数、辅助气体与调机时间入手，梳理正式报价前会明显影响激光切割成本的几项输入。',
     toolLabel: '激光切割成本计算器',
     readingTime: '5 分钟阅读',
     sections: [
@@ -92,7 +101,9 @@ const insightCn = {
   'metal-weight-for-structural-profiles': {
     category: '材料',
     title: '如何估算板材、管材、角钢、槽钢和型钢重量',
+    seoTitle: '如何估算板材、管材与型钢重量',
     description: '在报价或运输前，使用理论截面积、密度、长度和数量估算材料重量。',
+    seoDescription: '用理论截面积、材料密度、长度与数量估算板材、管材与型钢重量，供报价、运费规划与设备承载能力核算参考。',
     toolLabel: '材料重量计算器',
     readingTime: '4 分钟阅读',
     sections: [
@@ -105,6 +116,7 @@ const insightCn = {
     category: '折弯',
     title: '生产前的折弯机吨位风险检查',
     description: '了解板厚、折弯长度、V 槽开口、材料强度和安全余量如何影响折弯机吨位。',
+    seoDescription: '板厚、折弯长度、V 槽开口与材料强度如何影响折弯机吨位，以及估算接近设备额定能力时为什么要留出余量。',
     toolLabel: '折弯机吨位计算器',
     readingTime: '4 分钟阅读',
     sections: [

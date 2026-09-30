@@ -338,6 +338,8 @@ const DIAGNOSTIC_GUIDES = {
     guide({
       slug: 'laser-protective-lens-burning', status: 'published', category: 'laser-cutting', title: '激光保护镜片频繁烧坏的原因',
       description: '针对保护镜反复变色、出现斑点或损伤，按污染路径进行检查。',
+      // 中文 SERP 约能显示 78 个汉字，原描述只用了三成；这条是独立的元数据文案，事实取自本页正文。
+      seoDescription: '保护镜反复变色、出现斑点或损伤时，沿污染路径逐项排查，并说明何时该继续观察、何时该更换或升级服务。',
       directAnswer: '保护镜反复损伤是观察现象，不是已经完成的诊断。更换零件或改变工艺前，应确认污染证据及其来源侧。',
       safety: ZH_SAFETY,
       symptoms: ['保护镜出现新的斑点、雾状污染或变色', '更换保护镜后切割质量再次下降'],
@@ -390,6 +392,7 @@ const DIAGNOSTIC_GUIDES = {
     guide({
       slug: 'laser-cutting-machine-maintenance-checklist', status: 'published', category: 'laser-cutting', title: '激光切割机维护保养检查表',
       description: '按可观察状态整理激光切割机维护信息和升级条件。',
+      seoDescription: '按可观察状态整理激光切割机的日常维护项目与升级条件，便于安排保养周期、留存记录，并判断何时需要现场支持。',
       directAnswer: '检查表记录可观察状态，不是诊断，也不能替代具体机型的维护计划。它用于在批准的维护或服务前收集证据。',
       safety: ZH_SAFETY,
       symptoms: ['需要检查光学、喷嘴、冷却、工作区或安全系统状态', '自上次检查后，切割质量或设备表现发生变化'],

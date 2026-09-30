@@ -66,7 +66,7 @@ export function ServicePages({ pathname = '/services', locale = 'en', acquisitio
     // 枢纽页的 title/description 直接取路由数据（壳读的是同一份），只在这里补品牌后缀——
     // 与 renderPublicDocument 的做法一致。
     const title = page ? page.seoTitle : `${hubRoute?.title ?? ''} | SAGEMRO`;
-    const description = page ? page.description : hubRoute?.description;
+    const description = page ? (page.seoDescription ?? page.description) : hubRoute?.description;
     const canonical = isMissing ? `${canonicalHost}/services/${slug}` : publicRoute?.canonical;
     setSeoMetadata({
       title,

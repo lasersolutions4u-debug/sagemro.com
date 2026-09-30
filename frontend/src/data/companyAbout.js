@@ -15,6 +15,9 @@ const ABOUT = {
     eyebrow: 'About SAGEMRO',
     h1: 'Who SAGEMRO is, and what we actually do',
     intro: 'SAGEMRO is the service brand of Jinan Euchio Machinery Co., Ltd. We take over the after-sales delivery that laser and metal forming equipment builders and their overseas dealers cannot cover with their own teams: in-warranty on-site service, export commissioning, and the exchange flow for returned parts.',
+    // 正文首段可以长，meta description 必须短。原先两者是同一句话，于是 SERP 里拿到 305 字符
+    // （必然被截断），而正文又不敢改短。这一条是专供元数据的独立文案。
+    seoDescription: 'SAGEMRO is the service brand of Jinan Euchio Machinery Co., Ltd. We deliver after-sales for laser and metal forming equipment builders and their dealers.',
     sections: [
       {
         heading: 'What we take on',
@@ -46,6 +49,7 @@ const ABOUT = {
     eyebrow: '关于 SAGEMRO',
     h1: 'SAGEMRO 是谁，我们实际做什么',
     intro: 'SAGEMRO 是济南钰峭机械有限公司的服务品牌。我们承接激光与金属成形设备整机厂及其海外渠道商自己团队覆盖不到的售后交付：保内上门、出口设备海外装机与调试、返修件流转。',
+    seoDescription: 'SAGEMRO 是济南钰峭机械有限公司的服务品牌，承接激光与金属成形设备整机厂及其海外渠道商覆盖不到的售后交付。',
     sections: [
       {
         heading: '我们承接什么',

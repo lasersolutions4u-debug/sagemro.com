@@ -314,10 +314,10 @@ test('rendered tool HTML contains crawlable content and safe JSON-LD', () => {
   const html = renderPublicDocument(TEMPLATE, route, 'en');
 
   assert.match(html, /<html lang="en">/);
-  assert.match(html, /<title>Metal Weight Calculator for Sheet, Tube, Angle, Channel, and Beam \| SAGEMRO<\/title>/);
+  assert.match(html, /<title>Metal Weight Calculator for Sheet, Tube, and Beam \| SAGEMRO<\/title>/);
   assert.match(html, /rel="canonical" href="https:\/\/sagemro\.com\/tools\/metal-weight-calculator\/"/);
   assert.match(html, /hreflang="zh-CN"/);
-  assert.match(html, /<h1>Metal Weight Calculator for Sheet, Tube, Angle, Channel, and Beam<\/h1>/);
+  assert.match(html, /<h1>Metal Weight Calculator for Sheet, Tube, and Beam<\/h1>/);
   assert.match(html, /application\/ld\+json/);
   assert.doesNotMatch(html, /<script[^>]*>.*<\/script><\/script>/s);
 });

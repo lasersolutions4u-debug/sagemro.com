@@ -183,6 +183,8 @@ const enContent = {
     eyebrow: 'For overseas dealers and service partners',
     title: 'A service and parts backstop for the machines you sell.',
     description: 'We support dealers and agents handling Chinese-built laser and metal forming equipment — remote diagnosis, spare parts, exchange units, and coordinated field service, so a fault does not cost you the account.',
+    // 上面那条是页面正文用的（208 字符），下面这条专供 SERP，必须短。
+    seoDescription: 'A service and parts backstop for dealers and agents selling Chinese-built laser and metal forming equipment: from remote diagnosis to field service.',
     sections: [
       { key: 'coverage', heading: 'What partner support covers', body: 'Remote diagnosis before a trip is booked. Spare parts and exchange units to cut downtime. Coordinated field service where a site visit is unavoidable. Escalation to the equipment maker with the evidence already collected.' },
       { key: 'need', heading: 'What we need from you', body: 'Machine brand and model. Alarm code or fault symptom. Machine year or serial. Site country and access conditions.' },
