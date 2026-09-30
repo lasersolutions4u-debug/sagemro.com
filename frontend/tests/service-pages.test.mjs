@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import { getServicePage, getServicePages } from '../src/data/servicePages.js';
 import { getDiagnosticGuides, getRelatedDiagnosticGuidesForService } from '../src/data/diagnosticGuides.js';
+import { getPublicSeoRoute } from '../src/data/publicSeoRoutes.js';
 import { getServicePageRoute } from '../src/utils/servicePageRoute.js';
 
 const expectedSlugs = [
@@ -293,4 +294,35 @@ test('the public technical-review route and footer entry are bilingual runtime c
   assert.match(page, /canonical = `\$\{host\}\/about\/technical-review\/`/);
   assert.match(page, /import \{ PublicSiteShell \}/);
   assert.match(page, /<PublicSiteShell isCn=\{locale === 'zh-CN'\} onOpenLegal=\{onOpenLegal\}>/);
+});
+
+test('the services hub renders its heading and intro from the SEO route, not from a second copy', async () => {
+  // 这条是**防漂移**断言，不是风格检查。
+  // 组件里原先各留了一份 hubTitle / hubDescription / hubHeading / hubIntro，与
+  // data/publicSeoRoutes.js 的 /services 路由是同一批文案的两份副本，而且已经不一致
+  // （组件里的 description 多了一个 "Explore"）。静态壳读路由数据、客户端读组件副本，
+  // 两边一旦分叉，爬虫与用户看到的就是两句不同的话——而且不会报错。
+  const source = await readFile(new URL('../src/components/Services/ServicePages.jsx', import.meta.url), 'utf8');
+  // 只看代码，不看注释：注释里正该可以提到这几个被删掉的字段名。
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  for (const removed of ['hubTitle', 'hubDescription', 'hubHeading', 'hubIntro']) {
+    assert.doesNotMatch(code, new RegExp(removed), `${removed} 不该再出现在组件代码里`);
+  }
+  assert.match(code, /const hubRoute = useMemo\(\(\) => getPublicSeoRoute\('\/services', locale\), \[locale\]\)/);
+  assert.match(code, /<h1[^>]*>\{route\.body\.h1\}<\/h1>/);
+  assert.match(code, /\(route\.body\.paragraphs \?\? \[\]\)\[0\]/);
+  assert.match(code, /`\$\{hubRoute\?\.title \?\? ''\} \| SAGEMRO`/);
+
+  // 枢纽页的正文本身要能接住机型 head term——这是关键词布局方案 §5.1 里唯一还没做的一条。
+  for (const [locale, terms] of [['en', [/laser cutting machine/i, /press brake/i]], ['zh-CN', [/激光切割机/, /折弯机/]]]) {
+    const route = getPublicSeoRoute('/services', locale);
+    assert.ok(route, `${locale} 缺少 /services 路由`);
+    for (const term of terms) {
+      assert.match(route.body.h1, term, `${locale} /services H1 应含 ${term}`);
+    }
+    assert.ok(route.body.h1.length > 20, `${locale} /services H1 不应是口号式短句`);
+    // 公开服务文案的既有约束：不得出现数字（避免承诺时效/价格）。
+    assert.doesNotMatch(route.body.h1, /\d/, `${locale} /services H1 不得含数字`);
+  }
 });

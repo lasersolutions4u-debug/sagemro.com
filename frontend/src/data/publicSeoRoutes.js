@@ -38,7 +38,9 @@ const pages = {
     services: {
       title: 'Industrial Equipment Service Support',
       description: 'Structured service support for laser cutting, press brakes, remote diagnostics, and preventive maintenance.',
-      h1: 'Structured equipment service support for a clear next action.',
+      // 原先这里是「Structured equipment service support for a clear next action.」——一句零关键词的口号。
+      // H1 是页面主题的最强声明，枢纽页更该说清它到底聚合了哪几类服务，所以补上机型与服务形态词。
+      h1: 'Service scopes for laser cutting machine repair, press brake repair, and preventive maintenance.',
       paragraphs: ['Choose the service context that best matches the equipment and operating concern. Each page explains the information to prepare and the boundary between remote and onsite support.'],
     },
     insights: {
@@ -62,7 +64,8 @@ const pages = {
     services: {
       title: '工业设备服务支持',
       description: '查看激光切割、折弯机、远程诊断和预防性维护的结构化服务支持。',
-      h1: '用结构化设备服务支持，明确下一步行动。',
+      // 同 COM：原先的「用结构化设备服务支持，明确下一步行动。」零关键词。
+      h1: '激光切割机维修、折弯机维修与设备维保的服务场景总览。',
       paragraphs: ['选择最符合设备和运行问题的服务场景。每个页面说明应准备的信息，以及远程与现场支持的边界。'],
     },
     insights: {

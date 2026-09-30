@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { ArrowLeft, ClipboardList, Wrench } from 'lucide-react';
 import { getRelatedDiagnosticGuidesForService } from '../../data/diagnosticGuides';
 import { getPublicSeoRoute } from '../../data/publicSeoRoutes';
@@ -9,13 +9,14 @@ import { NotFoundPage } from '../common/NotFoundPage';
 import { PublicConversionPanel } from '../common/PublicConversionPanel';
 import { PublicSiteShell } from '../Public/PublicSiteShell';
 
+// 这里以前还各自留了一份 hubTitle / hubDescription / hubHeading / hubIntro，与
+// data/publicSeoRoutes.js 里 /services 路由的 title/description/h1/paragraphs[0] 是同一批文案的两份副本
+// （而且已经不一致：组件里的 description 多了一个 "Explore"）。静态壳与客户端各读一份，
+// 就意味着爬虫与用户看到的可能不是同一句话。现在枢纽页的正文全部取自路由数据，
+// 这里只留界面标签。见 tests/service-pages.test.mjs 的单一来源断言。
 const copy = {
   en: {
-    hubTitle: 'Industrial Equipment Service Support | SAGEMRO',
-    hubDescription: 'Explore structured service support for laser cutting, press brakes, remote diagnostics, and preventive maintenance.',
     eyebrow: 'Service support',
-    hubHeading: 'Structured equipment service support for a clear next action.',
-    hubIntro: 'Choose the service context that best matches the equipment and operating concern. Each page explains the information to prepare and the boundary between remote and onsite support.',
     back: 'Back to SAGEMRO AI',
     services: 'Services',
     tools: 'Tools',
@@ -32,11 +33,7 @@ const copy = {
     breadcrumb: 'Services',
   },
   'zh-CN': {
-    hubTitle: '工业设备服务支持 | SAGEMRO',
-    hubDescription: '查看激光切割、折弯机、远程诊断和预防性维护的结构化服务支持。',
     eyebrow: '服务支持',
-    hubHeading: '用结构化设备服务支持，明确下一步行动。',
-    hubIntro: '选择最符合设备和运行问题的服务场景。每个页面说明应准备的信息，以及远程与现场支持的边界。',
     back: '返回 SAGEMRO AI',
     services: '服务',
     tools: '工具',
@@ -61,36 +58,49 @@ export function ServicePages({ pathname = '/services', locale = 'en', acquisitio
   const page = route?.type === 'detail' ? getServicePage(slug, locale) : null;
   const isMissing = route?.type === 'not-found' || Boolean(route?.type === 'detail' && !page);
   const canonicalHost = locale === 'zh-CN' ? 'https://sagemro.cn' : 'https://sagemro.com';
+  // getPublicSeoRoute 每次都会重建整张路由表，所以按 locale 记忆一次，别放在渲染体里裸调。
+  const hubRoute = useMemo(() => getPublicSeoRoute('/services', locale), [locale]);
 
   useEffect(() => {
-    const title = page ? page.seoTitle : selectedCopy.hubTitle;
-    const description = page ? page.description : selectedCopy.hubDescription;
-    const publicRoute = getPublicSeoRoute(page ? `/services/${page.slug}` : '/services', locale);
+    const publicRoute = page ? getPublicSeoRoute(`/services/${page.slug}`, locale) : hubRoute;
+    // 枢纽页的 title/description 直接取路由数据（壳读的是同一份），只在这里补品牌后缀——
+    // 与 renderPublicDocument 的做法一致。
+    const title = page ? page.seoTitle : `${hubRoute?.title ?? ''} | SAGEMRO`;
+    const description = page ? page.description : hubRoute?.description;
     const canonical = isMissing ? `${canonicalHost}/services/${slug}` : publicRoute?.canonical;
-    setSeoMetadata({ title, description, canonical, lang: locale, robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow', structuredData: isMissing ? null : publicRoute?.structuredData });
-  }, [canonicalHost, isMissing, locale, page, selectedCopy, slug]);
+    setSeoMetadata({
+      title,
+      description,
+      canonical,
+      lang: locale,
+      robots: isMissing ? 'noindex,nofollow,noarchive' : 'index,follow',
+      structuredData: isMissing ? null : publicRoute?.structuredData,
+      alternates: isMissing ? undefined : publicRoute?.alternates,
+    });
+  }, [canonicalHost, hubRoute, isMissing, locale, page, slug]);
 
   if (isMissing) return <NotFoundPage isCn={locale === 'zh-CN'} />;
+  if (!page && !hubRoute) return null;
 
   return (
     <PublicSiteShell isCn={locale === 'zh-CN'} onOpenLegal={onOpenLegal}>
       {page ? (
         <ServiceDetail page={page} copy={selectedCopy} locale={locale} acquisitionContext={acquisitionContext} onStartDiagnosis={onStartDiagnosis} onOpenServiceRequest={onOpenServiceRequest} />
       ) : (
-        <ServicesHub copy={selectedCopy} locale={locale} />
+        <ServicesHub copy={selectedCopy} locale={locale} route={hubRoute} />
       )}
     </PublicSiteShell>
   );
 }
 
-function ServicesHub({ copy: selectedCopy, locale }) {
+function ServicesHub({ copy: selectedCopy, locale, route }) {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:py-12">
       <a href="/" className="inline-flex items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-primary)]"><ArrowLeft size={16} />{selectedCopy.back}</a>
       <div className="mt-6 max-w-3xl">
         <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--color-primary)]">{selectedCopy.eyebrow}</div>
-        <h1 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">{selectedCopy.hubHeading}</h1>
-        <p className="mt-4 text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">{selectedCopy.hubIntro}</p>
+        <h1 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">{route.body.h1}</h1>
+        <p className="mt-4 text-sm leading-7 text-[var(--color-text-secondary)] sm:text-base">{(route.body.paragraphs ?? [])[0]}</p>
       </div>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         {getServicePages(locale).map((page) => (
