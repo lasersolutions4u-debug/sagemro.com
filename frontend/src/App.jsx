@@ -1,8 +1,6 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { NotFoundPage } from './components/common/NotFoundPage';
-import { Sidebar } from './components/Sidebar/Sidebar';
-import { ChatHistory } from './components/Sidebar/ChatHistory';
 import { Modal } from './components/common/Modal';
 import { FeedbackHost } from './components/common/FeedbackHost';
 import { useChat } from './hooks/useChat';
@@ -16,7 +14,6 @@ import { resolvePortalTarget } from './utils/portalTarget';
 import { getConversation as getConversationApi, trackFunnelEvent, restoreSession, logout as logoutSession } from './services/api';
 import { createAnalyticsRequestId } from './services/funnelAnalytics';
 import { PublicHomePage } from './components/Public/PublicHomePage';
-import { ConsultationForm } from './components/Public/ConsultationForm';
 
 // 主站（sagemro.com / sagemro.cn）＝ 营销落地页 + 咨询线索表单 + AI 助手入口 + Store 链接。
 // ai.sagemro.com / ai.sagemro.cn ＝ AI 对话门户（本文件底部的聊天界面）。
@@ -32,6 +29,13 @@ import { ConsultationForm } from './components/Public/ConsultationForm';
 // 若以后有人调整 vite.config.js 的 codeSplitting（那些分组带 entriesAware: true），
 // 必须重做这个检查——一旦懒分块拉到自己的 vendor-react，登录就会崩（React #306）。
 const LoginModal = lazy(() => import('./components/Auth/LoginModal').then(m => ({ default: m.LoginModal })));
+// 以下三个都是「只在特定分支或按需才用得到」的组件，但原先静态导入 → 常驻首屏 chunk。
+// 与 LoginModal 采用同一套门槛：改完要验构建产物里它们与 index 引用同一个 vendor-react
+// （否则会出现两份 React），并跑一次运行时回归。
+// Sidebar / ChatHistory 只出现在 AI 门户分支；ConsultationForm 只在打开咨询表单时才渲染。
+const Sidebar = lazy(() => import('./components/Sidebar/Sidebar').then(m => ({ default: m.Sidebar })));
+const ChatHistory = lazy(() => import('./components/Sidebar/ChatHistory').then(m => ({ default: m.ChatHistory })));
+const ConsultationForm = lazy(() => import('./components/Public/ConsultationForm').then(m => ({ default: m.ConsultationForm })));
 const LegalModal = lazy(() => import('./components/common/LegalModal').then(m => ({ default: m.LegalModal })));
 const ChatArea = lazy(() => import('./components/Chat/ChatArea').then(m => ({ default: m.ChatArea })));
 const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
@@ -364,9 +368,11 @@ function App() {
     </Suspense>
   ) : null;
 
-  const consultationModal = (
-    <ConsultationForm isOpen={consultationOpen} isCn={isCn} onClose={() => setConsultationOpen(false)} />
-  );
+  const consultationModal = consultationOpen ? (
+    <Suspense fallback={null}>
+      <ConsultationForm isOpen isCn={isCn} onClose={() => setConsultationOpen(false)} />
+    </Suspense>
+  ) : null;
 
   // ---------- 工程师站：招募落地页 + 申请表单 ----------
   if (isEngineerHost) {
@@ -565,21 +571,23 @@ function App() {
 
   return (
     <div className="flex h-[100dvh] overflow-hidden">
-      <Sidebar
-        conversations={conversations}
-        currentConversationId={conversationId}
-        onNewChat={handleNewChat}
-        onSelectConversation={handleSelectConversation}
-        onDeleteConversation={handleDeleteConversation}
-        onRenameConversation={handleRenameConversation}
-        onOpenHistory={() => setHistoryModalOpen(true)}
-        onOpenConsultation={openConsultation}
-        onOpenLogin={() => setLoginModalOpen(true)}
-        onLogout={handleLogout}
-        currentUser={currentUser}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
+      <Suspense fallback={null}>
+        <Sidebar
+          conversations={conversations}
+          currentConversationId={conversationId}
+          onNewChat={handleNewChat}
+          onSelectConversation={handleSelectConversation}
+          onDeleteConversation={handleDeleteConversation}
+          onRenameConversation={handleRenameConversation}
+          onOpenHistory={() => setHistoryModalOpen(true)}
+          onOpenConsultation={openConsultation}
+          onOpenLogin={() => setLoginModalOpen(true)}
+          onLogout={handleLogout}
+          currentUser={currentUser}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
+      </Suspense>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Suspense fallback={null}>
