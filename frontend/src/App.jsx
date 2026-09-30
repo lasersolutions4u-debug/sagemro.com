@@ -336,13 +336,25 @@ function App() {
     />
   ) : null;
 
-  const legalModal = (
-    <LegalModal
-      isOpen={legalModalOpen}
-      onClose={() => setLegalModalOpen(false)}
-      initialTab={legalInitialTab}
-    />
-  );
+  /*
+   * 只在打开时才渲染法务弹窗。
+   *
+   * 原因：LegalModal 源码 28.9 KB，几乎全是用户协议/隐私政策正文，而它由 Modal（内部）负责
+   * 关闭态——也就是说组件以前是**无条件挂载**的，于是那个 lazy chunk 在**每个页面**都会被拉下来，
+   * 哪怕用户从不打开它。改成按需后，这 26 KB 只在真正点开「规则与说明」时才加载。
+   *
+   * Suspense 嵌在这一层，而不是靠页面级那个：否则首次打开时 chunk 未就绪会把**整页**卸载成
+   * fallback，出现闪白。嵌在这里只让弹窗自己短暂为空。
+   */
+  const legalModal = legalModalOpen ? (
+    <Suspense fallback={null}>
+      <LegalModal
+        isOpen
+        onClose={() => setLegalModalOpen(false)}
+        initialTab={legalInitialTab}
+      />
+    </Suspense>
+  ) : null;
 
   const consultationModal = (
     <ConsultationForm isOpen={consultationOpen} isCn={isCn} onClose={() => setConsultationOpen(false)} />
