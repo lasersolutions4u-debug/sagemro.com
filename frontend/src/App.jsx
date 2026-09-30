@@ -25,8 +25,13 @@ import { ConsultationForm } from './components/Public/ConsultationForm';
 // 不要在这些分支里恢复任何工单/派工/报价相关页面。
 
 // 重型组件懒加载，减少首屏 bundle 体积
-// LoginModal 直接导入 — 关键的登录/注册入口，懒加载会导致 React #306（重复 React 实例）
-import { LoginModal } from './components/Auth/LoginModal';
+//
+// 关于 LoginModal：这里原先写着「直接导入 —— 懒加载会导致 React #306（重复 React 实例）」，
+// 所以它被静态导入，28 KB 常驻首屏。本轮改回 lazy，并以**构建产物的分块引用关系**作为门槛验证：
+// 只要 LoginModal 分块与 index 分块引用同一个 vendor-react 分块，就不存在"两份 React"的条件。
+// 若以后有人调整 vite.config.js 的 codeSplitting（那些分组带 entriesAware: true），
+// 必须重做这个检查——一旦懒分块拉到自己的 vendor-react，登录就会崩（React #306）。
+const LoginModal = lazy(() => import('./components/Auth/LoginModal').then(m => ({ default: m.LoginModal })));
 const LegalModal = lazy(() => import('./components/common/LegalModal').then(m => ({ default: m.LegalModal })));
 const ChatArea = lazy(() => import('./components/Chat/ChatArea').then(m => ({ default: m.ChatArea })));
 const IndustryToolsPage = lazy(() => import('./components/Tools/IndustryToolsPage').then(m => ({ default: m.IndustryToolsPage })));
@@ -327,13 +332,16 @@ function App() {
   }, []);
 
   const loginModal = loginModalOpen ? (
-    <LoginModal
-      isOpen={loginModalOpen}
-      onClose={() => setLoginModalOpen(false)}
-      onLoginSuccess={handleLoginSuccess}
-      onOpenLegal={openLegal}
-      conversationId={conversationId}
-    />
+    // Suspense 嵌在弹窗这一层：复用页面级那个的话，首次打开时若分块未就绪会把整页卸载成空白。
+    <Suspense fallback={null}>
+      <LoginModal
+        isOpen={loginModalOpen}
+        onClose={() => setLoginModalOpen(false)}
+        onLoginSuccess={handleLoginSuccess}
+        onOpenLegal={openLegal}
+        conversationId={conversationId}
+      />
+    </Suspense>
   ) : null;
 
   /*
