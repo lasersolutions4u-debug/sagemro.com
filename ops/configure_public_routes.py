@@ -22,6 +22,13 @@ CANONICAL_REDIRECT = 'if ($host = www.sagemro.cn) { return 301 https://sagemro.c
 ROUTE_LINES = (
     'error_page 404 /404.html;',
     'location = /404.html { internal; }',
+    # /index.html 与 / 是同一份内容，但 nginx 会把 /index.html 当普通文件用 200 返回
+    # （COM 侧 Cloudflare Pages 是 308 到 /）。两个都可索引的 URL 会浪费抓取预算、分散信号。
+    # 用 $request_uri 判断，而不是只写 location = /index.html { return 301 /; }：
+    # /activate、/engineer、/work-orders/* 三条 SPA 深链都靠 try_files /index.html 供文件，
+    # 而 $request_uri 是**原始请求**、不受内部重定向影响——所以无论 nginx 对 try_files 命中的
+    # 文件是否重新匹配 location，内部子请求都不会被这条 301 拦掉。
+    'location = /index.html { if ($request_uri = /index.html) { return 301 /; } try_files $uri $uri/ =404; }',
     'location = /activate { try_files /index.html =404; }',
     'location = /engineer { try_files /index.html =404; }',
     'location ~ ^/work-orders/[^/]+$ { try_files /index.html =404; }',

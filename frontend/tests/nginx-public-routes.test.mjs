@@ -11,6 +11,7 @@ const python = ['python3', 'python'].find((command) => spawnSync(command, ['--ve
 
 const privateRouteContract = String.raw`error_page 404 /404.html;
   location = /404.html { internal; }
+  location = /index.html { if ($request_uri = /index.html) { return 301 /; } try_files $uri $uri/ =404; }
   location = /activate { try_files /index.html =404; }
   location = /engineer { try_files /index.html =404; }
   location ~ ^/work-orders/[^/]+$ { try_files /index.html =404; }
@@ -74,6 +75,7 @@ test('removes the previously generated reverse trailing-slash redirect without d
   if ($host = www.sagemro.cn) { return 301 https://sagemro.cn$request_uri; }
   error_page 404 /404.html;
   location = /404.html { internal; }
+  location = /index.html { if ($request_uri = /index.html) { return 301 /; } try_files $uri $uri/ =404; }
   location = /activate { try_files /index.html =404; }
   location = /engineer { try_files /index.html =404; }
   location ~ ^/work-orders/[^/]+$ { try_files /index.html =404; }
