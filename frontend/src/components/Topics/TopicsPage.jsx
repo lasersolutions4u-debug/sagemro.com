@@ -52,7 +52,7 @@ export function TopicsPage({ pathname = '/topics', onOpenLegal }) {
     <PublicSiteShell isCn={locale === 'zh-CN'} onOpenLegal={onOpenLegal}>
       <section className="border-b border-[#e6dccf] bg-[#f7f3ed] px-5 py-14 md:py-20">
         <div className="mx-auto max-w-[1240px] lg:px-3">
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#d97706]">{labels.eyebrow}</p>
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#92400e]">{labels.eyebrow}</p>
           <h1 className="mt-4 max-w-4xl text-3xl font-semibold leading-[1.15] tracking-[-0.03em] text-[#21160c] md:text-4xl">
             {route.body.h1}
           </h1>
@@ -70,7 +70,7 @@ export function TopicsPage({ pathname = '/topics', onOpenLegal }) {
                   <li key={item.href}>
                     <a
                       href={item.href}
-                      className="text-sm font-medium text-[#b45309] underline decoration-[#e7b65b] underline-offset-4 transition-colors hover:text-[#d97706]"
+                      className="text-sm font-medium text-[#b45309] underline decoration-[#e7b65b] underline-offset-4 transition-colors hover:text-[#92400e]"
                     >
                       {item.label}
                     </a>
@@ -82,14 +82,14 @@ export function TopicsPage({ pathname = '/topics', onOpenLegal }) {
         </div>
 
         <div className="mx-auto mt-10 flex flex-wrap gap-x-5 gap-y-2 max-w-[1240px] lg:px-3">
-          <a href="/" className="text-sm font-semibold text-[#2d2116] underline decoration-[#c9b9a5] underline-offset-4 transition-colors hover:text-[#d97706]">
+          <a href="/" className="text-sm font-semibold text-[#2d2116] underline decoration-[#c9b9a5] underline-offset-4 transition-colors hover:text-[#92400e]">
             {labels.back}
           </a>
           {(route.body.links ?? []).map((link) => (
             <a
               key={link.href}
               href={link.href}
-              className="text-sm font-semibold text-[#2d2116] underline decoration-[#c9b9a5] underline-offset-4 transition-colors hover:text-[#d97706]"
+              className="text-sm font-semibold text-[#2d2116] underline decoration-[#c9b9a5] underline-offset-4 transition-colors hover:text-[#92400e]"
             >
               {link.label}
             </a>

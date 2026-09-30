@@ -233,7 +233,9 @@ export function IndustryToolCalculator({ tool, values, onChange, onSendMessage, 
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)] p-4">
         <div className="mb-4">
           <div className="text-xs uppercase text-[var(--color-text-muted)]">{copy.eyebrow}</div>
-          <h3 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{visibleTool.label}</h3>
+          {/* 这一块在工具详情页是页面正文的第一层标题，写成 h3 会让层级从 h1 直接跳到 h3；
+              在工具枢纽页它与该页的 h2 同级，也仍然成立。axe 的 heading-order 规则抓到了这一点。 */}
+          <h2 className="mt-1 text-xl font-semibold text-[var(--color-text-primary)]">{visibleTool.label}</h2>
           <p className="mt-2 text-sm leading-relaxed text-[var(--color-text-secondary)]">{visibleTool.leadAction}</p>
         </div>
 

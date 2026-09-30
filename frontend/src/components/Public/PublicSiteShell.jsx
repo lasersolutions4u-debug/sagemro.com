@@ -26,7 +26,7 @@ export function PublicSiteShell({ children, isCn, onOpenLegal }) {
   const portalHref = isCn ? 'https://ai.sagemro.cn' : 'https://ai.sagemro.com';
 
   return (
-    <div className="min-h-screen bg-[#f7f3ed] text-[#21160c] antialiased">
+    <div className="public-site-shell min-h-screen bg-[#f7f3ed] text-[#21160c] antialiased">
       <header className="sticky top-0 z-40 border-b border-[#e6dccf] bg-[#fffdf8]/95 shadow-[0_1px_0_rgba(45,33,22,0.03)] backdrop-blur">
         <div className="mx-auto flex min-h-16 max-w-[1240px] flex-wrap items-center justify-between gap-3 px-5 py-2 lg:px-8">
           <a href="/" className="flex min-h-11 items-center gap-3" aria-label={isCn ? 'SAGEMRO 首页' : 'SAGEMRO home'}>
@@ -41,7 +41,7 @@ export function PublicSiteShell({ children, isCn, onOpenLegal }) {
 
           <nav className="order-3 flex w-full items-center gap-1 overflow-x-auto border-t border-[#e6dccf] pt-2 md:order-2 md:w-auto md:border-0 md:pt-0" aria-label={isCn ? '主导航' : 'Main navigation'}>
             {navigation[market].map(([label, href]) => (
-              <a key={href} href={href} className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#d97706]">
+              <a key={href} href={href} className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#92400e]">
                 {label}
               </a>
             ))}
@@ -50,11 +50,11 @@ export function PublicSiteShell({ children, isCn, onOpenLegal }) {
                 商城（筹备中）
               </span>
             ) : (
-              <a href={INTERNATIONAL_STORE_URL} target="_blank" rel="noopener noreferrer" className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#d97706]">
+              <a href={INTERNATIONAL_STORE_URL} target="_blank" rel="noopener noreferrer" className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#92400e]">
                 Store
               </a>
             )}
-            <button type="button" onClick={openConsultationForm} className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#d97706]">
+            <button type="button" onClick={openConsultationForm} className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#92400e]">
               {isCn ? '咨询' : 'Contact'}
             </button>
           </nav>
@@ -74,15 +74,15 @@ export function PublicSiteShell({ children, isCn, onOpenLegal }) {
             <p className="mt-1 text-sm text-[#756552]">{isCn ? '提交咨询表单留下联系方式，工程师会直接回复；也可以直接和 AI 助手沟通。' : 'Send the consultation form with your contact details and an engineer replies directly. You can also talk to the AI assistant.'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-            <button type="button" onClick={openConsultationForm} className="flex min-h-11 items-center text-sm font-semibold text-[#b45309] underline decoration-[#e7b65b] underline-offset-4">
+            <button type="button" onClick={openConsultationForm} className="flex min-h-11 items-center text-sm font-semibold text-[#92400e] underline decoration-[#e7b65b] underline-offset-4">
               {isCn ? '提交咨询' : 'Request a consultation'}
             </button>
             {isCn ? (
               <span aria-disabled="true" className="flex min-h-11 items-center text-sm font-medium text-[#a39686]">商城（筹备中）</span>
             ) : (
-              <a href={INTERNATIONAL_STORE_URL} target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center text-sm font-semibold text-[#b45309] underline decoration-[#e7b65b] underline-offset-4">Store</a>
+              <a href={INTERNATIONAL_STORE_URL} target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center text-sm font-semibold text-[#92400e] underline decoration-[#e7b65b] underline-offset-4">Store</a>
             )}
-            <a href="mailto:support@sagemro.com" className="flex min-h-11 items-center text-sm font-semibold text-[#b45309] underline decoration-[#e7b65b] underline-offset-4">
+            <a href="mailto:support@sagemro.com" className="flex min-h-11 items-center text-sm font-semibold text-[#92400e] underline decoration-[#e7b65b] underline-offset-4">
               support@sagemro.com
             </a>
           </div>

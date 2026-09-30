@@ -33,7 +33,7 @@ export function PartnersPage({ onOpenLegal }) {
     <PublicSiteShell isCn={false} onOpenLegal={onOpenLegal}>
       <section className="border-b border-[#e6dccf] bg-[#f7f3ed] px-5 py-16 md:py-24">
         <div className="mx-auto max-w-[1240px] lg:px-3">
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#d97706]">{content.eyebrow}</p>
+          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#92400e]">{content.eyebrow}</p>
           <h1 className="mt-5 max-w-4xl text-4xl font-semibold leading-[1.12] tracking-[-0.04em] text-[#21160c] md:text-5xl">{content.title}</h1>
           <p className="mt-6 max-w-3xl text-base leading-8 text-[#6b5a48] md:text-lg">{content.description}</p>
         </div>

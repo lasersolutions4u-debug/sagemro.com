@@ -146,7 +146,7 @@ export function HomeChatPanel({ isCn, onOpenLegal }) {
           )}
         </div>
 
-        <p className="mt-2 text-[11px] leading-5 text-[#8a7864]">
+        <p className="mt-2 text-[11px] leading-5 text-[#756552]">
           {t.notice}
           {onOpenLegal && (
             <button type="button" onClick={() => onOpenLegal('ai')} className="ml-1 underline decoration-dotted underline-offset-2 hover:text-[#b45309]">

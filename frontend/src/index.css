@@ -3,6 +3,36 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+/*
+ * 公开站（营销页）的可访问配色覆盖。
+ *
+ * `--color-primary` 是 #f59e0b，作为**填充色**没问题（按钮上配深色文字），但作为**文字**放在
+ * 公开站的浅色底上只有 2.15:1，远低于 WCAG AA 对正文要求的 4.5:1；`--color-text-muted` 的
+ * #888888 同理。axe-core 在 13 个公开页面上报出 92 个对比度违规节点，按下限算需要 4.5:1。
+ *
+ * 公开站整站包在 `.public-site-shell` 里，所以就在这里把两个变量换成本色系的深档：
+ * #92400e 在公开站用到的所有浅色底（#ffffff 7.09 / #fffdf8 6.97 / #f7f3ed 6.41 /
+ * #f4ede3 6.10 / #faf9fb 6.76）上都过；#756552 最低 4.83。
+ * AI 门户与后台不在这个类里，配色不受影响。
+ * 比值可用 docs/research/tools/contrast.mjs 复算。
+ */
+.public-site-shell {
+  --color-primary: #92400e;
+  --color-text-muted: #756552;
+}
+
+/*
+ * 但公开站的页脚是**深色**的（Footer 的非 compact 变体用 --color-sidebar = #1a1a1a 作底），
+ * 所以它里面的次要文字要覆盖回浅色档，否则上面那套"浅底用"的深灰会变成 3.09:1。
+ * 这一条是改配色时被 axe 抓出来的连带影响——同一个变量在同一个容器里既要服务浅底又要服务深底，
+ * 只能按子树分别覆盖。
+ */
+.public-site-shell footer {
+  --color-primary: #fbbf24;
+  --color-text-muted: #888888;
+}
+
+
 :root {
   /* ============ 色彩系统 ============ */
   /* 亮色模式 */

@@ -102,7 +102,7 @@ const labels = {
 function SectionHeading({ eyebrow, title }) {
   return (
     <div className="max-w-3xl">
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#d97706]">{eyebrow}</p>
+      <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#92400e]">{eyebrow}</p>
       <h2 className="mt-3 text-3xl font-semibold tracking-[-0.025em] text-[#21160c] md:text-4xl">{title}</h2>
     </div>
   );
@@ -120,7 +120,7 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
         <div className="pointer-events-none absolute inset-0 opacity-45" style={{ backgroundImage: 'linear-gradient(#e8ded2 1px, transparent 1px), linear-gradient(90deg, #e8ded2 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
         <div className={`relative mx-auto grid max-w-[1240px] gap-10 lg:px-3 ${isCn ? 'lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-10 xl:grid-cols-[minmax(0,1fr)_400px] xl:gap-14' : 'lg:grid-cols-[1.35fr_0.65fr]'}`}>
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#d97706]">{content.hero.eyebrow}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#92400e]">{content.hero.eyebrow}</p>
             {/* CN 标题断行由 titleLines 显式给定，所以字号必须保证最长那行（10 字 ≈ 9.6em）放得进文字列，
                 否则 span 会二次折行、把「交付，」甩成单独一行。实测可用宽度：390px → 340；
                 md 单列 → 728；lg 双列（图 280）→ 614；xl 双列（图 400）→ 760~784。 */}
@@ -148,7 +148,7 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
                 <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[#c2410c]">Before submitting</p>
                 <ul className="mt-4 grid gap-3 text-sm leading-6 text-[#6b5a48] sm:grid-cols-3">
                   {['Equipment brand and model', 'Complete alarm code and symptom', 'Site region, production impact, and contact details'].map((item, index) => (
-                    <li key={item} className="flex gap-2"><span className="font-mono font-bold text-[#d97706]">0{index + 1}</span><span>{item}</span></li>
+                    <li key={item} className="flex gap-2"><span className="font-mono font-bold text-[#92400e]">0{index + 1}</span><span>{item}</span></li>
                   ))}
                 </ul>
               </div>
@@ -255,7 +255,7 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
         <section data-home-section="user-entry" className="border-b border-[#e6dccf] bg-[#fffdf8] px-5 py-16 md:py-20">
           <div className="mx-auto max-w-[900px]">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#d97706]">{content.audiences.user.eyebrow}</p>
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#92400e]">{content.audiences.user.eyebrow}</p>
               <h2 className="mt-4 max-w-3xl text-3xl font-semibold tracking-[-0.025em] text-[#21160c] md:text-4xl">{content.audiences.user.title}</h2>
               <p className="mt-5 max-w-3xl text-base leading-8 text-[#6b5a48]">{content.audiences.user.description}</p>
               <div className="mt-8">
@@ -265,7 +265,7 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
                 <p className="font-mono text-xs font-bold uppercase tracking-[0.18em] text-[#c2410c]">提交前准备</p>
                 <ul className="mt-4 grid gap-3 text-sm leading-6 text-[#6b5a48] sm:grid-cols-3">
                   {['设备品牌与型号', '完整报警代码与故障现象', '现场地区、停机影响与联系方式'].map((item, index) => (
-                    <li key={item} className="flex gap-2"><span className="font-mono font-bold text-[#d97706]">0{index + 1}</span><span>{item}</span></li>
+                    <li key={item} className="flex gap-2"><span className="font-mono font-bold text-[#92400e]">0{index + 1}</span><span>{item}</span></li>
                   ))}
                 </ul>
               </div>
@@ -281,7 +281,7 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
             {content.problemLinks.items.map((item, index) => (
               <a key={item.key} href={problemRoutes[item.key]} className="group flex min-h-24 items-center justify-between gap-4 bg-white p-5 transition-colors hover:bg-[#fff5df]">
                 <span className="text-base font-semibold">{item.label}</span>
-                <span className="font-mono text-xs text-[#8a7864] group-hover:text-[#d97706]">0{index + 1} / →</span>
+                <span className="font-mono text-xs text-[#756552] group-hover:text-[#92400e]">0{index + 1} / →</span>
               </a>
             ))}
           </div>
@@ -386,7 +386,7 @@ export function PublicHomePage({ isCn, onOpenLegal }) {
             {content.faqs.items.map((item) => (
               <details key={item.key} className="group py-1">
                 <summary className="flex min-h-16 cursor-pointer list-none items-center justify-between gap-4 py-3 text-base font-semibold marker:content-none">
-                  {item.question}<span className="font-mono text-[#d97706] group-open:rotate-45">＋</span>
+                  {item.question}<span className="font-mono text-[#92400e] group-open:rotate-45">＋</span>
                 </summary>
                 <p className="max-w-3xl pb-6 pr-10 text-sm leading-7 text-[#756552]">{item.answer}</p>
               </details>
