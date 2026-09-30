@@ -61,7 +61,9 @@ const remoteExclusions = [
   /OEM-only procedures/i,
 ];
 
-test('service hub exposes the eight approved bilingual service records', () => {
+// 名字里的数字要与 expectedSlugs 同步：这里曾长期写着 "eight"，而记录早已是 12 条，
+// 于是测试名成了误导性文档。数字型的测试名最容易这样静默过期。
+test('service hub exposes the twelve approved bilingual service records', () => {
   for (const locale of ['en', 'zh-CN']) {
     const pages = getServicePages(locale);
 
