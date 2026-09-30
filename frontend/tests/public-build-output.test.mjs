@@ -22,7 +22,7 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   const checkedIn = (path) => readFile(new URL(`../public/${path}`, import.meta.url), 'utf8');
   assert.match(await read('tools/press-brake-tonnage-calculator/index.html'), /<h1>Press Brake Tonnage Calculator<\/h1>/);
   assert.match(await read('insights/press-brake-tonnage-risk-check/index.html'), /Article/);
-  assert.match(await read('sitemap.xml'), /<lastmod>2026-08-06<\/lastmod>/);
+  assert.match(await read('sitemap.xml'), /<lastmod>2026-09-29<\/lastmod>/);
   assert.doesNotMatch(await read('sitemap.xml'), /bend-simulator/);
   const redirects = await read('_redirects');
   assert.match(redirects, /\/activate \/ 200/);
@@ -35,23 +35,45 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   assert.match(await read('404.html'), /name="robots" content="noindex,nofollow,noarchive"/);
   assert.match(await read('404.html'), /<h1>404 — This page doesn&#39;t exist<\/h1>/);
   assert.doesNotMatch(await read('404.html'), /application\/ld\+json/);
-  const hubs = (await read('llms.txt')).match(/^\- https:\/\/[^\n]+$/gm);
-  assert.deepEqual(hubs, [
-    '- https://sagemro.com/',
-    '- https://sagemro.com/services/',
-    '- https://sagemro.com/tools/',
-    '- https://sagemro.com/insights/',
-  ]);
+  // llms.txt 现在按语言分别写业务自述并列出主要页面，不再是"四行 hub 列表 + 一句旧口径"。
+  // 校验它确实覆盖了业务、服务页与渠道商页——这三样是 AI 判断"这家到底做什么"的依据。
+  const llms = await read('llms.txt');
+  const hubs = llms.match(/^\- https:\/\/[^\n]+$/gm);
+  assert.equal(hubs.length, 12);
+  for (const path of ['/', '/partners/', '/services/', '/tools/', '/insights/', '/about/technical-review/']) {
+    assert.ok(hubs.some((line) => line.startsWith(`- https://sagemro.com${path} `)), `llms.txt 缺少 ${path}`);
+  }
+  for (const slug of ['laser-cutting-machine-repair', 'press-brake-repair', 'remote-diagnostics',
+    'preventive-maintenance', 'machine-relocation-installation', 'spare-parts-consumables']) {
+    assert.ok(hubs.some((line) => line.startsWith(`- https://sagemro.com/services/${slug}/ `)), `llms.txt 缺少服务页 ${slug}`);
+  }
+  assert.match(llms, /takes over the after-sales delivery that laser and metal-forming equipment builders/);
+  // "我们不是设备商"是定位的核心区分，必须在自述里写清楚。
+  assert.match(llms, /not a machine manufacturer or a machine seller/);
+  assert.doesNotMatch(llms, /planning references for industrial equipment users/);
   assert.equal(normalizeLineEndings(await read('sitemap.xml')), normalizeLineEndings(await checkedIn('sitemap.xml')));
   assert.equal(normalizeLineEndings(await read('llms.txt')), normalizeLineEndings(await checkedIn('llms.txt')));
   const sitemap = await read('sitemap.xml');
-  for (const serviceEntry of sitemap.matchAll(/<url>\s*<loc>https:\/\/sagemro\.com\/services\/[^<]+<\/loc>[\s\S]*?<\/url>/g)) {
-    assert.doesNotMatch(serviceEntry[0], /<lastmod>/);
+  // 服务页以前完全没有 lastmod，而缺 lastmod 会让抓取优先级失真——现在每一页都必须带。
+  // （这条断言原本是反过来的：它把"服务页没有 lastmod"当成了规格。）
+  const serviceEntries = [...sitemap.matchAll(/<url>\s*<loc>https:\/\/sagemro\.com\/services\/[^<]+<\/loc>[\s\S]*?<\/url>/g)];
+  assert.equal(serviceEntries.length, 8, '应匹配到 8 个服务详情页');
+  for (const serviceEntry of serviceEntries) {
+    assert.match(serviceEntry[0], /<lastmod>2026-09-29<\/lastmod>/, `服务页缺 lastmod: ${serviceEntry[0].slice(0, 90)}`);
   }
   const robots = await read('robots.txt');
   assert.equal(normalizeLineEndings(robots).trimEnd(), normalizeLineEndings(await checkedIn('robots.txt')).trimEnd());
   assert.match(robots, /User-agent: Baiduspider\nDisallow: \/(?:\n|$)/);
   assert.match(robots, /User-agent: Googlebot\nAllow: \//);
+  // Google-Extended 控制的是 Gemini Apps / Vertex AI 的 grounding（能不能被 AI 答案引用），
+  // 不只是训练。把它当"仅训练"一起封掉等于顺手放弃 Google 的 AI 答案面，所以它必须保持可抓取。
+  assert.doesNotMatch(robots, /User-agent: Google-Extended\nDisallow: \//);
+  // 只用于喂训练的抓取器仍然明确拒绝。
+  for (const agent of ['GPTBot', 'ClaudeBot', 'CCBot']) {
+    assert.match(robots, new RegExp(`User-agent: ${agent}\\nDisallow: /`), `${agent} 应保持拒绝`);
+  }
+  // ChatGPT 搜索用的是 OAI-SearchBot（检索/引用用途），必须放行。
+  assert.match(robots, /User-agent: OAI-SearchBot\nAllow: \//);
 });
 
 test('buildPublicPages writes direct noindex tool pages outside every public crawl artifact', async (t) => {

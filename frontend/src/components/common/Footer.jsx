@@ -1,6 +1,6 @@
 import { isCnLocale } from '../../utils/locale';
-
-const ICP_RECORD_NUMBER = '鲁ICP备2026032904号-1';
+// 法人名与备案号从公司实体数据源取，供页脚与结构化数据共用同一个值。
+import { ICP_RECORD_NUMBER } from '../../data/companyProfile';
 
 export function Footer({ onOpenLegal, compact = false }) {
   const isCn = isCnLocale();

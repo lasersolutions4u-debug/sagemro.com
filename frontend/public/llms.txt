@@ -1,12 +1,32 @@
-# SAGEMRO
+# SAGEMRO (Jinan Euchio Machinery Co., Ltd.)
 
-SAGEMRO provides practical planning references for industrial equipment users. Tool results are planning references, not final engineering, safety, purchasing, or service decisions.
+SAGEMRO takes over the after-sales delivery that laser and metal-forming equipment builders and their
+overseas dealers cannot cover themselves: in-warranty on-site service, export commissioning and customer
+training, and exchange-unit flow for returned parts. Engineers and parts are organized by SAGEMRO;
+work is billed per project or per visit. We do not sell machines.
 
-## Current hubs
+Content on this site is service information and planning reference. Final diagnosis, pricing, assignment,
+and safety requirements are confirmed by technicians for the individual project; no lead time is promised
+in advance.
 
-- https://sagemro.com/
-- https://sagemro.com/services/
-- https://sagemro.com/tools/
-- https://sagemro.com/insights/
+## Main pages
+
+- https://sagemro.com/ — overview of the three delivery forms
+- https://sagemro.com/partners/ — support for overseas dealers and agents
+- https://sagemro.com/services/ — service catalogue
+- https://sagemro.com/services/laser-cutting-machine-repair/ — laser cutting machine repair and diagnostics
+- https://sagemro.com/services/press-brake-repair/ — press brake repair and accuracy support
+- https://sagemro.com/services/remote-diagnostics/ — laser cutting machine remote diagnostics
+- https://sagemro.com/services/preventive-maintenance/ — laser cutting machine and press brake maintenance
+- https://sagemro.com/services/machine-relocation-installation/ — relocation, installation, and commissioning
+- https://sagemro.com/services/spare-parts-consumables/ — spare parts and consumables, including exchange units
+- https://sagemro.com/tools/ — free laser cutting, press brake, and material calculators
+- https://sagemro.com/insights/ — practical service notes and troubleshooting guides
+- https://sagemro.com/about/technical-review/ — technical content review policy
+
+## Scope
+
+- This file describes the international site. The China edition is https://sagemro.cn/
+- SAGEMRO is a service contractor, not a machine manufacturer or a machine seller
 
 Contact: support@sagemro.com

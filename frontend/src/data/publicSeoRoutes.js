@@ -10,9 +10,12 @@ import { getServicePage, getServicePages } from './servicePages.js';
 import { getTechnicalAuthor } from './technicalAuthors.js';
 import { getTechnicalReviewPolicy } from './technicalReviewPolicy.js';
 import { getPublicHomeContent } from './publicHomeContent.js';
+import { getLegalEntity, ICP_RECORD_NUMBER, SUPPORT_EMAIL } from './companyProfile.js';
 
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
-const RELEASE_DATE = '2026-08-06';
+// hub / 首页 / 服务页这几类页面没有比"内容发布"更细的变更时间，统一用这个日期。
+// 改这些页面的文案时要一起更新，否则 sitemap 的 lastmod 会一直停在旧日期。
+const RELEASE_DATE = '2026-09-29';
 
 function publicUrl(host, path) {
   return `${host}${path === '/' ? '/' : `${path.replace(/\/+$/, '')}/`}`;
@@ -21,8 +24,8 @@ function publicUrl(host, path) {
 const pages = {
   en: {
     home: {
-      title: 'Industrial Equipment Repair, Retrofit, Relocation, and Parts Support',
-      description: 'SAGEMRO supports industrial equipment fault assessment, repair coordination, retrofit, relocation, maintenance, used-equipment evaluation, and parts matching.',
+      title: 'Laser & Press Brake After-Sales Service for OEMs',
+      description: 'SAGEMRO takes over the after-sales that equipment builders and their dealers cannot cover — in-warranty on-site visits, export commissioning, and exchange-unit flow. Engineers and parts organized by us; billed per project or per visit.',
     },
     tools: {
       title: 'Free Sheet Metal and Laser Cutting Calculators',
@@ -36,12 +39,6 @@ const pages = {
       h1: 'Structured equipment service support for a clear next action.',
       paragraphs: ['Choose the service context that best matches the equipment and operating concern. Each page explains the information to prepare and the boundary between remote and onsite support.'],
     },
-    brands: {
-      title: 'Multi-brand Industrial Equipment Service Support',
-      description: 'Find independent service support by installed machine, laser source, control system, and cutting-head brand.',
-      h1: 'Service support organized around the equipment already installed at your site.',
-      paragraphs: ['Choose a brand to see the relevant evidence, common service needs, and independent service boundary before submitting one structured service request.'],
-    },
     insights: {
       title: 'SAGEMRO Insights for Laser and Metal Forming Equipment',
       description: 'Practical notes, calculators, and decision guides for laser and metal forming equipment.',
@@ -51,8 +48,8 @@ const pages = {
   },
   'zh-CN': {
     home: {
-      title: '工业设备维修、改造、移位安装与备件支持',
-      description: 'SAGEMRO 提供工业设备故障判断、维修协调、系统改造、移位安装、维护保养、旧设备评估和备件匹配支持。',
+      title: '整机厂售后外包：保内上门、出口设备海外交付、返修件流转',
+      description: '承接整机厂售后交付外包：保内上门、出口设备海外装机与调试、返修件流转与备件支持，按项目或按次承接。工程师与备件由我们组织，检测数据与服务结论留档回传。',
     },
     tools: {
       title: '钣金、激光切割和折弯行业工具',
@@ -65,12 +62,6 @@ const pages = {
       description: '查看激光切割、折弯机、远程诊断和预防性维护的结构化服务支持。',
       h1: '用结构化设备服务支持，明确下一步行动。',
       paragraphs: ['选择最符合设备和运行问题的服务场景。每个页面说明应准备的信息，以及远程与现场支持的边界。'],
-    },
-    brands: {
-      title: '多品牌工业设备服务支持',
-      description: '按现场使用的整机、激光器、控制系统和切割头品牌查找独立服务支持。',
-      h1: '围绕现场已经安装的设备与部件品牌匹配服务支持。',
-      paragraphs: ['选择品牌，查看常见服务需求、需要准备的资料和独立服务边界，再通过统一入口提交服务请求。'],
     },
     insights: {
       title: 'SAGEMRO 激光与金属成型洞察',
@@ -89,17 +80,57 @@ function alternates(path) {
   };
 }
 
+/**
+ * 只在国际站发布的页面（如 /partners/）不能声明 zh-CN 版本：那个 URL 在 sagemro.cn 上是 404，
+ * 而 hreflang 要求每个被指向的 URL 真实存在。这类路由自己给出 alternates，不再从 path 推导。
+ */
+function englishOnlyAlternates(path) {
+  return {
+    en: publicUrl(HOSTS.en, path),
+    'x-default': publicUrl(HOSTS.en, path),
+  };
+}
+
 function route(locale, value) {
   return {
     robots: 'index,follow',
     ...value,
     canonical: publicUrl(HOSTS[locale], value.path),
-    alternates: alternates(value.path),
+    alternates: value.alternates ?? alternates(value.path),
   };
 }
 
+/**
+ * 公司实体节点。
+ *
+ * 这里以前只有 name/url/email 三个字段——搜索引擎和 AI 无法据此确认这是一个真实经营实体，
+ * 也不知道它到底做什么。法人名与备案号原先只存在于页脚与用户协议里，
+ * 而爬虫读的是静态壳，壳里两者都没有。现在补上 entity 描述与标识字段。
+ */
 function organization(locale) {
-  return { '@type': 'Organization', '@id': `${HOSTS[locale]}/#organization`, name: 'SAGEMRO', url: `${HOSTS[locale]}/`, email: 'support@sagemro.com' };
+  const entity = getLegalEntity(locale);
+  return {
+    '@type': 'Organization',
+    '@id': `${HOSTS[locale]}/#organization`,
+    name: entity.name,
+    legalName: entity.legalName,
+    url: `${HOSTS[locale]}/`,
+    description: entity.description,
+    email: SUPPORT_EMAIL,
+    logo: `${HOSTS[locale]}/sagemro-logo.png`,
+    address: { '@type': 'PostalAddress', addressCountry: entity.country },
+    areaServed: entity.areaServed,
+    contactPoint: {
+      '@type': 'ContactPoint',
+      contactType: 'customer support',
+      email: SUPPORT_EMAIL,
+      availableLanguage: locale === 'zh-CN' ? ['zh-CN'] : ['en'],
+    },
+    // 工信部备案号只有中国版持有，国际站不带这一项。
+    ...(locale === 'zh-CN'
+      ? { identifier: { '@type': 'PropertyValue', propertyID: 'ICP', value: ICP_RECORD_NUMBER } }
+      : {}),
+  };
 }
 
 function organizationRef(locale) {
@@ -172,14 +203,18 @@ function toolRoute(locale, tool, robots = 'index,follow') {
 function withSchemaGraphs(routes, locale) {
   return routes.map((routeValue) => {
     const schemaOrganization = routeValue.schemaOrganization ?? organization(locale);
-    const { schemaOrganization: _schemaOrganization, ...publicRoute } = routeValue;
+    const { schemaOrganization: _schemaOrganization, schemaExtra = [], ...publicRoute } = routeValue;
+    const extra = Array.isArray(schemaExtra) ? schemaExtra : [schemaExtra];
     return {
       ...publicRoute,
       structuredData: {
         '@context': 'https://schema.org',
-        '@graph': routeValue.path === '/'
-          ? [schemaOrganization, routeValue.structuredData]
-          : [routeValue.structuredData, breadcrumb(routeValue), schemaOrganization],
+        '@graph': [
+          ...(routeValue.path === '/'
+            ? [schemaOrganization, routeValue.structuredData]
+            : [routeValue.structuredData, breadcrumb(routeValue), schemaOrganization]),
+          ...extra,
+        ],
       },
     };
   });
@@ -227,14 +262,22 @@ function buildRoutes(locale) {
       paragraphs: [publicHome.hero.description],
       sections: [
         ...(locale === 'zh-CN'
-          ? [{
-            heading: '整机厂售后协作',
-            body: [
-              publicHome.makerEngagements.items.map((item) => `${item.title}: ${item.context} ${item.approach}`).join(' '),
-              publicHome.makerWorkflow.steps.map((step, index) => `${index + 1}. ${step.title}`).join(' '),
-              publicHome.makerBoundary.items.map((item) => item.detail).join(' '),
-            ].join(' '),
-          }]
+          ? [
+            // 以前这三块被拼成一整个 <p>（三类服务的处境+做法、4 步流程、4 条边界用空格相连），
+            // AI 无法把其中任何一条当独立事实取用。现在每类服务各自成一个 H2 + P。
+            ...publicHome.makerEngagements.items.map((item) => ({
+              heading: item.title,
+              body: `${item.context} ${item.approach}`,
+            })),
+            {
+              heading: publicHome.makerWorkflow.title,
+              body: publicHome.makerWorkflow.steps.map((step, index) => `${index + 1}. ${step.title}：${step.detail}`).join(' '),
+            },
+            {
+              heading: publicHome.makerBoundary.title,
+              body: publicHome.makerBoundary.items.map((item) => item.detail).join(' '),
+            },
+          ]
           : []),
         {
           heading: locale === 'zh-CN' ? '我们能解决的设备问题' : 'Equipment problems and service needs we handle',
@@ -267,14 +310,26 @@ function buildRoutes(locale) {
       ],
     },
     structuredData: { '@type': 'WebSite', name: 'SAGEMRO', url: `${HOSTS[locale]}/`, publisher: organizationRef(locale) },
+    // 首页的问答以前只有视觉呈现、没有机器可读标注。补 FAQPage：富结果与 AI 问答提取都靠它。
+    schemaExtra: [{
+      '@type': 'FAQPage',
+      mainEntity: publicHome.faqs.items.map((item) => ({
+        '@type': 'Question',
+        name: item.question,
+        acceptedAnswer: { '@type': 'Answer', text: item.answer },
+      })),
+    }],
   });
   // 渠道商页面只对国际站发布；CN 不露出招商内容（见 COM/CN 受众定位方案 §3）。
   // 正文从 publicHome.partnerPage 取，与可见页面同源，避免两处漂移。
   const partnerRoutes = locale === 'zh-CN' ? [] : [route(locale, {
     path: '/partners',
     type: 'partners',
-    title: 'Dealer and Service Partner Support | SAGEMRO',
+    // 渲染器会统一补 " | SAGEMRO"，这里再写一遍会得到 "... | SAGEMRO | SAGEMRO"。
+    title: 'Laser & Press Brake Dealer Service Partner Support',
     description: publicHome.partnerPage.description,
+    // CN 上这个路径是 404，不能声明 zh-CN 版本。
+    alternates: englishOnlyAlternates('/partners'),
     modified: RELEASE_DATE,
     body: {
       h1: publicHome.partnerPage.title,
@@ -309,6 +364,7 @@ function buildRoutes(locale) {
       type: 'service',
       title: service.seoTitle.replace(/ \| SAGEMRO$/, ''),
       description: service.description,
+      modified: RELEASE_DATE,
       body: {
         h1: service.title,
         paragraphs: [service.summary, service.equipment, service.remoteBoundary, service.onsiteBoundary, service.evidenceNotes],

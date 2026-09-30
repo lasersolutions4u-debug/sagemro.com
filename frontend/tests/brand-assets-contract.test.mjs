@@ -10,13 +10,23 @@ function read(relativePath) {
   return readFileSync(path.join(root, relativePath), 'utf8');
 }
 
+// 只扫描会被发布出去的文案。私有本地笔记（`.claude/`、`.Codex/` 的跨会话记忆，以及
+// gitignore 掉的 `docs/research/` 非公开文档）不属于公开文案，而它们为了记录问题往往会
+// 直接引用被禁的品类词。扫进来会让这个契约"只在本地红、在 CI 上反而不红"——那种契约
+// 起不到把关作用，只会训练人忽略它。
+const PRIVATE_COPY_DIRECTORIES = new Set(['docs/research']);
+
 function collectCopyFiles(relativePath) {
   const absolutePath = path.join(root, relativePath);
   const entries = readdirSync(absolutePath, { withFileTypes: true });
 
   return entries.flatMap((entry) => {
+    if (entry.name.startsWith('.')) return [];
     const childPath = path.join(relativePath, entry.name);
-    if (entry.isDirectory()) return collectCopyFiles(childPath);
+    if (entry.isDirectory()) {
+      if (PRIVATE_COPY_DIRECTORIES.has(childPath.split(path.sep).join('/'))) return [];
+      return collectCopyFiles(childPath);
+    }
     return /\.(?:html|js|jsx|json|md|mjs|toml|ya?ml)$/.test(entry.name) ? [childPath] : [];
   });
 }
@@ -124,7 +134,14 @@ test('main site first-impression copy keeps CN and COM market language separate'
   assert.ok(chatArea.indexOf('{aiNotice}') < chatArea.indexOf('{/* 消息区域 */}'));
   assert.match(footer, /© 2026 SAGEMRO/);
   assert.doesNotMatch(footer, /operated by Jinan Euchio Machinery|由济南钰峭机械有限公司运营/);
-  assert.match(footer, /鲁ICP备2026032904号-1/);
+  // 备案号与法人名改为单一来源：companyProfile 持有字面值，页脚只引用常量。
+  // 两边都验，避免以后又各自写一份、漂移回两个不同的值。
+  const companyProfile = read('frontend/src/data/companyProfile.js');
+  assert.match(companyProfile, /export const ICP_RECORD_NUMBER = '鲁ICP备2026032904号-1';/);
+  assert.match(companyProfile, /legalName: '济南钰峭机械有限公司'/);
+  assert.match(companyProfile, /legalName: 'Jinan Euchio Machinery Co\., Ltd\.'/);
+  assert.match(footer, /import \{ ICP_RECORD_NUMBER \} from '\.\.\/\.\.\/data\/companyProfile';/);
+  assert.match(footer, /\{ICP_RECORD_NUMBER\}/);
   assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
   assert.match(engineerRecruiting, /客服工程师品牌共创平台/);
   assert.match(engineerRecruiting, /SAGEMRO Service Engineer Brand Program/);

@@ -24,9 +24,6 @@ Disallow: /admin/
 User-agent: GPTBot
 Disallow: /
 
-User-agent: Google-Extended
-Disallow: /
-
 User-agent: ClaudeBot
 Disallow: /
 
@@ -34,3 +31,4 @@ User-agent: CCBot
 Disallow: /
 
 Sitemap: https://sagemro.com/sitemap.xml
+

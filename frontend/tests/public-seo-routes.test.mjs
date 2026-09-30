@@ -62,7 +62,18 @@ test('manifest lists only indexable customer routes in both locales', () => {
     assert.equal(new Set(routes.map((route) => route.path)).size, routes.length);
     assert.equal(routes.every((route) => route.robots === 'index,follow'), true);
     assert.equal(routes.every((route) => /^https:\/\/sagemro\.(com|cn)/.test(route.canonical)), true);
-    assert.equal(routes.every((route) => route.alternates.en && route.alternates['zh-CN']), true);
+    // hreflang 的硬规则是"声明了的 alternate 必须真实存在"。这里以前断言每个路由都同时有
+    // en 与 zh-CN，于是只在国际站发布的 /partners/ 被逼着声明了一个在 sagemro.cn 上 404 的
+    // zh-CN 版本——一个测试把 bug 锁成了规格。现在改为校验真正的不变量：
+    // 声明了某个语言版本，该路径就必须真的在那个语言的公开路由里。
+    const zhPaths = new Set(getPublicSeoRoutes('zh-CN').map((route) => route.path));
+    for (const route of routes) {
+      assert.match(route.alternates.en, /^https:\/\/sagemro\.com\//, route.path);
+      assert.ok(route.alternates['x-default'], route.path);
+      if (route.alternates['zh-CN'] !== undefined) {
+        assert.ok(zhPaths.has(route.path), `${route.path}: 声明了 zh-CN alternate，但中国站并不发布该路径`);
+      }
+    }
   }
 });
 
@@ -137,9 +148,23 @@ test('manifest body mirrors visible homepage and tool headings', () => {
   assert.deepEqual(home.body.paragraphs, [visibleHome.hero.description]);
   assert.equal(homeCn.body.h1, visibleHomeCn.hero.title);
   assert.deepEqual(homeCn.body.paragraphs, [visibleHomeCn.hero.description]);
-  // zh-CN 首页多出一节「整机厂售后协作」；国际站维持四节。
+  // 国际站四节；中国版首页额外把三类售后交付各自拆成一节，再加协作流程与边界两节。
+  // 断言"拆开且没丢东西"，而不是只数节数：以前这三块被拼成一整个 <p>，
+  // AI 取不出其中任何一条独立事实。
   assert.equal(home.body.sections.length, 4);
-  assert.equal(homeCn.body.sections.length, 5);
+  assert.equal(homeCn.body.sections.length, 9);
+  for (const item of visibleHomeCn.makerEngagements.items) {
+    const section = homeCn.body.sections.find((entry) => entry.heading === item.title);
+    assert.ok(section, `中国版首页应有一节以「${item.title}」为标题`);
+    assert.ok(section.body.includes(item.context), `${item.title} 一节丢了 context`);
+    assert.ok(section.body.includes(item.approach), `${item.title} 一节丢了 approach`);
+  }
+  const workflow = homeCn.body.sections.find((entry) => entry.heading === visibleHomeCn.makerWorkflow.title);
+  assert.ok(workflow, '协作流程应独立成一节');
+  for (const step of visibleHomeCn.makerWorkflow.steps) assert.ok(workflow.body.includes(step.title), `流程缺步骤：${step.title}`);
+  const boundary = homeCn.body.sections.find((entry) => entry.heading === visibleHomeCn.makerBoundary.title);
+  assert.ok(boundary, '协作边界应独立成一节');
+  for (const item of visibleHomeCn.makerBoundary.items) assert.ok(boundary.body.includes(item.detail), `边界缺一条：${item.detail}`);
   assert.deepEqual(home.body.faqs, visibleHome.faqs.items);
   assert.deepEqual(homeCn.body.faqs, visibleHomeCn.faqs.items);
   for (const href of ['/services/', '/tools/', '/insights/']) {
