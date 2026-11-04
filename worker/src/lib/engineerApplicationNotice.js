@@ -7,7 +7,8 @@
 //
 // 设计取舍：
 // - 通知失败绝不影响申请人：所有出口都是返回值，不抛异常。
-// - 优先 Resend（原生支持 attachments）；没有 RESEND_API_KEY 时退回 EMAIL 绑定（手搓 MIME）。
+// - 优先 EMAIL 绑定（与工程师激活邮件一致，MIME 头由我们自己按 RFC 2047 编码）；
+//   未配置 binding 时退回 Resend（原生支持 attachments）。
 
 const DEFAULT_NOTIFY_TO = 'support@sagemro.com';
 const DEFAULT_FROM = 'SAGEMRO <verify@sagemro.com>';
@@ -30,6 +31,47 @@ function toBase64(text) {
     binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
   }
   return btoa(binary);
+}
+
+function foldBase64(encoded) {
+  return encoded.replace(/(.{76})/g, '$1\r\n').replace(/\r\n$/, '');
+}
+
+function base64Body(text) {
+  return foldBase64(toBase64(text));
+}
+
+// 邮件头只允许 ASCII，非 ASCII 必须写成 RFC 2047 的 =?UTF-8?B?...?=。
+// 直接把 UTF-8 字节写进 Subject 时，收件端会按 US-ASCII 解码，把每个非 ASCII 字节
+// 替换成 "?"——这就是「主题里中文全变问号」的根因。正文不受影响，因为正文有 charset。
+function encodeHeaderValue(value) {
+  const text = String(value ?? '').replace(/[\r\n]+/g, ' ').trim();
+  if (!/[^\x20-\x7E]/.test(text)) return text;
+
+  const words = [];
+  let chunk = '';
+  let size = 0;
+  for (const character of text) {
+    const characterBytes = new TextEncoder().encode(character).length;
+    // 单个 encoded-word 不超过 75 字符：=?UTF-8?B?(10) + base64 + ?=(2)，载荷上限约 45 字节。
+    if (size + characterBytes > 45) {
+      words.push(chunk);
+      chunk = '';
+      size = 0;
+    }
+    chunk += character;
+    size += characterBytes;
+  }
+  if (chunk) words.push(chunk);
+  return words.map((word) => `=?UTF-8?B?${toBase64(word)}?=`).join('\r\n ');
+}
+
+function encodeDisplayName(value) {
+  const match = String(value || '').match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+  if (!match) return encodeHeaderValue(value);
+  const name = match[1].replace(/^"|"$/g, '').trim();
+  const address = match[2];
+  return name ? `${encodeHeaderValue(name)} <${address}>` : address;
 }
 
 function displayValue(value) {
@@ -202,9 +244,9 @@ function notifyRecipients(env) {
 function mimeWithAttachment({ from, to, subject, text, html, attachment, replyTo }) {
   const boundary = `sagemro-notice-${crypto.randomUUID()}`;
   const lines = [
-    `From: ${from}`,
+    `From: ${encodeDisplayName(from)}`,
     `To: ${to}`,
-    `Subject: ${String(subject).replace(/[\r\n]+/g, ' ')}`,
+    `Subject: ${encodeHeaderValue(subject)}`,
     ...(replyTo ? [`Reply-To: ${replyTo}`] : []),
     'MIME-Version: 1.0',
     `Content-Type: multipart/mixed; boundary="${boundary}"`,
@@ -214,14 +256,14 @@ function mimeWithAttachment({ from, to, subject, text, html, attachment, replyTo
     '',
     '--alt',
     'Content-Type: text/plain; charset=UTF-8',
-    'Content-Transfer-Encoding: 8bit',
+    'Content-Transfer-Encoding: base64',
     '',
-    text,
+    base64Body(text),
     '--alt',
     'Content-Type: text/html; charset=UTF-8',
-    'Content-Transfer-Encoding: 8bit',
+    'Content-Transfer-Encoding: base64',
     '',
-    html,
+    base64Body(html),
     '--alt--',
     '',
     `--${boundary}`,
@@ -229,7 +271,7 @@ function mimeWithAttachment({ from, to, subject, text, html, attachment, replyTo
     'Content-Transfer-Encoding: base64',
     `Content-Disposition: attachment; filename="${attachment.filename}"`,
     '',
-    attachment.content.replace(/(.{76})/g, '$1\r\n'),
+    foldBase64(attachment.content),
     `--${boundary}--`,
     '',
   ];
@@ -247,6 +289,27 @@ export async function sendEngineerApplicationNotice(env, application) {
   if (!to.length) {
     console.warn('[engineer-notice] skipped: no recipient configured');
     return { error: 'no_recipient' };
+  }
+
+  // 与工程师激活邮件保持一致：Cloudflare Email binding 优先（我们自己写 MIME 头，编码可控），
+  // 未配置该 binding 时才走 Resend。
+  if (env.EMAIL?.send) {
+    try {
+      const EmailMessage = env.__EmailMessage || (await import('cloudflare:email')).EmailMessage;
+      const raw = mimeWithAttachment({
+        from,
+        to: to.join(', '),
+        subject: notice.subject,
+        text: notice.text,
+        html: notice.html,
+        attachment,
+        replyTo: application.email,
+      });
+      await env.EMAIL.send(new EmailMessage(from, to.join(', '), raw));
+      return { sent: true, provider: 'cloudflare' };
+    } catch (error) {
+      console.warn('[engineer-notice] Cloudflare email send failed', { reason: error?.message || 'provider_error' });
+    }
   }
 
   if (env.RESEND_API_KEY) {
@@ -274,25 +337,6 @@ export async function sendEngineerApplicationNotice(env, application) {
       }
     } catch (error) {
       console.warn('[engineer-notice] Resend send error', { reason: error?.message || 'network' });
-    }
-  }
-
-  if (env.EMAIL?.send) {
-    try {
-      const EmailMessage = env.__EmailMessage || (await import('cloudflare:email')).EmailMessage;
-      const raw = mimeWithAttachment({
-        from,
-        to: to.join(', '),
-        subject: notice.subject,
-        text: notice.text,
-        html: notice.html,
-        attachment,
-        replyTo: application.email,
-      });
-      await env.EMAIL.send(new EmailMessage(from, to.join(', '), raw));
-      return { sent: true, provider: 'cloudflare' };
-    } catch (error) {
-      console.warn('[engineer-notice] Cloudflare email send failed', { reason: error?.message || 'provider_error' });
     }
   }
 

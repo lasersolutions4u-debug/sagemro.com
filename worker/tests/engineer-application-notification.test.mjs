@@ -171,3 +171,88 @@ test('engineer application notice recipients can be overridden with env', async 
     resend.restore();
   }
 });
+
+function captureEmailBinding(env) {
+  const sent = [];
+  env.__EmailMessage = class {
+    constructor(from, to, raw) {
+      this.from = from;
+      this.to = to;
+      this.raw = raw;
+    }
+  };
+  env.EMAIL = { async send(message) { sent.push(message); } };
+  return sent;
+}
+
+function unfoldHeaderValue(value) {
+  // RFC 2047：相邻 encoded-word 之间的折行空白要被丢弃。
+  return value.replace(/\r\n[ \t]+/g, '');
+}
+
+function decodeHeaderValue(value) {
+  return unfoldHeaderValue(value).replace(/=\?UTF-8\?B\?([^?]*)\?=/gi, (_, encoded) => Buffer.from(encoded, 'base64').toString('utf8'));
+}
+
+function mimeBodies(raw) {
+  return raw
+    .split(/\r\n--(?:sagemro-notice-[0-9a-f-]+|alt)/i)
+    .map((chunk) => chunk.split('\r\n\r\n').slice(1).join('\r\n\r\n'))
+    .filter(Boolean)
+    .map((body) => Buffer.from(body.replace(/[\r\n]/g, ''), 'base64').toString('utf8'));
+}
+
+test('engineer application MIME keeps headers pure ASCII and RFC 2047-encodes the Chinese subject', async () => {
+  const env = createEnv();
+  const sent = captureEmailBinding(env);
+
+  await submit(env, {
+    host: 'https://api.sagemro.cn',
+    origin: 'https://engineer.sagemro.cn',
+    payload: {
+      name: '张三',
+      phone: '13800000000',
+      email: 'zhangsan@example.com',
+      city: '杭州',
+      service_regions: ['浙江'],
+      skill_tags: ['激光切割机维修'],
+    },
+  });
+
+  assert.equal(sent.length, 1);
+  const { raw } = sent[0];
+  const headerBlock = raw.split('\r\n\r\n')[0];
+
+  // 头区必须全是 ASCII：裸 UTF-8 字节会被收件端按 US-ASCII 解码，中文变成一个个 '?'。
+  assert.equal(/[^\x00-\x7F]/.test(headerBlock), false);
+
+  const unfoldedHeaders = unfoldHeaderValue(headerBlock);
+  const subjectHeader = unfoldedHeaders.match(/^Subject: (.*)$/m)[1];
+  assert.match(subjectHeader, /^=\?UTF-8\?B\?/);
+  assert.equal(decodeHeaderValue(subjectHeader), '[SAGEMRO·CN] 新工程师申请：张三（杭州）');
+
+  // 正文与附件改为 base64，解出来仍是中文原文。
+  const bodyText = mimeBodies(raw).join('\n');
+  assert.match(bodyText, /张三/);
+  assert.match(bodyText, /杭州/);
+  assert.match(bodyText, /激光切割机维修/);
+  assert.match(bodyText, /<!doctype html>/i);
+
+  // 没有任何一行超长（base64 行宽 / SMTP 998 字符限制）。
+  const longLines = raw.split('\r\n').filter((line) => line.length > 998);
+  assert.deepEqual(longLines, []);
+});
+
+test('engineer application notice prefers the Cloudflare email binding over Resend', async () => {
+  const resend = captureFetch();
+  const env = createEnv({ RESEND_API_KEY: 're_test' });
+  const sent = captureEmailBinding(env);
+  try {
+    await submit(env, { payload: COM_APPLICATION });
+    assert.equal(sent.length, 1);
+    assert.equal(resend.calls.length, 0);
+    assert.match(sent[0].raw, /^From: SAGEMRO <verify@sagemro\.com>/);
+  } finally {
+    resend.restore();
+  }
+});
