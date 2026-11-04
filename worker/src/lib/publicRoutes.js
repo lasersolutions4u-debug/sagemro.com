@@ -50,7 +50,7 @@ export async function handlePublicRoute(request, env, ctx, handlers) {
     return handlers.handleSubmitBendSimulationReview(request, env);
   }
   if (path === '/api/engineer-applications' && request.method === 'POST') {
-    return handlers.handleSubmitEngineerApplication(request, env);
+    return handlers.handleSubmitEngineerApplication(request, env, ctx);
   }
   if (path === '/api/analytics/funnel' && request.method === 'POST') {
     return handlers.handleFunnelEvent(request, env);

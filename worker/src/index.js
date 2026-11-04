@@ -69,6 +69,7 @@ import {
   createEngineerActivationToken,
   hashEngineerActivationToken,
 } from './lib/engineerActivation.js';
+import { sendEngineerApplicationNotice } from './lib/engineerApplicationNotice.js';
 
 // OneSignal 推送 + 站内通知 helpers
 import { createNotification, sendPushToUser, sendPushToEngineer } from './lib/push.js';
@@ -6566,9 +6567,6 @@ function cleanTextArray(value, maxItems = 12, maxItemLength = 80) {
     .slice(0, maxItems);
 }
 
-function jsonArrayField(value) {
-  return JSON.stringify(cleanTextArray(value));
-}
 
 
 
@@ -6617,7 +6615,7 @@ function readKnowledgePayload(body = {}, { existing } = {}) {
 
 
 
-async function handleSubmitEngineerApplication(request, env) {
+async function handleSubmitEngineerApplication(request, env, ctx) {
   try {
     const body = await request.json().catch(() => ({}));
     const name = cleanText(body.name, 80);
@@ -6633,6 +6631,33 @@ async function handleSubmitEngineerApplication(request, env) {
     if (!isValidEmail(email)) return localizedErrorResponse('invalid_email', request);
 
     const id = generateId();
+    const market = getRequestMarket(request);
+    const application = {
+      id,
+      market,
+      name,
+      phone,
+      email,
+      whatsapp: whatsapp || null,
+      country: cleanText(body.country, 80) || null,
+      province: cleanText(body.province, 80) || null,
+      city: cleanText(body.city, 80) || null,
+      baseRegion: cleanText(body.base_region, 120) || null,
+      serviceRegions: cleanTextArray(body.service_regions),
+      yearsExperience: cleanText(body.years_experience, 40) || null,
+      equipmentTypes: cleanTextArray(body.equipment_types),
+      brandExperience: cleanTextArray(body.brand_experience),
+      skillTags: cleanTextArray(body.skill_tags),
+      languages: cleanTextArray(body.languages),
+      canTravel: Boolean(body.can_travel),
+      canWeekend: Boolean(body.can_weekend),
+      canNight: Boolean(body.can_night),
+      hasTools: Boolean(body.has_tools),
+      experienceSummary: cleanText(body.experience_summary, 1200) || null,
+      sourceUrl: cleanText(request.headers.get('Origin'), 200) || null,
+      submittedAt: new Date().toISOString(),
+    };
+
     await env.DB.prepare(`
       INSERT INTO engineer_applications (
         id, market, status, name, phone, email, whatsapp, country, province, city, base_region,
@@ -6640,28 +6665,33 @@ async function handleSubmitEngineerApplication(request, env) {
         languages, can_travel, can_weekend, can_night, has_tools, experience_summary
       ) VALUES (?, ?, 'submitted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      id,
-      getRequestMarket(request),
-      name,
-      phone,
-      email,
-      whatsapp || null,
-      cleanText(body.country, 80) || null,
-      cleanText(body.province, 80) || null,
-      cleanText(body.city, 80) || null,
-      cleanText(body.base_region, 120) || null,
-      jsonArrayField(body.service_regions),
-      cleanText(body.years_experience, 40) || null,
-      jsonArrayField(body.equipment_types),
-      jsonArrayField(body.brand_experience),
-      jsonArrayField(body.skill_tags),
-      jsonArrayField(body.languages),
-      body.can_travel ? 1 : 0,
-      body.can_weekend ? 1 : 0,
-      body.can_night ? 1 : 0,
-      body.has_tools ? 1 : 0,
-      cleanText(body.experience_summary, 1200) || null
+      application.id,
+      application.market,
+      application.name,
+      application.phone,
+      application.email,
+      application.whatsapp,
+      application.country,
+      application.province,
+      application.city,
+      application.baseRegion,
+      JSON.stringify(application.serviceRegions),
+      application.yearsExperience,
+      JSON.stringify(application.equipmentTypes),
+      JSON.stringify(application.brandExperience),
+      JSON.stringify(application.skillTags),
+      JSON.stringify(application.languages),
+      application.canTravel ? 1 : 0,
+      application.canWeekend ? 1 : 0,
+      application.canNight ? 1 : 0,
+      application.hasTools ? 1 : 0,
+      application.experienceSummary
     ).run();
+
+    // 通知内部（support@sagemro.com）：失败不影响申请人的成功回执。
+    const notice = sendEngineerApplicationNotice(env, application);
+    if (ctx?.waitUntil) ctx.waitUntil(notice);
+    else await notice;
 
     return jsonResponse({ success: true, application_id: id });
   } catch (error) {
