@@ -48,7 +48,13 @@
 | push → main | ✅ | ✅ (sagemro-com) | ✅ (sagemro-ai) | ✅ | ✅ (sagemro-admin) |
 | push → china-edition | ✅ | ✅ (sagemro-cn 辅助目标) | ❌ | ❌ | ✅ (sagemro-admin-cn) |
 
-所有 deploy job 都声明了 `environment: production`。可在 GitHub repo → Settings → Environments → `production` 里加 required reviewers，作为人工审批门禁。
+`deploy-worker` / `deploy-ai-frontend` / `deploy-admin` 声明了 `environment: production`。可在 GitHub repo → Settings → Environments → `production` 里加 required reviewers，作为人工审批门禁。
+
+🔴 **`deploy-frontend`（sagemro.com）刻意不声明 environment**（2026-11-13 决定）：测试通过即发布，不等审批。原因是公开站只承载营销页与线索表单，改动频率最高，而审批等待占了发布墙钟时间的一半以上（实测一轮 6.7 分钟里约 3.5 分钟在等人）。代价与纪律：
+
+- 本任务不再排在 `deploy-ai-frontend` 之后。**同一批同时改 `worker/` 与公开站时，公开站可能先于 API 上线**，出现短暂不匹配。涉及接口变更的批次：先只推 worker 并批掉审批，确认 `/health` 正常后再推前端。
+- 公开站仍然是「push 才部署、PR 永不部署」，测试门禁没有放松——只是去掉了人工那一步。
+- 恢复审批：给该 job 加回 `environment: production`，并把 `frontend/tests/deploy-workflow-contract.test.mjs` 里断言「公开站不带 environment」的用例一起改回。
 
 另有 `deploy-maintenance`（job 名「Pause COM and CN API for approved maintenance」）**只在手动触发时运行**：它把共享 Worker 的入口换成 `worker/src/maintenance.js`，令 `api.sagemro.com` 与 `api.sagemro.cn` **同时**返回维护态。四重守卫与操作步骤见 3.6 节。**push 触发的发布永远不会运行它**——因此它在 push run 里显示为「跳过」是正常状态；若哪天它在 push 上变成了 ✓，那意味着两个市场的 API 已被主动暂停。
 

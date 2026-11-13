@@ -52,11 +52,12 @@ Claude Code（本地）
  GitHub Actions: .github/workflows/deploy.yml
  ↓
  [test job]（PR 也跑，但只跑测试，不进入下面任何部署）
- ↓ needs: test + environment: production 审批门禁
- ├─ deploy-worker      → wrangler deploy --env production (cwd: worker/)
- ├─ deploy-ai-frontend → wrangler pages deploy frontend/dist-portal --project-name=sagemro-ai
+ ↓ 测试通过后
  ├─ deploy-frontend    → wrangler pages deploy frontend/dist        --project-name=sagemro-com
- └─ deploy-admin       → wrangler pages deploy admin/dist           --project-name=sagemro-admin
+ │                       **无审批**：测试通过即发（2026-11-13 决定，见 DEPLOY.md）
+ ├─ deploy-worker      → wrangler deploy --env production (cwd: worker/)          ← 需 production 审批
+ ├─ deploy-ai-frontend → wrangler pages deploy frontend/dist-portal --project-name=sagemro-ai  ← 需审批
+ └─ deploy-admin       → wrangler pages deploy admin/dist           --project-name=sagemro-admin ← 需审批
 
 ### 中国版（CN）：独立链路，**只能手动触发**
 

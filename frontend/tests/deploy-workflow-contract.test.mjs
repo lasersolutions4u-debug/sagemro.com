@@ -27,44 +27,45 @@ test('public frontend deployment keeps existing branch targets and deploys only 
   const workflow = await readFile(workflowUrl, 'utf8');
   const deployment = jobBlock(workflow, 'deploy-frontend');
 
-  assert.match(deployment, /needs: \[test, deploy-ai-frontend\]/);
+  // 2026-11-13：公开站不再排在 AI 门户之后，也不再走 production 审批（见下一个用例）。
+  assert.match(deployment, /needs: \[test\]/);
+  assert.doesNotMatch(deployment, /needs: \[[^\]]*deploy-ai-frontend/, '公开站不得重新耦合到门户部署');
   assert.match(deployment, /if: github\.event_name == 'push'/);
   assert.match(deployment, /run: npm run build:public/);
   assert.match(deployment, /wrangler pages deploy frontend\/dist --project-name=\$\{\{ github\.ref == 'refs\/heads\/main' && 'sagemro-com' \|\| 'sagemro-cn' \}\}/);
   assert.doesNotMatch(deployment, /dist-portal|sagemro-ai/);
 });
 
-test('public deployment waits for the international portal while preserving CN and failure gates', async () => {
+test('public site deploys on a passing test gate while worker, portal, and admin keep the production gate', async () => {
   const workflow = await readFile(workflowUrl, 'utf8');
   const deployment = jobBlock(workflow, 'deploy-frontend');
   const condition = deployment.match(/^\s+if: (.+)$/m)?.[1];
   assert.ok(condition, 'deployment condition must exist');
-  assert.match(condition, /!cancelled\(\)/, 'explicit status check must allow the intentionally skipped CN dependency');
+
+  // 公开站刻意不带 environment：这是「测试通过即发布」的唯一实现方式。
+  assert.doesNotMatch(deployment, /environment:/);
+  // 审批仍在另外三个会碰 API / 账号 / 数据的部署上。
+  for (const name of ['deploy-worker', 'deploy-ai-frontend', 'deploy-admin']) {
+    assert.match(jobBlock(workflow, name), /environment: production/, `${name} 必须保留 production 审批`);
+  }
+  // 门户仍排在 worker 之后；worker 仍只由 main 触发。
   assert.match(jobBlock(workflow, 'deploy-worker'), /needs: test/);
   assert.match(jobBlock(workflow, 'deploy-ai-frontend'), /needs: deploy-worker/);
-  assert.match(deployment, /environment: production/);
 
-  // 同一段条件表达式在这个用例里要跑 192 次。原先每次都用 runInNewContext，
-  // 于是同一段代码被重新编译 192 遍；而每次只有 100ms 预算——单跑能过，一放进整套测试
-  // （并行执行、机器有负载）就稳定超时。改成编译一次复用，并把超时放宽到不会因负载抖动的量级。
-  // 断言一条没少，只是不再用编译开销去挤那点预算。
   const compiledCondition = new Script(condition);
 
   for (const event of ['push', 'pull_request']) {
     for (const branch of ['main', 'china-edition', 'codex/test']) {
       for (const testResult of ['success', 'failure', 'cancelled', 'skipped']) {
-        for (const portalResult of ['success', 'failure', 'cancelled', 'skipped']) {
-          for (const isCancelled of [false, true]) {
-            const actual = compiledCondition.runInNewContext({
-              github: { event_name: event, ref: `refs/heads/${branch}` },
-              needs: { test: { result: testResult }, 'deploy-ai-frontend': { result: portalResult } },
-              cancelled: () => isCancelled,
-            }, { timeout: 1000 });
-            const expected = event === 'push' && !isCancelled && testResult === 'success'
-              && ((branch === 'main' && portalResult === 'success')
-                || (branch === 'china-edition' && portalResult === 'skipped'));
-            assert.equal(actual, expected, JSON.stringify({ event, branch, testResult, portalResult, isCancelled }));
-          }
+        for (const isCancelled of [false, true]) {
+          const actual = compiledCondition.runInNewContext({
+            github: { event_name: event, ref: `refs/heads/${branch}` },
+            needs: { test: { result: testResult } },
+            cancelled: () => isCancelled,
+          }, { timeout: 1000 });
+          const expected = event === 'push' && !isCancelled && testResult === 'success'
+            && (branch === 'main' || branch === 'china-edition');
+          assert.equal(actual, expected, JSON.stringify({ event, branch, testResult, isCancelled }));
         }
       }
     }

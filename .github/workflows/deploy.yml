@@ -100,13 +100,16 @@ jobs:
   # ============ 部署 Frontend ============
   deploy-frontend:
     name: Deploy Frontend to Cloudflare Pages
-    needs: [test, deploy-ai-frontend]
-    # 国际版等待 AI 门户成功；中国版允许国际版任务跳过，但测试仍须通过。
-    if: github.event_name == 'push' && !cancelled() && needs.test.result == 'success' && ((github.ref == 'refs/heads/main' && needs['deploy-ai-frontend'].result == 'success') || (github.ref == 'refs/heads/china-edition' && needs['deploy-ai-frontend'].result == 'skipped'))
+    needs: [test]
+    # 2026-11-13 决定：公开站改为「测试通过即发布」，不再等 production 审批。
+    # 审批门禁只保留给 deploy-worker / deploy-ai-frontend / deploy-admin
+    # （它们涉及 API、账号与用户数据）。
+    #
+    # ⚠️ 代价与纪律：本任务不再排在 deploy-ai-frontend 之后。同一批同时改 worker 与公开站时，
+    # 公开站可能先于 API 上线，出现短暂不匹配窗口。涉及接口变更的批次，先单独推 worker
+    # 并批掉审批，再推前端；本任务刻意不声明 environment，测试与部署不依赖任何人工环节。
+    if: github.event_name == 'push' && !cancelled() && needs.test.result == 'success' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/china-edition')
     runs-on: ubuntu-latest
-    # GitHub Environment 门禁：在仓库 Settings → Environments → production
-    # 里配置 required reviewers，进一步防误部署
-    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v6
