@@ -65,14 +65,26 @@ test('Cloudflare test workflow covers pull requests to both protected branches',
 
 test('Cloudflare deploy jobs remain push-only with the existing branch guards', () => {
   const workflow = read('.github/workflows/deploy.yml');
+  const frontendJob = workflow.split(/^  deploy-frontend:\s*$/m)[1]?.split(/^  [\w-]+:\s*$/m)[0];
+  assert.ok(frontendJob, 'Frontend deployment job must exist');
 
-  assert.match(workflow, /deploy-frontend:[\s\S]*?needs: \[test, deploy-ai-frontend\]/);
+  // 2026-11-13：公开站测试通过即发布，不再排在 AI 门户之后，也不再声明 production 审批。
+  // 审批门禁保留在 worker / AI 门户 / 后台三个部署上（见下一条断言）。
+  assert.match(frontendJob, /^    needs: \[test\]$/m);
+  assert.doesNotMatch(frontendJob, /^    environment:/m);
   assert.match(workflow, /deploy-frontend:[\s\S]*?if: github\.event_name == 'push' && !cancelled\(\) && needs\.test\.result == 'success'/);
   assert.match(workflow, /deploy-ai-frontend:[\s\S]*?if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /deploy-worker:[\s\S]*?if: github\.event_name == 'push' && github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /deploy-admin:[\s\S]*?if: github\.event_name == 'push'/);
   assert.equal((workflow.match(/if: github\.event_name == 'push'/g) || []).length, 4);
   assert.match(workflow, /deploy-ai-frontend:\s+[\s\S]*?needs: deploy-worker/);
+
+  // 三个会碰 API / 账号 / 数据的部署仍然保留人工审批。
+  for (const name of ['deploy-worker', 'deploy-ai-frontend', 'deploy-admin']) {
+    const job = workflow.split(new RegExp(`^  ${name}:\\s*$`, 'm'))[1]?.split(/^  [\w-]+:\s*$/m)[0];
+    assert.ok(job, `${name} must exist`);
+    assert.match(job, /^    environment: production$/m, `${name} must keep the production gate`);
+  }
 });
 
 test('standalone Admin deployment installs shared frontend dependencies before building', () => {
