@@ -70,24 +70,29 @@ export function PublicSiteShell({ children, isCn, onOpenLegal }) {
 
       <main>{children}</main>
 
+      {/*
+        联系栏：一个主行动 + 一个次行动。原先这里并排三个等重链接（咨询 / Store / 邮箱），
+        在 1078px 这类中等宽度会把邮箱挤到第二行，右侧变成参差的「2+1」——
+        现在 Store 只在窄屏出现（宽屏导航里已经有了），邮箱降为次级链接，整栏不再换行。
+      */}
       <section className="border-t border-[#e6dccf] bg-[#f4ede3] px-5 py-7" aria-label={isCn ? '联系支持' : 'Contact support'}>
-        <div className="mx-auto flex max-w-[1240px] flex-col justify-between gap-3 sm:flex-row sm:items-center lg:px-3">
-          <div>
-            <p className="text-sm font-semibold">{isCn ? '需要报价、设备评估或补充资料？' : 'Need a quotation, an equipment assessment, or more detail?'}</p>
-            <p className="mt-1 text-sm text-[#756552]">{isCn ? '提交咨询表单留下联系方式，工程师会直接回复；也可以直接和 AI 助手沟通。' : 'Send the consultation form with your contact details and an engineer replies directly. You can also talk to the AI assistant.'}</p>
+        <div className="mx-auto flex max-w-[1240px] flex-col justify-between gap-4 sm:flex-row sm:items-center lg:px-8">
+          <div className="max-w-[30rem]">
+            <p className="text-sm font-semibold text-[#21160c]">{isCn ? '需要报价、设备评估或补充资料？' : 'Need a quotation, an equipment assessment, or more detail?'}</p>
+            <p className="mt-1 text-sm leading-6 text-[#756552]">{isCn ? '提交咨询表单留下联系方式，工程师会直接回复；也可以直接和 AI 助手沟通。' : 'Send the consultation form with your contact details and an engineer replies directly. You can also talk to the AI assistant.'}</p>
           </div>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-            <button type="button" onClick={openConsultationForm} className="flex min-h-11 items-center text-sm font-semibold text-[#92400e] underline decoration-[#e7b65b] underline-offset-4">
+          <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 sm:justify-end">
+            <button type="button" onClick={openConsultationForm} className="flex min-h-11 items-center whitespace-nowrap text-sm font-semibold text-[#92400e] underline decoration-[#e7b65b] underline-offset-4">
               {isCn ? '提交咨询' : 'Request a consultation'}
             </button>
-            {isCn ? (
-              <span aria-disabled="true" className="flex min-h-11 items-center text-sm font-medium text-[#a39686]">商城（筹备中）</span>
-            ) : (
-              <a href={INTERNATIONAL_STORE_URL} target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center text-sm font-semibold text-[#92400e] underline decoration-[#e7b65b] underline-offset-4">Store</a>
-            )}
-            <a href="mailto:support@sagemro.com" className="flex min-h-11 items-center text-sm font-semibold text-[#92400e] underline decoration-[#e7b65b] underline-offset-4">
+            <a href="mailto:support@sagemro.com" className="flex min-h-11 items-center whitespace-nowrap text-sm font-medium text-[#5f5142] underline decoration-[#d8c9b6] underline-offset-4 transition-colors hover:text-[#92400e]">
               support@sagemro.com
             </a>
+            {isCn ? (
+              <span aria-disabled="true" className="flex min-h-11 items-center text-sm font-medium text-[#a39686] sm:hidden">商城（筹备中）</span>
+            ) : (
+              <a href={INTERNATIONAL_STORE_URL} target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center text-sm font-medium text-[#5f5142] underline decoration-[#d8c9b6] underline-offset-4 sm:hidden">Store</a>
+            )}
           </div>
         </div>
       </section>
