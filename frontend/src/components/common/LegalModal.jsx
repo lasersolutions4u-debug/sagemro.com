@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Modal } from './Modal';
 import { isCnLocale } from '../../utils/locale';
+// 付款、取消与退款口径与 /refund-policy/ 页面共用同一个数据源：
+// 条款在这里按条引用，页面直接渲染。两处各写一份就会出现「条款说 30%、页面说 20%」。
+import { SERVICE_BILLING } from '../../data/serviceBilling';
+
+const BILLING = SERVICE_BILLING;
 
 const USER_AGREEMENT = `
 ## 1. Service Scope
@@ -37,7 +42,15 @@ const USER_AGREEMENT = `
 
 4.3 When applicable, SAGEMRO may charge information service fees, service coordination fees, or technical consultation fees for demand intake, technical consultation support, service request organization, resource coordination, and service record management. These fees are not technician commission, revenue sharing, escrow settlement, or automatic payment splitting.
 
-4.4 Current online payment screens, if shown, are sandbox or demonstration interfaces unless SAGEMRO clearly states otherwise in a formal quote or agreement.
+4.4 Work is invoiced in US dollars by SAGEMRO LLC and paid by bank transfer against the invoice. Card payment, where the quotation or the payment link offers it, is processed by Stripe; the card form is hosted by Stripe and SAGEMRO does not receive or store card details. Where the quotation states different payment terms, those terms prevail.
+
+4.5 ${BILLING.en.deposit}
+
+4.6 ${BILLING.en.balance}
+
+4.7 ${BILLING.en.cancellationSummary}
+
+4.8 ${BILLING.en.refundSummary}
 
 ## 5. Service Records
 
@@ -63,9 +76,17 @@ User information is used for service delivery, account security, diagnostics, se
 
 SAGEMRO may update this agreement based on business development or legal requirements. Continued use of the service constitutes acceptance of the updated terms.
 
+## 10. Warranty and OEM Support Boundary
+
+10.1 ${BILLING.en.warrantyBoundaryTerms}
+
+10.2 Workmanship warranty: where a defect in SAGEMRO's own work is reported in writing within 30 days of acceptance, the work is corrected at no charge. The workmanship warranty covers SAGEMRO's work only. It does not cover parts supplied by a third party, damage caused by operation outside the machine maker's instructions, or a new fault unrelated to the original work.
+
+10.3 The full payment, cancellation, and refund table is published at https://sagemro.com/refund-policy/ and forms part of this agreement.
+
 ## Contact
 
-Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.com
+SAGEMRO LLC (Wyoming, United States) | Email: support@sagemro.com | https://sagemro.com | Service delivery: Jinan, China
 `.trim();
 
 const PRIVACY_POLICY = `
@@ -150,7 +171,7 @@ This platform uses browser localStorage for login state and chat continuity. We 
 
 ## 12. Contact Us
 
-Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.com
+SAGEMRO LLC (Wyoming, United States) | Email: support@sagemro.com | https://sagemro.com | Service delivery: Jinan, China
 `.trim();
 
 const AI_DISCLAIMER = `
@@ -192,11 +213,11 @@ const AI_DISCLAIMER = `
 
 ## 6. Limitation of Liability
 
-To the extent permitted by applicable law, Jinan Euchio Machinery Co., Ltd. is not liable for equipment damage, personal injury, production loss, or other losses caused by relying solely on AI output. For professional service, submit a SAGEMRO service request.
+To the extent permitted by applicable law, SAGEMRO LLC (Wyoming, United States) is not liable for equipment damage, personal injury, production loss, or other losses caused by relying solely on AI output. For professional service, submit a SAGEMRO service request.
 
 ## 7. Contact
 
-Jinan Euchio Machinery Co., Ltd. | Email: support@sagemro.com | https://sagemro.com
+SAGEMRO LLC (Wyoming, United States) | Email: support@sagemro.com | https://sagemro.com | Service delivery: Jinan, China
 `.trim();
 
 const CN_USER_AGREEMENT = `
@@ -234,7 +255,15 @@ const CN_USER_AGREEMENT = `
 
 4.3 在适用情况下，SAGEMRO 可就需求接收、技术咨询支持、工单整理、资源协调和服务记录管理收取信息服务费、服务协调费或技术咨询服务费。该等费用不属于工程师佣金、收益分成、资金托管或自动分账。
 
-4.4 当前如出现在线支付相关页面，除非 SAGEMRO 在正式报价或协议中明确说明，否则仅为沙盒或演示界面。
+4.4 中国境内业务由济南钰峭机械有限公司按发票以银行转账收款；海外业务由 SAGEMRO LLC 以美元开票并收款。如报价或付款链接提供刷卡，刷卡由 Stripe 处理，卡信息由 Stripe 托管，SAGEMRO 不接收也不保存卡号。报价单中的付款约定优先。
+
+4.5 ${BILLING['zh-CN'].deposit}
+
+4.6 ${BILLING['zh-CN'].balance}
+
+4.7 ${BILLING['zh-CN'].cancellationSummary}
+
+4.8 ${BILLING['zh-CN'].refundSummary}
 
 ## 5. 服务记录
 
@@ -259,6 +288,14 @@ AI 建议不能替代合格人员的现场评估。涉及高风险电气、激�
 ## 9. 协议更新
 
 SAGEMRO 可根据业务发展或法律要求更新本协议。用户继续使用服务即视为接受更新后的条款。
+
+## 10. 原厂保修边界与工艺保修
+
+10.1 ${BILLING['zh-CN'].warrantyBoundaryTerms}
+
+10.2 工艺保修：验收后 30 天内以书面提出的、属于 SAGEMRO 自身工艺的缺陷，免费返修。工艺保修只覆盖我方工艺，不覆盖第三方提供的备件、违反设备厂家说明操作造成的损坏，以及与本次工作无关的新故障。
+
+10.3 完整的付款、取消与退款分档见 https://sagemro.cn/refund-policy/ ，构成本协议的一部分。
 
 ## 联系方式
 
@@ -408,7 +445,7 @@ const LEGAL_COPY = {
       privacy: 'SAGEMRO Privacy Policy',
       ai: 'SAGEMRO AI Service Notice',
     },
-    effective: 'Effective date: June 7, 2026. Platform operator: Jinan Euchio Machinery Co., Ltd.',
+    effective: 'Effective date: June 7, 2026. Platform operator: SAGEMRO LLC (Wyoming, United States). Service delivery is supported by Jinan Euchio Machinery Co., Ltd., China.',
     content: {
       agreement: USER_AGREEMENT,
       privacy: PRIVACY_POLICY,

@@ -1,25 +1,30 @@
-# SAGEMRO (Jinan Euchio Machinery Co., Ltd.)
+# SAGEMRO LLC (Wyoming, United States)
 
 SAGEMRO takes over the after-sales delivery that laser and metal forming equipment builders and their
 overseas dealers cannot cover themselves: in-warranty on-site service, export commissioning and customer
-training, and exchange-unit flow for returned parts. Engineers and parts are organized by SAGEMRO;
-work is billed per project or per visit. We do not sell machines.
+training, and exchange-unit flow for returned parts. Engineers and parts are organized by SAGEMRO from
+Jinan, China; work is billed per project or per visit. We do not sell machines.
+
+SAGEMRO LLC (Wyoming) operates this website and issues invoices to overseas customers; service delivery is
+supported by our team in Jinan, China. The registered office is 30 N Gould St Ste N, Sheridan, WY 82801,
+United States; the service team, parts stock, and workshop are in Jinan.
 
 Content on this site is service information and planning reference. Final diagnosis, pricing, assignment,
 and safety requirements are confirmed by technicians for the individual project; no lead time is promised
-in advance.
+in advance. Repair, maintenance, and parts pages publish indicative budget ranges; the binding price is
+stated in the written quotation issued by SAGEMRO LLC.
 
 ## Main pages
 
 - https://sagemro.com/ — overview of the three delivery forms
 - https://sagemro.com/partners/ — support for overseas dealers and agents
 - https://sagemro.com/services/ — service catalogue
-- https://sagemro.com/services/laser-cutting-machine-repair/ — laser cutting machine repair and diagnostics
+- https://sagemro.com/services/laser-cutting-machine-repair/ — laser cutting machine repair and diagnostics (indicative budget ranges)
 - https://sagemro.com/services/press-brake-repair/ — press brake repair and accuracy support
 - https://sagemro.com/services/remote-diagnostics/ — laser cutting machine remote diagnostics
-- https://sagemro.com/services/preventive-maintenance/ — laser cutting machine and press brake maintenance
+- https://sagemro.com/services/preventive-maintenance/ — laser cutting machine and press brake maintenance (indicative budget ranges)
 - https://sagemro.com/services/machine-relocation-installation/ — relocation, installation, and commissioning
-- https://sagemro.com/services/spare-parts-consumables/ — spare parts and consumables, including exchange units
+- https://sagemro.com/services/spare-parts-consumables/ — spare parts and consumables, including exchange units (indicative budget ranges)
 - https://sagemro.com/services/oem-service-partner/ — OEM after-sales service partner
 - https://sagemro.com/services/after-sales-outsourcing/ — outsourced laser equipment field service
 - https://sagemro.com/services/overseas-delivery/ — overseas installation, commissioning, and warranty response
@@ -29,10 +34,16 @@ in advance.
 - https://sagemro.com/topics/ — browse service and technical content by topic
 - https://sagemro.com/about/ — who SAGEMRO is: legal entity, scope, and service boundaries
 - https://sagemro.com/about/technical-review/ — technical content review policy
+- https://sagemro.com/contact/ — email, phone, working hours (UTC+8), response time, and the invoicing entity
+- https://sagemro.com/refund-policy/ — payment, cancellation, and refund policy (30% deposit, 70% on acceptance)
 
 ## Scope
 
 - This file describes the international site. The China edition is https://sagemro.cn/
 - SAGEMRO is a service contractor, not a machine manufacturer or a machine seller
+- Operating entity: SAGEMRO LLC (Wyoming, United States); service delivery: Jinan, China
+- Registered office: 30 N Gould St Ste N, Sheridan, WY 82801, United States
+- Every job is quoted in writing before it starts; the indicative ranges on this site are not quotations
+- SAGEMRO does not replace the equipment maker's warranty; claims under a maker warranty stay with the maker or its dealer
 
-Contact: support@sagemro.com
+Contact: support@sagemro.com (Mon–Fri 09:00–18:00 UTC+8; reply within one business day, public holidays excluded)

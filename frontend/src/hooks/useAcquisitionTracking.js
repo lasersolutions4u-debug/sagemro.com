@@ -28,7 +28,7 @@ export function getAcquisitionContentType(route, locale = 'en') {
   // Worker 端把 content_type 白名单锁在四个值上（worker/src/index.js:245），不能新增类型；
   // 按既有约定（home 与 technical-review 这类信息型页都计 insight）归入 insight。
   return route.type === 'home' || route.type === 'insight' || route.type === 'insights-hub' || route.type === 'technical-review'
-    || route.type === 'topics' || route.type === 'about'
+    || route.type === 'topics' || route.type === 'about' || route.type === 'contact' || route.type === 'refund-policy'
     ? 'insight'
     : '';
 }

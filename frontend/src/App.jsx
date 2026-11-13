@@ -45,6 +45,8 @@ const TopicsPage = lazy(() => import('./components/Topics/TopicsPage').then(m =>
 const AboutPage = lazy(() => import('./components/About/AboutPage').then(m => ({ default: m.AboutPage })));
 const PartnersPage = lazy(() => import('./components/Public/PartnersPage').then(m => ({ default: m.PartnersPage })));
 const TechnicalReviewPage = lazy(() => import('./components/About/TechnicalReviewPage').then(m => ({ default: m.TechnicalReviewPage })));
+const ContactPage = lazy(() => import('./components/Contact/ContactPage').then(m => ({ default: m.ContactPage })));
+const RefundPolicyPage = lazy(() => import('./components/Policies/RefundPolicyPage').then(m => ({ default: m.RefundPolicyPage })));
 const EngineerRecruitingPage = lazy(() => import('./components/Engineer/EngineerRecruitingPage').then(m => ({ default: m.EngineerRecruitingPage })));
 
 const BUILD_TARGET = typeof __SAGEMRO_BUILD_TARGET__ === 'string' ? __SAGEMRO_BUILD_TARGET__ : 'public';
@@ -75,6 +77,12 @@ function App() {
 
   const isTechnicalReviewPath = currentPath === '/about/technical-review'
     || currentPath === '/about/technical-review/';
+  // 联系页：给收款方审核与渠道尽调一个固定 URL——联系方式、时区、回复时效、运营与开票主体。
+  const isContactPath = portalTarget === 'public'
+    && (currentPath === '/contact' || currentPath === '/contact/');
+  // 付款/取消/退款政策：支付机构与银行审核要求「有一个可访问的 URL」，弹窗不算。
+  const isRefundPolicyPath = portalTarget === 'public'
+    && (currentPath === '/refund-policy' || currentPath === '/refund-policy/');
   const publicRoutePath = currentPath === '/' ? '/' : currentPath.replace(/\/$/, '');
   const acquisitionContext = getPublicAcquisitionContext({
     pathname: publicRoutePath,
@@ -94,13 +102,17 @@ function App() {
       || currentPath === '/services' || currentPath.startsWith('/services/')
       || currentPath === '/topics' || currentPath.startsWith('/topics/')
       || currentPath === '/about' || currentPath === '/about/'
-      || isTechnicalReviewPath;
+      || isTechnicalReviewPath
+      || isContactPath
+      || isRefundPolicyPath;
     if (isToolsOrInsights || (isEngineerHost && currentPath === '/' && !userType)) return;
 
     const isPublicPath = portalTarget === 'public' && ((currentPath === '/')
       || currentPath === '/services' || currentPath.startsWith('/services/')
       || currentPath === '/partners'
-      || isTechnicalReviewPath);
+      || isTechnicalReviewPath
+      || isContactPath
+      || isRefundPolicyPath);
     const title = isCn ? 'SAGEMRO 智能服务系统' : 'SAGEMRO Service OS';
     const description = isCn
       ? 'SAGEMRO 面向激光切割与金属成型设备，帮助客户整理问题、连接合格工程师并沉淀服务记录。'
@@ -121,7 +133,7 @@ function App() {
         email: 'support@sagemro.com',
       } : null,
     });
-  }, [currentPath, isCn, isEngineerHost, isTechnicalReviewPath, portalTarget, userType]);
+  }, [currentPath, isCn, isContactPath, isEngineerHost, isRefundPolicyPath, isTechnicalReviewPath, portalTarget, userType]);
 
   // 初始化用户状态
   useEffect(() => {
@@ -401,7 +413,7 @@ function App() {
   const isPartnersPath = portalTarget === 'public' && !isCn && (currentPath === '/partners' || currentPath.startsWith('/partners/'));
   const serviceRoute = portalTarget === 'public' ? getServicePageRoute(currentPath) : null;
   const isServicesPath = serviceRoute !== null;
-  const isKnownPublicPath = currentPath === '/' || isToolsPath || isInsightsPath || isTopicsPath || isAboutPath || isPartnersPath || isServicesPath || isTechnicalReviewPath;
+  const isKnownPublicPath = currentPath === '/' || isToolsPath || isInsightsPath || isTopicsPath || isAboutPath || isPartnersPath || isServicesPath || isTechnicalReviewPath || isContactPath || isRefundPolicyPath;
 
   if (portalTarget === 'public' && !isKnownPublicPath) {
     return <NotFoundPage isCn={isCn} />;
@@ -497,6 +509,32 @@ function App() {
         <Suspense fallback={null}>
           <TechnicalReviewPage locale={isCn ? 'zh-CN' : 'en'} onOpenLegal={openLegal} />
           {legalModal}
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (isContactPath) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <ContactPage onOpenLegal={openLegal} />
+          {legalModal}
+          {consultationModal}
+        </Suspense>
+        <FeedbackHost />
+      </ErrorBoundary>
+    );
+  }
+
+  if (isRefundPolicyPath) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={null}>
+          <RefundPolicyPage onOpenLegal={openLegal} />
+          {legalModal}
+          {consultationModal}
         </Suspense>
         <FeedbackHost />
       </ErrorBoundary>

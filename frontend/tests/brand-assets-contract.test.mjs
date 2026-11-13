@@ -152,8 +152,12 @@ test('main site first-impression copy keeps CN and COM market language separate'
   const companyProfile = read('frontend/src/data/companyProfile.js');
   assert.match(companyProfile, /export const ICP_RECORD_NUMBER = '鲁ICP备2026032904号-1';/);
   assert.match(companyProfile, /legalName: '济南钰峭机械有限公司'/);
-  assert.match(companyProfile, /legalName: 'Jinan Euchio Machinery Co\., Ltd\.'/);
-  assert.match(footer, /import \{ ICP_RECORD_NUMBER \} from '\.\.\/\.\.\/data\/companyProfile\.js';/);
+  // 国际站的运营主体是 SAGEMRO LLC（Wyoming），由它对外开票；中国站仍是济南主体。
+  assert.match(companyProfile, /legalName: 'SAGEMRO LLC'/);
+  assert.match(companyProfile, /30 N Gould St Ste N/);
+  assert.match(companyProfile, /Sheridan, WY 82801/);
+  assert.match(companyProfile, /operatingEntityStatement: 'SAGEMRO LLC \(Wyoming\) operates this website and issues invoices to overseas customers/);
+  assert.match(footer, /import \{ ICP_RECORD_NUMBER, getLegalEntity \} from '\.\.\/\.\.\/data\/companyProfile\.js';/);
   assert.match(footer, /\{ICP_RECORD_NUMBER\}/);
   assert.match(footer, /https:\/\/beian\.miit\.gov\.cn\//);
   assert.match(engineerRecruiting, /客服工程师品牌共创平台/);

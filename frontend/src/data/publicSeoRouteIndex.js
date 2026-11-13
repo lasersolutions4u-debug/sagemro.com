@@ -119,6 +119,14 @@ const ROUTE_META = {
       "type": "about",
       "robots": "index,follow"
     },
+    "/contact": {
+      "type": "contact",
+      "robots": "index,follow"
+    },
+    "/refund-policy": {
+      "type": "refund-policy",
+      "robots": "index,follow"
+    },
     "/topics": {
       "type": "topics",
       "robots": "index,follow"
@@ -227,6 +235,14 @@ const ROUTE_META = {
     },
     "/about": {
       "type": "about",
+      "robots": "index,follow"
+    },
+    "/contact": {
+      "type": "contact",
+      "robots": "index,follow"
+    },
+    "/refund-policy": {
+      "type": "refund-policy",
       "robots": "index,follow"
     },
     "/topics": {

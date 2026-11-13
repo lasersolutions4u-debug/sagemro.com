@@ -139,9 +139,11 @@ function renderSection(section) {
   const heading = escapeHtml(section.heading || section.title || '');
   // 带 anchor 的小节渲染出 id，页面内的 #锚点 才能落到壳里的同一位置。
   const id = section.anchor ? ` id="${escapeHtml(section.anchor)}"` : '';
-  // 小节也可以带一个链接列表（主题聚合页靠它把子页串起来），此时不输出正文段落。
-  if (Array.isArray(section.items)) return `<h2${id}>${heading}</h2>${renderList(section.items).join('')}`;
-  return `<h2${id}>${heading}</h2><p>${escapeHtml(section.body)}</p>`;
+  // 小节可以先有一段正文，再接一个列表（退款政策页的「取消分档」就是这样）。
+  // 以前只要出现 items 就把 body 丢掉，于是壳里少了整段说明，与可见页面不一致。
+  const body = section.body ? `<p>${escapeHtml(section.body)}</p>` : '';
+  if (Array.isArray(section.items)) return `<h2${id}>${heading}</h2>${body}${renderList(section.items).join('')}`;
+  return `<h2${id}>${heading}</h2>${body}`;
 }
 
 function renderBody(route) {

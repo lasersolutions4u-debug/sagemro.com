@@ -296,8 +296,7 @@ test('the public technical-review route and footer entry are bilingual runtime c
   assert.match(page, /<PublicSiteShell isCn=\{locale === 'zh-CN'\} onOpenLegal=\{onOpenLegal\}>/);
 });
 
-test('the services hub renders its heading and intro from the SEO route, not from a second copy', async () => {
-  // 这条是**防漂移**断言，不是风格检查。
+test('the services hub renders its heading and intro from the SEO route, not from a second copy', async () => {  // 这条是**防漂移**断言，不是风格检查。
   // 组件里原先各留了一份 hubTitle / hubDescription / hubHeading / hubIntro，与
   // data/publicSeoRoutes.js 的 /services 路由是同一批文案的两份副本，而且已经不一致
   // （组件里的 description 多了一个 "Explore"）。静态壳读路由数据、客户端读组件副本，
@@ -325,4 +324,80 @@ test('the services hub renders its heading and intro from the SEO route, not fro
     // 公开服务文案的既有约束：不得出现数字（避免承诺时效/价格）。
     assert.doesNotMatch(route.body.h1, /\d/, `${locale} /services H1 不得含数字`);
   }
+});
+
+/**
+ * 指示性价格区间。
+ *
+ * 上面那条「公开服务文案不得出现数字」的规则针对的是**承诺**（时效、命中率、统一价）。
+ * 价格区间是另一类事实：它必须有数字、必须有单位、必须写明不包含项，而且必须明确
+ * 「最终以书面报价为准」。所以这些数字只允许出现在 servicePricing.js 的定价块里，
+ * 由下面这组断言单独管，不放松上面那条规则，也不让价格散落到 summary / evidenceNotes。
+ */
+test('indicative price ranges exist only where the pricing source approves them', async () => {
+  const { getServicePricing, PRICED_SERVICE_SLUGS } = await import('../src/data/servicePricing.js');
+
+  assert.deepEqual(
+    [...PRICED_SERVICE_SLUGS].sort(),
+    ['laser-cutting-machine-repair', 'preventive-maintenance', 'spare-parts-consumables'],
+    '定价页面清单被改动：请同步确认这几页的报价口径',
+  );
+
+  for (const locale of ['en', 'zh-CN']) {
+    for (const page of getServicePages(locale)) {
+      const pricing = getServicePricing(page.slug, locale);
+      assert.deepEqual(page.pricing, pricing, `${locale} ${page.slug}: clonePage 没有挂上 pricing`);
+
+      if (!PRICED_SERVICE_SLUGS.includes(page.slug)) {
+        assert.equal(pricing, null, `${locale} ${page.slug}: 不该有价格块`);
+        continue;
+      }
+
+      assert.ok(pricing.heading.length > 0);
+      assert.ok(pricing.intro.length > 0);
+      assert.ok(pricing.rows.length >= 3, `${locale} ${page.slug}: 价格条目过少`);
+      assert.equal(pricing.currency, locale === 'zh-CN' ? 'CNY' : 'USD');
+
+      for (const row of pricing.rows) {
+        assert.ok(row.label.length > 0, `${locale} ${page.slug}: 价格条目缺名称`);
+        assert.ok(row.value.length > 0, `${locale} ${page.slug}: 价格条目缺数值`);
+        assert.ok(row.detail.length > 0, `${locale} ${page.slug}: 价格条目缺不包含项说明`);
+        // 价格块不得夹带时效或保证类承诺。
+        assert.doesNotMatch(`${row.label} ${row.value} ${row.detail}`, /within \d|guarantee|承诺.*天|保证|包修/i);
+      }
+
+      // 至少有两条要给出可核对的数字区间，并且带本市场的币种——否则「有价格」只是说法。
+      const pricedRows = pricing.rows.filter((row) => /\d/.test(row.value));
+      assert.ok(pricedRows.length >= 2, `${locale} ${page.slug}: 数字区间少于两条`);
+      for (const row of pricedRows) {
+        assert.match(row.value, locale === 'zh-CN' ? /元/ : /USD/, `${locale} ${page.slug}: ${row.value} 缺币种`);
+      }
+      // 非数字条目必须是「实报实销 / 押金 / 书面报价」这类明确口径，不能是空话。
+      for (const row of pricing.rows.filter((entry) => !/\d/.test(entry.value))) {
+        assert.match(row.value, /at cost|deposit|quotation|quoted per|实报实销|押金|书面报价|逐项报价|单独报价/i, `${locale} ${page.slug}: ${row.value} 口径不明`);
+      }
+
+      // 边界必须写清：区间不是报价。
+      assert.match(pricing.note, locale === 'zh-CN' ? /参考区间|书面报价/ : /indicative|written quotation/i);
+
+      // 静态壳与可见页面同源：壳里必须出现同一个标题，并且带上每一条的数值。
+      const route = getPublicSeoRoute(`/services/${page.slug}`, locale);
+      const section = route.body.sections.find((entry) => entry.heading === pricing.heading);
+      assert.ok(section, `${locale} ${page.slug}: 静态壳缺价格小节`);
+      for (const row of pricing.rows) {
+        assert.ok(section.body.includes(row.value), `${locale} ${page.slug}: 壳里缺 ${row.label} 的数值`);
+      }
+      assert.ok(section.body.includes(pricing.note), `${locale} ${page.slug}: 壳里缺「以书面报价为准」`);
+    }
+  }
+
+  // 渲染侧：只在有定价的页面渲染价格块，且位置在边界说明之后、转化入口之前。
+  const pages = await readFile(new URL('../src/components/Services/ServicePages.jsx', import.meta.url), 'utf8');
+  assert.match(pages, /\{page\.pricing && \(/);
+  const detail = pages.slice(pages.indexOf('function ServiceDetail'));
+  const noteIndex = detail.indexOf('page.evidenceNotes');
+  const pricingIndex = detail.indexOf('page.pricing.heading');
+  const conversionIndex = detail.indexOf('<PublicConversionPanel');
+  assert.ok(noteIndex >= 0 && pricingIndex > noteIndex && conversionIndex > pricingIndex,
+    '价格块应位于边界说明与转化入口之间');
 });

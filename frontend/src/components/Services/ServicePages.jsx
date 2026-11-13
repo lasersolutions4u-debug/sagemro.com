@@ -108,6 +108,12 @@ function ServicesHub({ copy: selectedCopy, locale, route }) {
             <Wrench size={19} className="text-[var(--color-primary)]" />
             <h2 className="mt-4 text-lg font-semibold">{page.title}</h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]">{page.description}</p>
+            {/* 有指示性价格的服务在枢纽页就露出第一条量级，避免「每一页都说报价另议」。 */}
+            {page.pricing && (
+              <p className="mt-3 text-xs font-semibold text-[var(--color-primary)]">
+                {page.pricing.rows[0].label}: {page.pricing.rows[0].value}
+              </p>
+            )}
           </a>
         ))}
       </div>
@@ -143,6 +149,24 @@ function ServiceDetail({ page, copy: selectedCopy, locale, acquisitionContext })
       ))}
       <section className="mt-8 grid gap-4 md:grid-cols-2"><InfoCard title={selectedCopy.remote} body={page.remoteBoundary} /><InfoCard title={selectedCopy.onsite} body={page.onsiteBoundary} /></section>
       <section className="mt-8 border-t border-[var(--color-border)] pt-5 text-sm leading-6 text-[var(--color-text-secondary)]"><p>{page.evidenceNotes}</p></section>
+      {/* 指示性价格区间：只有 data/servicePricing.js 里列出的页面才有。
+          放在边界说明之后、转化入口之前——先让人看到量级，再决定要不要询价。 */}
+      {page.pricing && (
+        <section className="mt-8" id="indicative-pricing">
+          <SectionTitle title={page.pricing.heading} />
+          <p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">{page.pricing.intro}</p>
+          <dl className="mt-4 divide-y divide-[var(--color-border)] overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-elevated)]">
+            {page.pricing.rows.map((row) => (
+              <div key={row.label} className="grid gap-1 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-baseline sm:gap-x-4">
+                <dt className="text-sm font-semibold text-[var(--color-text-primary)]">{row.label}</dt>
+                <dd className="text-sm font-semibold text-[var(--color-primary)] sm:text-right">{row.value}</dd>
+                {row.detail && <dd className="text-xs leading-6 text-[var(--color-text-secondary)] sm:col-span-2">{row.detail}</dd>}
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-xs leading-6 text-[var(--color-text-secondary)]">{page.pricing.note}</p>
+        </section>
+      )}
       {relatedGuides.length > 0 && <section className="mt-8"><SectionTitle title={selectedCopy.relatedGuides} /><div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedGuides.map((guide) => <a key={guide.slug} href={`/insights/${guide.slug}/`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{guide.title}</a>)}</div></section>}
       <div className="mt-8"><PublicConversionPanel context={page.title} acquisitionContext={acquisitionContext} serviceRequestPreset={{ service: page.serviceKind }} /></div>
       <section className="mt-8"><SectionTitle title={selectedCopy.relatedServices} /><div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedPages.map((related) => <a key={related.slug} href={`/services/${related.slug}/`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{related.title}</a>)}</div></section>

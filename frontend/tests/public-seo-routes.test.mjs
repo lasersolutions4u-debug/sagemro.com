@@ -6,7 +6,7 @@ import { getLocalizedTool, publicIndustryTools } from '../src/data/industryTools
 import { getDiagnosticGuides } from '../src/data/diagnosticGuides.js';
 import { getDirectAccessNoindexToolRoutes, getPublicSeoRoute, getPublicSeoRoutes, getRuntimeSeoRoute } from '../src/data/publicSeoRoutes.js';
 import { getServicePages } from '../src/data/servicePages.js';
-import { getLegalEntity } from '../src/data/companyProfile.js';
+import { getLegalEntity, PHONE_DISPLAY, SUPPORT_EMAIL } from '../src/data/companyProfile.js';
 import { getTechnicalAuthor } from '../src/data/technicalAuthors.js';
 import { getTechnicalReviewPolicy } from '../src/data/technicalReviewPolicy.js';
 import { getPublicHomeContent } from '../src/data/publicHomeContent.js';
@@ -565,4 +565,111 @@ test('static documents render localized policy and safe internal anchors', () =>
   assert.match(service, /href="\/insights\/laser-protective-lens-burning\/"/);
   assert.match(service, /href="\/insights\/laser-cutting-machine-maintenance-checklist\/"/);
   assert.match(guide, /href="\/services\/laser-cutting-machine-repair\/"/);
+});
+
+/**
+ * 联系页是收款方审核（银行、支付机构、渠道尽调）真正会打开的页面。
+ * 它必须在同一个 URL 上回答四件事：怎么联系、多久回复、按哪个时区、谁签合同谁开票。
+ * 这几条不是「文案风格」，而是提交给对方的证据，所以逐条钉住。
+ */
+test('contact page publishes reachable channels, response time, timezone, and the invoicing entity', async () => {
+  const CONTACT_STATEMENT = 'SAGEMRO LLC (Wyoming) operates this website and issues invoices to overseas customers; service delivery is supported by our team in Jinan, China.';
+
+  for (const locale of ['en', 'zh-CN']) {
+    const contact = getPublicSeoRoute('/contact', locale);
+    assert.ok(contact, `${locale} 缺少 /contact`);
+    assert.equal(contact.type, 'contact');
+    assert.equal(contact.robots, 'index,follow');
+    assert.deepEqual(contact.alternates, {
+      en: 'https://sagemro.com/contact/',
+      'zh-CN': 'https://sagemro.cn/contact/',
+      'x-default': 'https://sagemro.com/contact/',
+    });
+
+    const copy = [
+      contact.title,
+      contact.description,
+      contact.body.h1,
+      ...(contact.body.paragraphs ?? []),
+      ...contact.body.sections.map((section) => `${section.heading} ${section.body}`),
+      ...(contact.body.links ?? []).map((link) => `${link.label} ${link.href}`),
+    ].join(' ');
+
+    // 邮箱是唯一公开渠道，链接必须是 mailto（而不是只写一行字）。
+    // 🔴 2026-11-13 决定：电话暂不对外公布——这里反过来钉住「不许泄漏」，
+    // 恢复电话时这条断言要一起改，避免号码被顺手加回去。
+    assert.ok(copy.includes(SUPPORT_EMAIL), `${locale} 联系页没有邮箱`);
+    assert.ok(contact.body.links.some((link) => link.href === `mailto:${SUPPORT_EMAIL}`), `${locale} 缺 mailto 链接`);
+    assert.equal(
+      copy.replace(/\s+/g, '').includes(PHONE_DISPLAY.replace(/\s+/g, '')),
+      false,
+      `${locale} 联系页不应公布电话`,
+    );
+    assert.equal(
+      contact.body.links.some((link) => link.href.startsWith('tel:')),
+      false,
+      `${locale} 联系页不应有 tel: 链接`,
+    );
+    // 时区、工作时段、回复时效（不含法定节假日）。
+    assert.match(copy, /UTC\+8/, `${locale} 联系页没有时区`);
+    assert.match(copy, /09:00/, `${locale} 联系页没有工作时段`);
+    assert.match(copy, locale === 'zh-CN' ? /一个工作日内/ : /one business day/, `${locale} 联系页没有回复时效`);
+    assert.match(
+      copy,
+      locale === 'zh-CN' ? /不含法定节假日/ : /excluding public holidays/,
+      `${locale} 联系页没有说明节假日不计入`,
+    );
+    // 注册地址：国际站写 Wyoming 注册地址，中国站不公布美国地址。
+    if (locale === 'en') {
+      assert.ok(copy.includes(getLegalEntity('en').address.formatted), '英文联系页缺少注册地址');
+    } else {
+      assert.equal(copy.includes('Sheridan'), false, '中国站不应公布美国注册地址');
+    }
+
+    // 运营与开票主体：取 companyProfile.js 的单一来源，且英文侧必须是那句完整声明。
+    const entity = getLegalEntity(locale);
+    assert.ok(copy.includes(entity.legalName), `${locale} 联系页没有写出法人实体名`);
+    assert.ok(
+      contact.body.sections.some((section) => section.body.includes(entity.operatingEntityStatement)),
+      `${locale} 联系页没有声明运营与开票主体`,
+    );
+  }
+
+  const contactEn = getPublicSeoRoute('/contact', 'en');
+  assert.ok(
+    contactEn.body.sections.some((section) => section.body.includes(CONTACT_STATEMENT)),
+    '英文联系页必须原样包含运营主体声明',
+  );
+
+  // 运营主体声明不能出现在中国站：sagemro.cn 由济南主体运营，写 LLC 就是错的事实。
+  const contactCn = getPublicSeoRoute('/contact', 'zh-CN');
+  assert.equal(
+    contactCn.body.sections.some((section) => section.body.includes('SAGEMRO LLC')),
+    false,
+    '中国站不应宣称由 SAGEMRO LLC 运营',
+  );
+
+  // 静态壳必须能渲染出这一页的渠道与声明（预渲染文档 = 爬虫看到的版本）。
+  const html = renderPublicDocument(TEMPLATE, contactEn, 'en');
+  assert.match(html, /mailto:support@sagemro\.com/);
+  assert.doesNotMatch(html, /tel:\+8618615584520/);
+  assert.match(html, new RegExp(CONTACT_STATEMENT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+
+  // 站内入口：主导航与页脚都要有它，否则这一页只能靠 sitemap 被发现。
+  const shell = await readFile(new URL('../src/components/Public/PublicSiteShell.jsx', import.meta.url), 'utf8');
+  assert.match(shell, /\['Contact', '\/contact\/'\]/);
+  assert.match(shell, /\['联系我们', '\/contact\/'\]/);
+  const footer = await readFile(new URL('../src/components/common/Footer.jsx', import.meta.url), 'utf8');
+  assert.match(footer, /href="\/contact\/"/);
+  assert.match(footer, /entity\.operatingEntityStatement/);
+
+  // /about 的预渲染文案也要有自己的声明：审核员从「关于我们」进站的人比从联系页进的多。
+  const aboutHtml = renderPublicDocument(TEMPLATE, getPublicSeoRoute('/about', 'en'), 'en');
+  assert.ok(aboutHtml.includes(CONTACT_STATEMENT), '/about 的预渲染文案应包含运营主体声明');
+
+  // 路由：App 必须把它当作已知公开页，且不能被通用 noindex 分支覆盖。
+  const app = await readFile(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(app, /const ContactPage = lazy/);
+  assert.match(app, /const isContactPath = portalTarget === 'public'/);
+  assert.match(app, /isTechnicalReviewPath\s*\|\| isContactPath/);
 });

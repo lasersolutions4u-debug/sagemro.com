@@ -12,12 +12,14 @@ const navigation = {
     // 主题聚合页必须有一个站内可见入口：静态壳里的 body.links 是爬虫专用，
     // 客户端渲染的首页并不渲染它们——只靠 sitemap 发现的页面等于孤立页面，排不上名。
     ['按主题', '/topics/'],
+    ['联系我们', '/contact/'],
   ],
   com: [
     ['Services', '/services/'],
     ['Tools', '/tools/'],
     ['Insights', '/insights/'],
     ['Topics', '/topics/'],
+    ['Contact', '/contact/'],
   ],
 };
 
@@ -54,9 +56,6 @@ export function PublicSiteShell({ children, isCn, onOpenLegal }) {
                 Store
               </a>
             )}
-            <button type="button" onClick={openConsultationForm} className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#92400e]">
-              {isCn ? '咨询' : 'Contact'}
-            </button>
           </nav>
 
           <a href={portalHref} className="order-2 flex min-h-11 items-center rounded-lg border border-[#d97706] bg-[#f59e0b] px-4 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24] md:order-3">

@@ -12,12 +12,18 @@ import { getTechnicalReviewPolicy } from './technicalReviewPolicy.js';
 import { getPublicHomeContent } from './publicHomeContent.js';
 import { getTopicGroups } from './topicGroups.js';
 import { getCompanyAbout } from './companyAbout.js';
-import { getLegalEntity, ICP_RECORD_NUMBER, SUPPORT_EMAIL } from './companyProfile.js';
+import { getServiceBilling } from './serviceBilling.js';
+import {
+  getLegalEntity,
+  ICP_RECORD_NUMBER,
+  SUPPORT_EMAIL,
+  SUPPORT_TIMEZONE_SHORT,
+} from './companyProfile.js';
 
 const HOSTS = { en: 'https://sagemro.com', 'zh-CN': 'https://sagemro.cn' };
 // hub / 首页 / 服务页这几类页面没有比"内容发布"更细的变更时间，统一用这个日期。
 // 改这些页面的文案时要一起更新，否则 sitemap 的 lastmod 会一直停在旧日期。
-const RELEASE_DATE = '2026-09-29';
+const RELEASE_DATE = '2026-11-13';
 
 function publicUrl(host, path) {
   return `${host}${path === '/' ? '/' : `${path.replace(/\/+$/, '')}/`}`;
@@ -123,13 +129,31 @@ function organization(locale) {
     description: entity.description,
     email: SUPPORT_EMAIL,
     logo: `${HOSTS[locale]}/sagemro-logo.png`,
-    address: { '@type': 'PostalAddress', addressCountry: entity.country },
+    // 注册地址来自 companyProfile.js（美国侧是 Wyoming 注册地址）。中国站不公布街道地址，
+    // 只到国家层级——备案号承担的是另一套可核验口径。
+    address: entity.address
+      ? {
+        '@type': 'PostalAddress',
+        streetAddress: entity.address.street,
+        addressLocality: entity.address.city,
+        addressRegion: entity.address.region,
+        postalCode: entity.address.postalCode,
+        addressCountry: entity.address.country,
+      }
+      : { '@type': 'PostalAddress', addressCountry: entity.country },
     areaServed: entity.areaServed,
+    // 2026-11-13 决定：联系方式以邮件为主，电话暂不对外公布（事实与原因见 companyProfile.js）。
     contactPoint: {
       '@type': 'ContactPoint',
       contactType: 'customer support',
       email: SUPPORT_EMAIL,
       availableLanguage: locale === 'zh-CN' ? ['zh-CN'] : ['en'],
+      hoursAvailable: {
+        '@type': 'OpeningHoursSpecification',
+        dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+        opens: '09:00',
+        closes: '18:00',
+      },
     },
     // 工信部备案号只有中国版持有，国际站不带这一项。
     ...(locale === 'zh-CN'
@@ -140,6 +164,131 @@ function organization(locale) {
 
 function organizationRef(locale) {
   return { '@id': organization(locale)['@id'] };
+}
+
+/**
+ * 联系页。
+ *
+ * 这一页的存在理由不是「再加一个页面」，而是把收款方审核与渠道尽调真正会问的三件事
+ * 放在同一个 URL 上：谁能联系上、按哪个时区多久回、以及谁签合同谁开发票。
+ *
+ * 所以正文只写可以从 companyProfile.js 复核的事实：邮箱、时区、工作时长、
+ * 服务团队所在地、注册地址、运营主体与开票主体。不写「24 小时」「全球响应」这类无法兑现的承诺。
+ *
+ * 2026-11-13：按运营方决定，**电话暂不对外公布**，联系以邮件为主；邮件也是唯一能留下书面记录的入口。
+ */
+function contactPage(locale) {
+  const entity = getLegalEntity(locale);
+  const isCn = locale === 'zh-CN';
+  const registeredOffice = entity.address?.formatted;
+  const sections = isCn
+    ? [
+      { heading: '邮箱', body: `${SUPPORT_EMAIL}。邮件直接进入服务团队。请一并提供设备型号、报警原文，以及铭牌或故障件的照片；请勿发送图纸、密码等敏感信息。` },
+      { heading: '回复时效', body: '所有咨询在一个工作日内回复，法定节假日不计入。需要安排现场方案的请求会更久，因为可用性要在设备、地点与工程师匹配情况核实之后才能确认。' },
+      { heading: '我们在哪里', body: `服务团队、备件库与车间都在山东济南（${SUPPORT_TIMEZONE_SHORT}），工作时间为周一至周五 09:00–18:00，服务按此时间协调。国内按地区安排上门；出口设备按国家与项目逐案确认现场资源。完整通信地址印在合同与发票上，也可通过邮件索取。` },
+      { heading: '本站由谁运营、由谁开票', body: `${entity.operatingEntityStatement} 国内业务的发票由本公司开出，收款信息印在发票上，不在本页公布。` },
+      { heading: '询价需要提供什么', body: '请提供设备型号、设备所在国家或地区，以及故障现象或零件号。书面报价会逐项列明服务范围、差旅、备件与结算方式，并在开工前发出。' },
+      { heading: '备件与交换件', body: '备件按零件号逐项报价。故障件会导致停产时，可以先发可用件、坏件回收维修；押金按件值收取，回收件检测合格后退还。' },
+    ]
+    : [
+      { heading: 'Email', body: `${SUPPORT_EMAIL}. This reaches the service team directly and leaves a written record of the request. Include the machine model, the alarm text, and a photo of the machine label or the failed part if you have them. Do not send drawings, passwords, or other secrets.` },
+      { heading: 'Response time', body: 'Requests are answered within one business day, excluding public holidays. A request that needs an on-site plan takes longer, because availability is confirmed after the equipment, the location, and the engineer fit have been reviewed.' },
+      { heading: 'Where we are', body: `The registered office is ${registeredOffice}. The service team, the parts stock, and the workshop are in Jinan, Shandong, China (${SUPPORT_TIMEZONE_SHORT}); the team works Monday to Friday, 09:00–18:00, and service engineers are dispatched from there. Note the time difference when you write.` },
+      { heading: 'Who operates this site and who invoices you', body: `${entity.operatingEntityStatement} Invoices for overseas work are issued in US dollars by SAGEMRO LLC, and the payment details are printed on the invoice itself rather than published on this page.` },
+      { heading: 'What to send with a quotation request', body: 'Send the machine model, the site country, and the symptom or the part number. The written quotation itemizes service scope, travel, parts, and the settlement basis, and it is issued before any work starts.' },
+      { heading: 'Parts and exchange units', body: 'Part orders are quoted per part number. Where a failed part stops production, an exchange unit can be shipped first and the returned unit repaired afterwards; a deposit equal to the unit value is held until the returned unit has been inspected.' },
+    ];
+
+  return route(locale, {
+    path: '/contact',
+    type: 'contact',
+    title: isCn ? '联系我们：服务、备件与报价' : 'Contact SAGEMRO: Service, Parts and Quotations',
+    description: isCn
+      ? '联系 SAGEMRO：邮箱、工作时段与回复时效。激光切割机与折弯机维修、备件与报价请求都在这里受理。'
+      : 'Reach the SAGEMRO service team by email for repairs, spare parts, and quotations. Reply within one business day, UTC+8.',
+    modified: RELEASE_DATE,
+    body: {
+      h1: isCn ? '联系 SAGEMRO：设备维修、备件与报价' : 'Contact SAGEMRO about service, parts, and quotations.',
+      paragraphs: [isCn
+        ? 'SAGEMRO 承接激光切割机与折弯机的维修、保养、备件与整机厂售后外包。请通过邮箱或咨询表单联系我们，一个工作日内回复（不含法定节假日）；需要现场方案的请求会先做可行性确认。'
+        : 'SAGEMRO takes repair, maintenance, spare-parts, and after-sales outsourcing requests for laser cutting machines and press brakes. Write to us or send the consultation form and a reply follows within one business day; a request that needs an on-site visit gets a feasibility check first.'],
+      sections,
+      links: [
+        { href: `mailto:${SUPPORT_EMAIL}`, label: SUPPORT_EMAIL },
+        { href: '/services/', label: isCn ? '服务项目' : 'Services' },
+        { href: '/services/spare-parts-consumables/', label: isCn ? '备件与耗材' : 'Spare parts and consumables' },
+        { href: '/refund-policy/', label: isCn ? '付款、取消与退款政策' : 'Payment, cancellation and refund policy' },
+        { href: '/about/', label: isCn ? '关于我们与运营主体' : 'About SAGEMRO and the operating entity' },
+      ],
+    },
+    structuredData: {
+      '@type': 'ContactPage',
+      name: isCn ? '联系 SAGEMRO' : 'Contact SAGEMRO',
+      description: isCn
+        ? 'SAGEMRO 的联系方式、工作时段、回复时效与运营主体。'
+        : 'How to reach SAGEMRO: email, working hours, response time, the registered office, and the operating entity.',
+      url: publicUrl(HOSTS[locale], '/contact'),
+      mainEntity: organizationRef(locale),
+    },
+  });
+}
+
+/**
+ * 退款与取消政策页。
+ *
+ * 为什么要有独立一页而不是只塞进条款弹窗：
+ * 1. 收款方与支付机构的审核要求「退款政策有一个可访问的 URL」，弹窗不算；
+ * 2. 条款要能被引用、被银行尽调截图、被客户在争议时直接打开。
+ *
+ * 正文全部来自 data/serviceBilling.js（与条款同一数据源），这里只负责排版成章节。
+ * 政策必须与站内既有承诺自洽：报价先于开工、逐项列明、不替代原厂保修。
+ */
+function refundPolicyPage(locale) {
+  const isCn = locale === 'zh-CN';
+  const billing = getServiceBilling(locale);
+  const p = billing.page;
+  const sections = [p.quote, p.deposit, p.customerCancellation, p.ourCancellation, p.refunds, p.workmanship, p.warrantyBoundary, p.dispute]
+    .map((section) => ({
+      heading: section.heading,
+      body: section.body,
+      ...(section.items ? { items: [...section.items] } : {}),
+    }));
+
+  return route(locale, {
+    path: '/refund-policy',
+    type: 'refund-policy',
+    title: isCn
+      ? '服务付款、取消与退款政策'
+      : 'Service Payment, Cancellation and Refund Policy',
+    description: isCn
+      ? 'SAGEMRO 服务的付款与退款口径：30% 预付、70% 验收后付、取消分档、退款时效，以及与设备厂家保修的边界。'
+      : 'Deposit and balance, cancellation windows, refunds, and why SAGEMRO does not replace the equipment maker\'s warranty.',
+    modified: RELEASE_DATE,
+    body: {
+      h1: isCn
+        ? 'SAGEMRO 服务的付款、取消与退款政策'
+        : 'Payment, cancellation, and refund policy for SAGEMRO service work.',
+      paragraphs: [isCn
+        ? '本页是 SAGEMRO 服务业务的付款与取消口径：报价如何转为预付款与尾款、各阶段取消要承担什么、退款怎么办理，以及设备厂家保修的位置。中国境内业务由济南钰峭机械有限公司执行与开票；海外业务由境外主体签约与开票，主体在报价单中写明。'
+        : 'This page is the payment and cancellation policy for service work ordered from SAGEMRO: how a quotation becomes a deposit and a balance, what a cancellation costs at each stage, how a refund is handled, and where the equipment maker\'s warranty stands. It applies to overseas work invoiced by SAGEMRO LLC and, through the Chinese operating company, to work delivered inside China.'],
+      sections,
+      links: [
+        { href: '/contact/', label: isCn ? '联系我们' : 'Contact SAGEMRO' },
+        { href: '/services/', label: isCn ? '服务项目与报价区间' : 'Services and indicative budgets' },
+        { href: '/about/', label: isCn ? '关于我们与运营主体' : 'About SAGEMRO and the operating entity' },
+      ],
+    },
+    structuredData: {
+      '@type': 'WebPage',
+      name: isCn ? '退款与取消政策' : 'Payment, cancellation and refund policy',
+      description: isCn
+        ? 'SAGEMRO 服务业务的付款、取消与退款政策。'
+        : 'Payment, cancellation, and refund policy for SAGEMRO service work.',
+      url: publicUrl(HOSTS[locale], '/refund-policy'),
+      about: organizationRef(locale),
+      dateModified: RELEASE_DATE,
+    },
+  });
 }
 
 function technicalTeamOrganization(locale) {
@@ -327,6 +476,8 @@ function buildRoutes(locale) {
         { href: '/insights/', label: locale === 'zh-CN' ? '技术洞察' : 'Insights' },
         { href: '/topics/', label: locale === 'zh-CN' ? '按主题浏览' : 'Browse by topic' },
         { href: '/about/', label: locale === 'zh-CN' ? '关于我们' : 'About SAGEMRO' },
+        { href: '/contact/', label: locale === 'zh-CN' ? '联系我们' : 'Contact' },
+        { href: '/refund-policy/', label: locale === 'zh-CN' ? '付款与退款政策' : 'Payment and refund policy' },
         ...(locale === 'zh-CN' ? [] : [{ href: '/partners/', label: 'Dealers and service partners' }]),
         ...(locale === 'zh-CN' ? [] : [{ href: 'https://www.dhgate.com/store/sagemro', label: 'Store' }]),
         { href: publicHome.requestCtas.assist.href, label: publicHome.requestCtas.assist.label },
@@ -401,6 +552,16 @@ function buildRoutes(locale) {
           { heading: locale === 'zh-CN' ? '需准备的信息' : 'Information to prepare', body: service.customerInputs.join(' ') },
           // 页面上额外的小节（如备件页的交换件），带锚点，壳里渲染成 <h2 id="…">。
           ...(service.extraSections ?? []).map((section) => ({ heading: section.heading, body: section.body, anchor: section.anchor })),
+          // 指示性价格区间。壳里把每一条压成一句话，数字与单位必须和可见页面同源
+          // （都来自 data/servicePricing.js），否则爬虫读到的是另一套价。
+          ...(service.pricing ? [{
+            heading: service.pricing.heading,
+            body: [
+              service.pricing.intro,
+              ...service.pricing.rows.map((row) => `${row.label}: ${row.value}${row.detail ? ` — ${row.detail}` : ''}.`),
+              service.pricing.note,
+            ].join(' '),
+          }] : []),
         ],
         links: relatedGuides.map((guide) => ({ kind: 'guide', href: `/insights/${guide.slug}/`, label: guide.title })),
         emptyState: '',
@@ -504,6 +665,8 @@ function buildRoutes(locale) {
         { href: '/topics/', label: locale === 'zh-CN' ? '按主题浏览' : 'Browse by topic' },
         ...(locale === 'zh-CN' ? [] : [{ href: '/partners/', label: 'Dealers and service partners' }]),
         { href: '/about/technical-review/', label: locale === 'zh-CN' ? '技术内容审核政策' : 'Technical content review policy' },
+        { href: '/contact/', label: locale === 'zh-CN' ? '联系我们' : 'Contact SAGEMRO' },
+        { href: '/refund-policy/', label: locale === 'zh-CN' ? '付款、取消与退款政策' : 'Payment, cancellation and refund policy' },
       ],
     },
     structuredData: {
@@ -517,8 +680,10 @@ function buildRoutes(locale) {
   const toolsHub = collection('/tools', 'tools-hub', copy.tools, toolRoutes);
   const servicesHub = collection('/services', 'services-hub', copy.services, serviceRoutes);
   const insightsHub = collection('/insights', 'insights-hub', copy.insights, [...insightRoutes, ...guideRoutes]);
+  const contact = contactPage(locale);
+  const refundPolicy = refundPolicyPage(locale);
   const contentRoutes = [home, ...partnerRoutes, servicesHub, ...serviceRoutes, toolsHub, ...toolRoutes,
-    insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute, aboutRoute];
+    insightsHub, ...insightRoutes, ...guideRoutes, technicalReviewRoute, aboutRoute, contact, refundPolicy];
 
   // 主题聚合页。放在最后构建，因为链接文字要从目标页自己的标题解析——
   // 标题改了聚合页不会挂着旧文字。这一页不新增任何事实。

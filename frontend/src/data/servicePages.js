@@ -1,3 +1,5 @@
+import { getServicePricing } from './servicePricing.js';
+
 const SERVICE_KINDS = {
   'laser-cutting-machine-repair': 'repair',
   'press-brake-repair': 'repair',
@@ -517,6 +519,9 @@ function clonePage(page, locale) {
     process: [...page.process],
     customerInputs: [...page.customerInputs],
     extraSections: (page.extraSections ?? []).map((section) => ({ ...section })),
+    // 指示性价格区间来自 servicePricing.js（单一来源）。没有定价页面的 slug 得到 null，
+    // 于是「哪些页有价格」这件事只由那份清单决定，不在页面对象里各写一遍。
+    pricing: getServicePricing(page.slug, locale),
   };
 }
 

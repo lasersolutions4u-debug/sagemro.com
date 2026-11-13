@@ -22,7 +22,7 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   const checkedIn = (path) => readFile(new URL(`../public/${path}`, import.meta.url), 'utf8');
   assert.match(await read('tools/press-brake-tonnage-calculator/index.html'), /<h1>Press Brake Tonnage Calculator<\/h1>/);
   assert.match(await read('insights/press-brake-tonnage-risk-check/index.html'), /Article/);
-  assert.match(await read('sitemap.xml'), /<lastmod>2026-09-29<\/lastmod>/);
+  assert.match(await read('sitemap.xml'), /<lastmod>2026-11-13<\/lastmod>/);
   assert.doesNotMatch(await read('sitemap.xml'), /bend-simulator/);
   const redirects = await read('_redirects');
   assert.match(redirects, /\/activate \/ 200/);
@@ -39,8 +39,8 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   // 校验它确实覆盖了业务、服务页与渠道商页——这三样是 AI 判断"这家到底做什么"的依据。
   const llms = await read('llms.txt');
   const hubs = llms.match(/^\- https:\/\/[^\n]+$/gm);
-  assert.equal(hubs.length, 18);
-  for (const path of ['/', '/partners/', '/services/', '/tools/', '/insights/', '/topics/', '/about/', '/about/technical-review/']) {
+  assert.equal(hubs.length, 20);
+  for (const path of ['/', '/partners/', '/services/', '/tools/', '/insights/', '/topics/', '/about/', '/about/technical-review/', '/contact/', '/refund-policy/']) {
     assert.ok(hubs.some((line) => line.startsWith(`- https://sagemro.com${path} `)), `llms.txt 缺少 ${path}`);
   }
   for (const slug of ['laser-cutting-machine-repair', 'press-brake-repair', 'remote-diagnostics',
@@ -64,7 +64,7 @@ test('buildPublicPages writes crawlable public pages and crawl artifacts', async
   assert.match(await read('services/spare-parts-consumables/index.html'), /<h2 id="exchange-unit">/);
   assert.doesNotMatch(await read('services/laser-cutting-machine-repair/index.html'), /id="exchange-unit"/);
   for (const serviceEntry of serviceEntries) {
-    assert.match(serviceEntry[0], /<lastmod>2026-09-29<\/lastmod>/, `服务页缺 lastmod: ${serviceEntry[0].slice(0, 90)}`);
+    assert.match(serviceEntry[0], /<lastmod>2026-11-13<\/lastmod>/, `服务页缺 lastmod: ${serviceEntry[0].slice(0, 90)}`);
   }
   const robots = await read('robots.txt');
   assert.equal(normalizeLineEndings(robots).trimEnd(), normalizeLineEndings(await checkedIn('robots.txt')).trimEnd());
