@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Clock, Mail, Timer } from 'lucide-react';
 import { getPublicSeoRoute } from '../../data/publicSeoRoutes';
+import { getServicePricing } from '../../data/servicePricing';
 import {
   SUPPORT_EMAIL,
   getSupportCopy,
@@ -30,6 +31,7 @@ const copy = {
     emailLabel: 'Email',
     hoursLabel: 'Working hours',
     responseLabel: 'Response time',
+    priceLead: 'Indicative budget:',
     cta: 'Request a consultation',
     ctaNote: 'The form writes straight to the service team. Email is the fastest written channel.',
   },
@@ -39,6 +41,7 @@ const copy = {
     emailLabel: '邮箱',
     hoursLabel: '工作时间',
     responseLabel: '回复时效',
+    priceLead: '参考价格：',
     cta: '提交咨询需求',
     ctaNote: '表单直接进入服务团队；邮件是最快的书面渠道。',
   },
@@ -66,24 +69,28 @@ export function ContactPage({ onOpenLegal }) {
   if (!route) return null;
 
   const sections = route.body.sections ?? [];
-  // mailto: / tel: 已经在渠道条上，不要在下方链接区再列一遍。
+  // mailto: 已经在渠道卡上，不要在下方链接区再列一遍。
   const links = (route.body.links ?? []).filter((link) => !/^(mailto|tel):/.test(link.href));
+  // 价格量级：买家最先想知道「大概多少钱」。数字与 /services 的定价块同源（servicePricing.js），
+  // 这里只取前两条（远程诊断 + 现场服务），完整区间与不包含项在服务页。
+  const pricing = getServicePricing('laser-cutting-machine-repair', locale);
 
   return (
     <PublicSiteShell isCn={locale === 'zh-CN'} onOpenLegal={onOpenLegal}>
-      <section className="border-b border-[#e6dccf] bg-[#f7f3ed] px-5 py-14 md:py-20">
-        <div className="mx-auto max-w-[1240px] lg:px-3">
+      <section className="border-b border-[#e6dccf] bg-[#f7f3ed] px-5 py-8 md:py-20">
+        <div className="mx-auto max-w-[1240px] lg:px-8">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#92400e]">{labels.eyebrow}</p>
-          <h1 className="mt-4 max-w-4xl text-3xl font-semibold leading-[1.15] tracking-[-0.03em] text-[#21160c] md:text-4xl">
+          <h1 className="mt-3 max-w-4xl text-[2rem] font-semibold leading-[1.15] tracking-[-0.03em] text-[#21160c] sm:text-3xl md:mt-4 md:text-4xl">
             {route.body.h1}
           </h1>
-          <p className="mt-5 max-w-3xl text-base leading-8 text-[#6b5a48]">{(route.body.paragraphs ?? [])[0]}</p>
+          <p className="mt-3 max-w-3xl text-sm leading-[1.7] text-[#6b5a48] md:text-base">{(route.body.paragraphs ?? [])[0]}</p>
 
-          {/* 渠道条：只有值，没有句子。正文里同一件事已经写成完整段落，两处不会出现两种说法。 */}
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+          {/* 渠道条：只有值，没有句子。正文里同一件事已经写成完整段落，两处不会出现两种说法。
+              手机上它必须落在首屏内——联系页的第一屏如果看不到联系方式，这一页就没有完成它的工作。 */}
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
             <a
               href={`mailto:${SUPPORT_EMAIL}`}
-              className="flex min-h-16 items-center gap-3 rounded-xl border border-[#e6dccf] bg-[#fffdf8] px-4 py-3 transition-colors hover:border-[#d97706]"
+              className="flex min-h-16 items-center gap-3 rounded-xl border border-[#e6dccf] bg-[#fffdf8] px-4 py-3 transition-colors hover:border-[#d97706] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#92400e]"
             >
               <Mail size={18} className="shrink-0 text-[#92400e]" aria-hidden="true" />
               <span className="min-w-0">
@@ -107,11 +114,23 @@ export function ContactPage({ onOpenLegal }) {
             </div>
           </div>
 
+          {pricing && (
+            <p className="mt-6 text-sm leading-[1.7] text-[#6b5a48]">
+              {labels.priceLead}{' '}
+              <a
+                href="/services/laser-cutting-machine-repair/#indicative-pricing"
+                className="font-semibold text-[#92400e] underline decoration-[#e7b65b] underline-offset-4"
+              >
+                {pricing.rows.slice(0, 2).map((row) => row.value).join(' · ')}
+              </a>
+            </p>
+          )}
+
           <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
             <button
               type="button"
               onClick={openConsultationForm}
-              className="flex min-h-11 items-center rounded-lg bg-[#f59e0b] px-4 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24]"
+              className="flex min-h-11 items-center rounded-lg bg-[#f59e0b] px-4 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#92400e]"
             >
               {labels.cta}
             </button>
@@ -121,17 +140,18 @@ export function ContactPage({ onOpenLegal }) {
       </section>
 
       <section className="bg-[#fffdf8] px-5 py-12 md:py-16">
-        <div className="mx-auto max-w-[1240px] lg:px-3">
-          <div className="grid gap-x-10 gap-y-8 md:grid-cols-2">
+        <div className="mx-auto max-w-[1240px] lg:px-8">
+          {/* 单栏 + 分隔线：五节之间本来没有并列关系，两栏网格会凭空造出分组。 */}
+          <div className="max-w-[68ch] divide-y divide-[#e6dccf]">
             {sections.map((section) => (
-              <section key={section.heading}>
-                <h2 className="text-base font-semibold text-[#21160c]">{section.heading}</h2>
-                <p className="mt-3 text-sm leading-7 text-[#6b5a48]">{section.body}</p>
+              <section key={section.heading} className="py-7 first:pt-0 last:pb-0">
+                <h2 className="text-xl font-semibold leading-[1.3] tracking-[-0.01em] text-[#21160c]">{section.heading}</h2>
+                <p className="mt-3 text-sm leading-[1.7] text-[#6b5a48]">{section.body}</p>
               </section>
             ))}
           </div>
 
-          <div className="mt-12 flex flex-wrap gap-x-5 gap-y-2">
+          <div className="mt-10 flex flex-wrap gap-x-5 gap-y-2 border-t border-[#e6dccf] pt-6">
             <a href="/" className="text-sm font-semibold text-[#2d2116] underline decoration-[#c9b9a5] underline-offset-4 transition-colors hover:text-[#92400e]">
               {labels.back}
             </a>

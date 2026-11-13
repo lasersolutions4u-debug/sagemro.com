@@ -78,24 +78,62 @@ const CRITICAL_SHELL_STYLES = `<style data-seo-shell-critical>
     line-height: 2;
   }
   .seo-static-shell__details {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.875rem;
+    max-width: 46rem;
     margin-top: 2.5rem;
+    color: #35313b;
   }
-  .seo-static-shell__details > * {
-    min-width: 0;
+  /*
+   * 以前这里是「每个子元素一张卡」的四列网格：h2 和它的正文是兄弟节点，
+   * 于是标题落在一张卡里、正文落在旁边一张卡里，长文页面（/contact/、/refund-policy/、
+   * /about/）在首屏预渲染阶段会被画成二十几张孤立卡片——这就是「结构看起来乱」的来源。
+   * 现在：正文页走排版（h2 + p + ul 的正常层级），只有带条目列表的枢纽页才用卡片网格。
+   */
+  .seo-static-shell__details h2 {
+    margin: 1.75rem 0 0.5rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.35;
+    color: #171721;
+  }
+  .seo-static-shell__details h2:first-child { margin-top: 0; }
+  .seo-static-shell__details p {
+    margin: 0 0 0.875rem;
+    font-size: 1rem;
+    line-height: 1.75;
+    color: #4b4652;
+  }
+  .seo-static-shell__details ul {
+    margin: 0 0 1.25rem;
+    padding-left: 1.15rem;
+    font-size: 1rem;
+    line-height: 1.75;
+    color: #4b4652;
+  }
+  .seo-static-shell__details li { margin: 0.25rem 0; }
+  .seo-static-shell__details a {
+    color: #92400e;
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+  }
+  .seo-static-shell__details--cards { max-width: none; }
+  .seo-static-shell__details--cards ul {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.875rem;
     margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .seo-static-shell__details--cards li {
+    min-width: 0;
     padding: 1rem;
     border: 1px solid #e8e5eb;
     border-radius: 1rem;
     background: #faf9fb;
-    color: #35313b;
     line-height: 1.45;
   }
-  .seo-static-shell__details a { color: inherit; text-decoration: none; }
   @media (max-width: 980px) {
-    .seo-static-shell__details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .seo-static-shell__details--cards ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 720px) {
     .seo-static-shell { display: block; }
@@ -103,7 +141,8 @@ const CRITICAL_SHELL_STYLES = `<style data-seo-shell-critical>
     .seo-static-shell__brand img { width: 2.75rem; height: 2.75rem; }
     .seo-static-shell__content { align-items: flex-start; padding: 2.5rem 1.25rem 3rem; }
     .seo-static-shell h1 { font-size: clamp(2rem, 10vw, 3rem); }
-    .seo-static-shell__details { grid-template-columns: 1fr; margin-top: 2rem; }
+    .seo-static-shell__details { margin-top: 2rem; }
+    .seo-static-shell__details--cards ul { grid-template-columns: 1fr; }
   }
 </style>`;
 
@@ -149,6 +188,10 @@ function renderSection(section) {
 function renderBody(route) {
   const body = route.body || {};
   const paragraphs = body.paragraphs || [];
+  // 只有「枢纽页条目列表」才用卡片网格；正文页走排版，避免 h2 与它的正文被拆成两张卡。
+  const detailsClass = Array.isArray(body.list) && body.list.length > 0
+    ? 'seo-static-shell__details seo-static-shell__details--cards'
+    : 'seo-static-shell__details';
   const detail = [
     ...paragraphs.slice(1).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`),
     ...(body.sections || []).map(renderSection),
@@ -171,7 +214,7 @@ function renderBody(route) {
       <div class="seo-static-shell__frame">
         <h1>${escapeHtml(body.h1)}</h1>
         <p class="seo-static-shell__intro">${escapeHtml(paragraphs[0])}</p>
-        <section class="seo-static-shell__details">${detail}</section>
+        <section class="${detailsClass}">${detail}</section>
       </div>
     </div>
   </main>

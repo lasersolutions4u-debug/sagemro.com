@@ -34,7 +34,7 @@ stated in the written quotation issued by SAGEMRO LLC.
 - https://sagemro.com/topics/ — browse service and technical content by topic
 - https://sagemro.com/about/ — who SAGEMRO is: legal entity, scope, and service boundaries
 - https://sagemro.com/about/technical-review/ — technical content review policy
-- https://sagemro.com/contact/ — email, phone, working hours (UTC+8), response time, and the invoicing entity
+- https://sagemro.com/contact/ — email, working hours (UTC+8), response time, the registered office, and the invoicing entity
 - https://sagemro.com/refund-policy/ — payment, cancellation, and refund policy (30% deposit, 70% on acceptance)
 
 ## Scope

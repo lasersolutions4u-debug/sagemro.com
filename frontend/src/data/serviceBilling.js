@@ -20,6 +20,10 @@
 const EN = {
   currency: 'USD',
   billedBy: 'SAGEMRO LLC',
+  // 政策版本与生效日：退款页上显示「Version 1.0 · effective …」，
+  // 而不是拿构建日期（RELEASE_DATE）冒充生效日——后者每次部署都会变，对审核方毫无意义。
+  version: '1.0',
+  effective: '13 November 2026',
 
   // —— 服务条款 §4 引用 ——
   deposit: 'A deposit of 30% of the quoted service fee is payable before the visit is scheduled and mobilised. The deposit covers the engineer time and travel bookings itemised in the quotation.',
@@ -30,6 +34,17 @@ const EN = {
 
   // —— 退款政策页 ——
   page: {
+    /**
+     * 一页看全的四个数。审核方、客户、争议三方最常问的就这四个，
+     * 但它们原先散落在六节正文里，手机上要滑三屏。这里单独成条，页面首屏直接渲染成卡片。
+     * 值必须与下面各节一致——同文件，改一处即全改。
+     */
+    glance: [
+      { label: 'Deposit', value: '30%', note: 'before scheduling and mobilisation' },
+      { label: 'Balance', value: '70%', note: 'within 14 days of acceptance' },
+      { label: 'Cancel before scheduling', value: 'No charge', note: 'nothing has been committed' },
+      { label: 'Refund paid', value: '14 business days', note: 'same method and currency' },
+    ],
     quote: {
       heading: 'Everything is quoted before it starts',
       body: 'Every engagement begins with an itemised written quotation: service scope, engineer-days, travel, parts, and the settlement basis. Nothing is invoiced before that quotation is accepted in writing. AI-generated estimates, the indicative ranges published on this site, and any figure given in conversation are references only — the quotation is the binding figure.',
@@ -94,6 +109,8 @@ const EN = {
 const ZH = {
   currency: 'CNY',
   billedBy: '济南钰峭机械有限公司',
+  version: '1.0',
+  effective: '2026 年 11 月 13 日',
 
   deposit: '签订书面报价后、排期与出发前，需支付报价服务费的 30% 作为预付款。预付款对应报价中列明的工程师工时与差旅预订。',
   balance: '验收报告出具后支付剩余 70%，账期为发票日期起 14 天内。不自动增加任何其他费用。',
@@ -102,6 +119,12 @@ const ZH = {
   warrantyBoundaryTerms: 'SAGEMRO 是独立服务方。本条款不延长、不替代、不承接设备厂家的保修义务。设备仍在厂家保修期内时，索赔仍由厂家或其经销商受理；SAGEMRO 可提供证据，但不作为厂家的代理人，也无权代为确认索赔。',
 
   page: {
+    glance: [
+      { label: '预付款', value: '30%', note: '排期与出发前支付' },
+      { label: '尾款', value: '70%', note: '验收后 14 天内' },
+      { label: '排期前取消', value: '不收费', note: '此时没有任何投入' },
+      { label: '退款到账', value: '14 个工作日', note: '原路径、原币种' },
+    ],
     quote: {
       heading: '先报价，后开工',
       body: '每一项服务都从书面、逐项的报价开始：服务范围、工程师工日、差旅、备件与结算方式都会列明。报价经书面确认前不产生费用。AI 估算、站内公布的参考区间，以及沟通过程中提到的任何数字都只是参考，以报价单为准。',

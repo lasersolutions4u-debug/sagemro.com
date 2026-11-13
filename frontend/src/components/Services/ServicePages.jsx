@@ -165,6 +165,12 @@ function ServiceDetail({ page, copy: selectedCopy, locale, acquisitionContext })
             ))}
           </dl>
           <p className="mt-3 text-xs leading-6 text-[var(--color-text-secondary)]">{page.pricing.note}</p>
+          {/* 从「钱怎么算」一步跳到「什么情况下退」：审核方与买家都会在这里往下走。 */}
+          <p className="mt-2 text-sm leading-6">
+            <a href="/refund-policy/" className="font-semibold text-[var(--color-primary)] underline decoration-[color:var(--color-primary)]/40 underline-offset-4">
+              {locale === 'zh-CN' ? '付款、取消与退款条款' : 'Payment, cancellation and refund terms'}
+            </a>
+          </p>
         </section>
       )}
       {relatedGuides.length > 0 && <section className="mt-8"><SectionTitle title={selectedCopy.relatedGuides} /><div className="mt-3 grid gap-3 sm:grid-cols-2">{relatedGuides.map((guide) => <a key={guide.slug} href={`/insights/${guide.slug}/`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm font-medium hover:border-[var(--color-primary)]">{guide.title}</a>)}</div></section>}

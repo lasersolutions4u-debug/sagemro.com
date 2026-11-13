@@ -105,7 +105,7 @@ SAGEMRO 承接激光与金属成形设备整机厂自己做不过来的售后交
 - ${host}/topics/ — 按机型、服务形态与问题类型浏览
 - ${host}/about/ — SAGEMRO 是谁：法人实体、业务范围与服务边界
 - ${host}/about/technical-review/ — 技术内容审核政策
-- ${host}/contact/ — 邮箱、电话、工作时段（UTC+8）、回复时效与运营主体
+- ${host}/contact/ — 邮箱、工作时段（UTC+8）、回复时效、注册地址与运营主体
 - ${host}/refund-policy/ — 付款、取消与退款政策（30% 预付 / 70% 验收后付、取消分档、退款时效）
 
 ## 适用范围
@@ -154,7 +154,7 @@ stated in the written quotation issued by SAGEMRO LLC.
 - ${host}/topics/ — browse service and technical content by topic
 - ${host}/about/ — who SAGEMRO is: legal entity, scope, and service boundaries
 - ${host}/about/technical-review/ — technical content review policy
-- ${host}/contact/ — email, phone, working hours (UTC+8), response time, and the invoicing entity
+- ${host}/contact/ — email, working hours (UTC+8), response time, the registered office, and the invoicing entity
 - ${host}/refund-policy/ — payment, cancellation, and refund policy (30% deposit, 70% on acceptance)
 
 ## Scope

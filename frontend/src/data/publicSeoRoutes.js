@@ -183,17 +183,15 @@ function contactPage(locale) {
   const registeredOffice = entity.address?.formatted;
   const sections = isCn
     ? [
-      { heading: '邮箱', body: `${SUPPORT_EMAIL}。邮件直接进入服务团队。请一并提供设备型号、报警原文，以及铭牌或故障件的照片；请勿发送图纸、密码等敏感信息。` },
-      { heading: '回复时效', body: '所有咨询在一个工作日内回复，法定节假日不计入。需要安排现场方案的请求会更久，因为可用性要在设备、地点与工程师匹配情况核实之后才能确认。' },
-      { heading: '我们在哪里', body: `服务团队、备件库与车间都在山东济南（${SUPPORT_TIMEZONE_SHORT}），工作时间为周一至周五 09:00–18:00，服务按此时间协调。国内按地区安排上门；出口设备按国家与项目逐案确认现场资源。完整通信地址印在合同与发票上，也可通过邮件索取。` },
+      { heading: '怎么联系我们、多久回复', body: `${SUPPORT_EMAIL} 直接进入服务团队，并留下书面记录。所有咨询在一个工作日内回复，不含法定节假日；团队工作时间为周一至周五 09:00–18:00（中国标准时间 ${SUPPORT_TIMEZONE_SHORT}）。请一并提供设备型号、报警原文，以及铭牌或故障件的照片；请勿发送图纸、密码等敏感信息。` },
+      { heading: '我们在哪里', body: `服务团队、备件库与车间都在山东济南（${SUPPORT_TIMEZONE_SHORT}），服务按中国工作时间协调。国内按地区安排上门；出口设备按国家与项目逐案确认现场资源。完整通信地址印在合同与发票上，也可通过邮件索取。` },
       { heading: '本站由谁运营、由谁开票', body: `${entity.operatingEntityStatement} 国内业务的发票由本公司开出，收款信息印在发票上，不在本页公布。` },
       { heading: '询价需要提供什么', body: '请提供设备型号、设备所在国家或地区，以及故障现象或零件号。书面报价会逐项列明服务范围、差旅、备件与结算方式，并在开工前发出。' },
       { heading: '备件与交换件', body: '备件按零件号逐项报价。故障件会导致停产时，可以先发可用件、坏件回收维修；押金按件值收取，回收件检测合格后退还。' },
     ]
     : [
-      { heading: 'Email', body: `${SUPPORT_EMAIL}. This reaches the service team directly and leaves a written record of the request. Include the machine model, the alarm text, and a photo of the machine label or the failed part if you have them. Do not send drawings, passwords, or other secrets.` },
-      { heading: 'Response time', body: 'Requests are answered within one business day, excluding public holidays. A request that needs an on-site plan takes longer, because availability is confirmed after the equipment, the location, and the engineer fit have been reviewed.' },
-      { heading: 'Where we are', body: `The registered office is ${registeredOffice}. The service team, the parts stock, and the workshop are in Jinan, Shandong, China (${SUPPORT_TIMEZONE_SHORT}); the team works Monday to Friday, 09:00–18:00, and service engineers are dispatched from there. Note the time difference when you write.` },
+      { heading: 'How to reach us, and how fast we answer', body: `${SUPPORT_EMAIL} reaches the service team directly and leaves a written record of the request. Replies go out within one business day, excluding public holidays; the team works Monday to Friday, 09:00–18:00 China Standard Time (${SUPPORT_TIMEZONE_SHORT}). Include the machine model, the alarm text, and a photo of the machine label or the failed part if you have them; do not send drawings, passwords, or other secrets.` },
+      { heading: 'Where we are', body: `The registered office is ${registeredOffice}. The service team, the parts stock, and the workshop are in Jinan, Shandong, China (${SUPPORT_TIMEZONE_SHORT}). Note the time difference when you write; the reply arrives in your inbox, not at a phone.` },
       { heading: 'Who operates this site and who invoices you', body: `${entity.operatingEntityStatement} Invoices for overseas work are issued in US dollars by SAGEMRO LLC, and the payment details are printed on the invoice itself rather than published on this page.` },
       { heading: 'What to send with a quotation request', body: 'Send the machine model, the site country, and the symptom or the part number. The written quotation itemizes service scope, travel, parts, and the settlement basis, and it is issued before any work starts.' },
       { heading: 'Parts and exchange units', body: 'Part orders are quoted per part number. Where a failed part stops production, an exchange unit can be shipped first and the returned unit repaired afterwards; a deposit equal to the unit value is held until the returned unit has been inspected.' },
@@ -210,8 +208,8 @@ function contactPage(locale) {
     body: {
       h1: isCn ? '联系 SAGEMRO：设备维修、备件与报价' : 'Contact SAGEMRO about service, parts, and quotations.',
       paragraphs: [isCn
-        ? 'SAGEMRO 承接激光切割机与折弯机的维修、保养、备件与整机厂售后外包。请通过邮箱或咨询表单联系我们，一个工作日内回复（不含法定节假日）；需要现场方案的请求会先做可行性确认。'
-        : 'SAGEMRO takes repair, maintenance, spare-parts, and after-sales outsourcing requests for laser cutting machines and press brakes. Write to us or send the consultation form and a reply follows within one business day; a request that needs an on-site visit gets a feasibility check first.'],
+        ? '激光切割机与折弯机的维修、保养、备件与整机厂售后外包。'
+        : 'Repair, maintenance, spare parts, and after-sales outsourcing for laser cutting machines and press brakes.'],
       sections,
       links: [
         { href: `mailto:${SUPPORT_EMAIL}`, label: SUPPORT_EMAIL },
@@ -247,12 +245,27 @@ function refundPolicyPage(locale) {
   const isCn = locale === 'zh-CN';
   const billing = getServiceBilling(locale);
   const p = billing.page;
-  const sections = [p.quote, p.deposit, p.customerCancellation, p.ourCancellation, p.refunds, p.workmanship, p.warrantyBoundary, p.dispute]
-    .map((section) => ({
-      heading: section.heading,
-      body: section.body,
-      ...(section.items ? { items: [...section.items] } : {}),
-    }));
+  // 章节锚点：审核方、争议邮件与 AI 引用都需要能指到某一节（/refund-policy/#refunds）。
+  const anchors = ['quotation-first', 'deposit-and-balance', 'cancellation', 'cancellation-by-sagemro', 'refunds', 'workmanship-warranty', 'maker-warranty', 'dispute'];
+  const sections = [
+    // 首屏的四个数字：壳里渲染成列表，客户端渲染成卡片（同一份 glance 数据）。
+    {
+      heading: isCn ? '一页看全' : 'At a glance',
+      body: isCn
+        ? '四个数字决定了大多数问题：付多少、什么时候付、取消怎么算、退款多久到账。详细条款在下面各节。'
+        : 'Four numbers decide most of the questions: what is due, when it is due, what a cancellation costs, and how fast a refund lands. The clauses behind them follow below.',
+      items: p.glance.map((item) => `${item.label}: ${item.value} — ${item.note}`),
+      anchor: 'at-a-glance',
+      variant: 'stats',
+    },
+    ...[p.quote, p.deposit, p.customerCancellation, p.ourCancellation, p.refunds, p.workmanship, p.warrantyBoundary, p.dispute]
+      .map((section, index) => ({
+        heading: section.heading,
+        body: section.body,
+        ...(section.items ? { items: [...section.items] } : {}),
+        anchor: anchors[index],
+      })),
+  ];
 
   return route(locale, {
     path: '/refund-policy',
@@ -302,16 +315,55 @@ function technicalTeamOrganization(locale) {
   };
 }
 
-function breadcrumb(routeValue) {
+/**
+ * 面包屑的显示名。
+ *
+ * 以前直接用 URL 段当名字（"refund-policy"、"laser-cutting-machine-repair"），
+ * 于是 SERP 里的层级是连字符小写串，且没有首页这一项。现在按段给显示名，
+ * 并在第一位补上站点本身——URL 形状不变，只改可读性。
+ */
+const BREADCRUMB_LABELS = {
+  en: {
+    services: 'Services',
+    tools: 'Tools',
+    insights: 'Insights',
+    about: 'About',
+    topics: 'Browse by topic',
+    partners: 'Dealers and partners',
+    contact: 'Contact',
+    'refund-policy': 'Payment and refund policy',
+    'technical-review': 'Technical review',
+  },
+  'zh-CN': {
+    services: '服务项目',
+    tools: '实用工具',
+    insights: '技术洞察',
+    about: '关于我们',
+    topics: '按主题浏览',
+    partners: '渠道合作',
+    contact: '联系我们',
+    'refund-policy': '付款与退款',
+    'technical-review': '技术审核',
+  },
+};
+
+function breadcrumb(routeValue, locale = 'en') {
+  const labels = BREADCRUMB_LABELS[locale === 'zh-CN' ? 'zh-CN' : 'en'];
   const parts = routeValue.path.split('/').filter(Boolean);
   const origin = new URL(routeValue.canonical).origin;
+  const items = [
+    { name: locale === 'zh-CN' ? 'SAGEMRO 首页' : 'SAGEMRO', item: `${origin}/` },
+    ...parts.map((part, index) => ({
+      name: labels[part] ?? part,
+      item: `${origin}/${parts.slice(0, index + 1).join('/')}/`,
+    })),
+  ];
   return {
     '@type': 'BreadcrumbList',
-    itemListElement: parts.map((part, index) => ({
+    itemListElement: items.map((entry, index) => ({
       '@type': 'ListItem',
       position: index + 1,
-      name: part,
-      item: `${origin}/${parts.slice(0, index + 1).join('/')}/`,
+      ...entry,
     })),
   };
 }
@@ -366,7 +418,7 @@ function withSchemaGraphs(routes, locale) {
         '@graph': [
           ...(routeValue.path === '/'
             ? [schemaOrganization, routeValue.structuredData]
-            : [routeValue.structuredData, breadcrumb(routeValue), schemaOrganization]),
+            : [routeValue.structuredData, breadcrumb(routeValue, locale), schemaOrganization]),
           ...extra,
         ],
       },

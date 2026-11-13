@@ -42,31 +42,31 @@ export function AboutPage({ pathname = '/about', onOpenLegal }) {
   return (
     <PublicSiteShell isCn={locale === 'zh-CN'} onOpenLegal={onOpenLegal}>
       <section className="border-b border-[#e6dccf] bg-[#f7f3ed] px-5 py-14 md:py-20">
-        <div className="mx-auto max-w-[1240px] lg:px-3">
+        <div className="mx-auto max-w-[1240px] lg:px-8">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#92400e]">{labels.eyebrow}</p>
           <h1 className="mt-4 max-w-4xl text-3xl font-semibold leading-[1.15] tracking-[-0.03em] text-[#21160c] md:text-4xl">
             {route.body.h1}
           </h1>
-          <p className="mt-5 max-w-3xl text-base leading-8 text-[#6b5a48]">{(route.body.paragraphs ?? [])[0]}</p>
+          <p className="mt-5 max-w-3xl text-base leading-[1.7] text-[#6b5a48]">{(route.body.paragraphs ?? [])[0]}</p>
         </div>
       </section>
 
       <section className="bg-[#fffdf8] px-5 py-12 md:py-16">
-        <div className="mx-auto max-w-[1240px] lg:px-3">
+        <div className="mx-auto max-w-[1240px] lg:px-8">
           {/* 用 h2 + p 而不是 dl/dt/dd：这几节本质是章节标题，不是术语-释义对。
               用 dl 会让渲染后的页面一个标题都没有（静态壳里有 6 个 h2），
               可见页面与爬虫视图的层级就对不上了。 */}
-          <div className="grid gap-x-10 gap-y-8 md:grid-cols-2">
+          <div className="grid gap-x-12 gap-y-10 md:grid-cols-2">
             {(route.body.sections ?? []).map((section) => (
               <section key={section.heading}>
-                <h2 className="text-base font-semibold text-[#21160c]">{section.heading}</h2>
-                <p className="mt-3 text-sm leading-7 text-[#6b5a48]">{section.body}</p>
+                <h2 className="text-xl font-semibold leading-[1.3] tracking-[-0.01em] text-[#21160c]">{section.heading}</h2>
+                <p className="mt-3 text-sm leading-[1.7] text-[#6b5a48]">{section.body}</p>
               </section>
             ))}
           </div>
         </div>
 
-        <div className="mx-auto mt-12 flex flex-wrap gap-x-5 gap-y-2 max-w-[1240px] lg:px-3">
+        <div className="mx-auto mt-12 flex flex-wrap gap-x-5 gap-y-2 max-w-[1240px] lg:px-8">
           <a href="/" className="text-sm font-semibold text-[#2d2116] underline decoration-[#c9b9a5] underline-offset-4 transition-colors hover:text-[#92400e]">
             {labels.back}
           </a>

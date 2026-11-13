@@ -41,24 +41,28 @@ export function PublicSiteShell({ children, isCn, onOpenLegal }) {
             </span>
           </a>
 
-          <nav className="order-3 flex w-full items-center gap-1 overflow-x-auto border-t border-[#e6dccf] pt-2 md:order-2 md:w-auto md:border-0 md:pt-0" aria-label={isCn ? '主导航' : 'Main navigation'}>
+          <nav className="order-3 flex w-full items-center gap-0.5 overflow-x-auto border-t border-[#e6dccf] pt-2 md:order-2 md:w-auto md:border-0 md:pt-0" aria-label={isCn ? '主导航' : 'Main navigation'}>
             {navigation[market].map(([label, href]) => (
-              <a key={href} href={href} className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#92400e]">
+              // 手机宽度只放得下四项：主题聚合页（/topics/）是给爬虫与桌面浏览用的
+              // 内容入口，在窄屏让位给 Contact——联系页的入口不该被挤出屏幕外。
+              <a key={href} href={href} className={`flex min-h-11 shrink-0 items-center px-2 text-[0.8125rem] font-medium text-[#5f5142] transition-colors hover:text-[#92400e] sm:px-3 sm:text-sm ${href === '/topics/' ? 'hidden sm:flex' : ''}`}>
                 {label}
               </a>
             ))}
             {isCn ? (
-              <span aria-disabled="true" title="购物链接准备中" className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#a39686]">
+              <span aria-disabled="true" title="购物链接准备中" className="hidden min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#a39686] sm:flex">
                 商城（筹备中）
               </span>
             ) : (
-              <a href={INTERNATIONAL_STORE_URL} target="_blank" rel="noopener noreferrer" className="flex min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#92400e]">
+              // 手机宽度的导航放不下六项：Store 留在下方联系栏里，这里只在 sm 以上显示，
+              // 否则 Contact 会被挤到横向滚动区域之外——联系页的入口反而看不见。
+              <a href={INTERNATIONAL_STORE_URL} target="_blank" rel="noopener noreferrer" className="hidden min-h-11 shrink-0 items-center px-3 text-sm font-medium text-[#5f5142] transition-colors hover:text-[#92400e] sm:flex">
                 Store
               </a>
             )}
           </nav>
 
-          <a href={portalHref} className="order-2 flex min-h-11 items-center rounded-lg border border-[#d97706] bg-[#f59e0b] px-4 text-sm font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24] md:order-3">
+          <a href={portalHref} className="order-2 flex min-h-9 items-center rounded-lg border border-[#d97706] bg-[#f59e0b] px-3 text-xs font-semibold text-[#21160c] shadow-sm transition-colors hover:bg-[#fbbf24] sm:min-h-11 sm:px-4 sm:text-sm md:order-3">
             {isCn ? '客户服务系统' : 'Customer service system'}
           </a>
         </div>
