@@ -120,7 +120,8 @@ test('the maintenance page is dependency-free, accessible and gives a way to rea
     assert.doesNotMatch(html, /<script|<img|<link\b|<iframe/);
     assert.match(html, /<h1>/);
     assert.match(decodeEntities(html), /href="mailto:support@sagemro\.com"/);
-    assert.match(html, /href="tel:\+8618615584520"/);
+    // 运维要求维护页只留邮箱：电话已下线，别在改版时又加回来。
+    assert.doesNotMatch(html, /tel:|1558 4520/);
     assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
     // Text has to be real copy, not a placeholder shipped to customers.
     assert.doesNotMatch(html, /TODO|Lorem ipsum|placeholder/i);

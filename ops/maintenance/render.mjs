@@ -27,8 +27,6 @@ export const MODE_FILE = join(MAINTENANCE_DIR, 'mode.json');
 export const WORKER_FILE = '_worker.js';
 
 export const SUPPORT_EMAIL = 'support@sagemro.com';
-export const SUPPORT_PHONE_DISPLAY = '+86 186 1558 4520';
-export const SUPPORT_PHONE_TEL = '+8618615584520';
 
 /**
  * The zone's email obfuscation rewrites every literal `mailto:` anchor into
@@ -110,7 +108,6 @@ p{margin:0 0 16px;color:#3d424c}
 .urgent{margin:24px 0 0;padding:18px 20px;background:#f7f8fa;border:1px solid #e3e6eb;border-radius:10px}
 .urgent p{margin:0 0 8px;font-size:14px;font-weight:600;color:#17191f}
 .urgent p:last-child{margin:0;font-weight:400;color:#3d424c}
-.urgent a{display:inline-block}
 a{color:#0b4fd1;text-decoration:none;border-bottom:1px solid rgba(11,79,209,.3)}
 a:hover{border-bottom-color:currentColor}
 a:focus-visible{outline:2px solid #0b4fd1;outline-offset:3px;border-radius:3px}
@@ -141,7 +138,7 @@ export function renderMaintenancePage(lang = 'en') {
 <div class="urgent">
 <p>${copy.urgentLabel}</p>
 <!--email_off-->
-<p><a href="${MAILTO_SCHEME_HTML}:${SUPPORT_EMAIL_HTML}">${SUPPORT_EMAIL_HTML}</a><br><a href="tel:${SUPPORT_PHONE_TEL}">${SUPPORT_PHONE_DISPLAY}</a></p>
+<p><a href="${MAILTO_SCHEME_HTML}:${SUPPORT_EMAIL_HTML}">${SUPPORT_EMAIL_HTML}</a></p>
 <!--/email_off-->
 </div>
 <footer>${copy.note}</footer>
