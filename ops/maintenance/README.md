@@ -1,0 +1,99 @@
+# 站点临时关闭 / 全站维护开关
+
+一个开关控制 COM 三个站点的页面级停机；CN 的四个站点由 ECS 上的 nginx 提供，用同一份维护页片段手工暂停（见第三节）。
+
+## 一眼看懂
+
+| 站点 | 平台 | 关：怎么关 | 开：怎么开 |
+| --- | --- | --- | --- |
+| sagemro.com / www | Cloudflare Pages `sagemro-com` | push `main`（公开站无审批，测试通过即发） | 同左，改回开关 |
+| ai.sagemro.com | Cloudflare Pages `sagemro-ai` | push `main` + 在 Actions 批准 `deploy-ai-frontend` | 同左 |
+| admin.sagemro.com | Cloudflare Pages `sagemro-admin` | push `main` + 在 Actions 批准 `deploy-admin` | 同左 |
+| sagemro.cn / www | 阿里云 ECS nginx | ECS 上贴 nginx 片段（第三节） | 删掉片段后 reload |
+| ai / admin / engineer.sagemro.cn | 阿里云 ECS nginx | 同上 | 同上 |
+| api.sagemro.com / api.sagemro.cn | 共享 Worker | Actions 手动 dispatch `deploy-maintenance` | 重新部署正常 Worker 入口 |
+
+## 一、开关在哪
+
+`ops/maintenance/mode.json`：
+
+```json
+{ "enabled": true }
+```
+
+- 构建时（`frontend/scripts/runBuild.mjs` 与 `admin` 的 `npm run build`）读取它。
+- `enabled: true` → 往构建产物根目录写 `_worker.js`；Cloudflare Pages 直传时，产物根目录的 `_worker.js` 会接管该 Pages 项目的**全部**请求（Pages「高级模式」），于是任何路径、任何方法都返回 `503` + 维护页。
+- `enabled: false` → 不写该文件，并清掉可能残留的旧副本（防止「上一次暂停」被后续发布带上去）。
+- 产物目录（`frontend/dist`、`frontend/dist-portal`、`admin/dist`）都已在 `.gitignore` 中，`_worker.js` 是生成物，不进 Git。
+- 开关 JSON 写坏（非法 JSON / 缺 `enabled`）会让构建**直接失败**：宁可发不出去，也不能在计划停机上把站点重新放开。
+
+> 因此 `deploy.yml` 一行都不用改：发布链路本来就会执行这些构建命令。
+
+## 二、COM：关闭与恢复
+
+关闭：
+
+1. 把 `ops/maintenance/mode.json` 的 `enabled` 设为 `true`（本次就是）。
+2. 提交并 push `main`。
+3. 等 `Test & Build Verify` 通过：
+   - `deploy-frontend` 自动发布 → **sagemro.com 立刻进入维护态，无需任何人点按钮**。
+   - `deploy-ai-frontend`、`deploy-admin` 声明了 `environment: production`，需要在 Actions 里**批准**才会发。不批准，这两个站就仍然对外正常——想让它们也停，就必须点批准。
+
+恢复：把 `enabled` 改成 `false`，push，等上面三个 Pages 部署都完成。恢复同样需要批准 ai/admin 两个 job。
+
+验证：
+
+```bash
+curl -sI https://sagemro.com/ | head -1            # 期望 HTTP/2 503
+curl -s  https://sagemro.com/ | grep -o 'The site is temporarily paused'
+curl -sI https://ai.sagemro.com/ | head -1         # 期望 503
+curl -sI https://admin.sagemro.com/ | head -1      # 期望 503
+```
+
+维护页响应头：`Cache-Control: no-store`（恢复后立刻可见，不会卡在浏览器或 CDN）、`Retry-After: 3600`、`X-Robots-Tag: noindex, nofollow, noarchive`。`.cn` 域名自动出中文页，`.com` 出英文页。
+
+## 三、CN：在 ECS 上暂停 nginx
+
+CN 的页面由阿里云 ECS 上的 nginx 提供，**配置只存在于服务器上，不在本仓库、也不由任何 workflow 管理**，所以上面的开关对 CN 完全无效（`_worker.js` 在 nginx 下只是个没人执行的静态文件）。
+
+在 ECS 上：
+
+1. 备份：`sudo cp -a /etc/nginx /var/backups/nginx-$(date +%F-%H%M)`
+2. 对每个 443 server 块（`sagemro.cn` / `www` / `ai` / `admin` / `engineer`），从 `ops/maintenance/cn/pause-snippet.nginx.txt` 复制标记块三行粘进去（紧跟 `server {` 之后）。
+3. 校验并生效：
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+4. 验证：
+
+```bash
+for h in sagemro.cn ai.sagemro.cn admin.sagemro.cn engineer.sagemro.cn; do
+  printf '%s ' "$h"; curl -sI "https://$h/" | head -1
+done
+```
+
+恢复（删除标记块）：
+
+```bash
+sudo sed -i '/# >>> sagemro-maintenance >>>/,/# <<< sagemro-maintenance <<</d' /etc/nginx/sites-enabled/<对应文件>
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+注意：
+
+- `return` 在同一个 server 块里只能写一次。`nginx -t` 报 `return directive is duplicate` 说明该块本来就有 server 级 `return`（一般是 80→443 跳转块），跳过它即可。
+- **暂停期间不要 dispatch `Deploy China Edition to Aliyun ECS`**：它的健康检查要求四个站点返回 200，会失败并触发符号链接回滚（nginx 仍保持 503，等于白跑一次发布）。
+- `api.sagemro.cn` 的 server 块是反代，别往里贴维护片段。
+
+## 四、API（两个市场一起停）
+
+沿用既有机制，不要另造一套：Actions → `Deploy to Cloudflare` → Run workflow，输入确认词 `PAUSE_COM_CN` 与当前 `main` 的完整 SHA。该 job 会把共享 Worker 入口换成 `worker/src/maintenance.js`，`api.sagemro.com` 与 `api.sagemro.cn` 同时返回 `503 {"code":"MAINTENANCE"}`。操作细节与四重守卫见 `DEPLOY.md` 3.6 节。
+
+## 五、注意事项
+
+- **关掉 admin 等于把你自己锁在知识中枢外面**：恢复要靠一次 push + 一次审批，不能从页面里点。
+- 搜索引擎看到的是 `503`（临时不可用），不是 `404` 或域名消失；恢复后正常重新抓取，不需要重新提交 sitemap。
+- 本开关只影响页面与响应码，不动 D1 数据、不动 Worker 业务代码、不动 DNS。
+- 恢复时务必确认三个 Pages 项目都发布了新版本：只改 JSON 不推代码等于没关，只推代码不批准等于 ai/admin 还开着。

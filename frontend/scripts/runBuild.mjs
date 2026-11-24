@@ -3,6 +3,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
+import { applyMaintenanceArtifact } from '../../ops/maintenance/render.mjs';
 import { buildPortalPages } from './buildPortalPages.mjs';
 import { buildPublicPages } from './buildPublicPages.mjs';
 import { MARKETS, copyMarketAssets, resolveMarket } from './markets.mjs';
@@ -35,6 +36,10 @@ export async function runBuild(target, market = resolveMarket(process.env.SAGEMR
   } else {
     await buildPublicPages({ distDir, locale });
   }
+
+  // Site-wide pause (ops/maintenance/mode.json). While it is on, the Pages artifact
+  // ships a `_worker.js` that answers every request with the maintenance page.
+  await applyMaintenanceArtifact(distDir);
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';

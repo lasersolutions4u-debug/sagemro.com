@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node ../ops/maintenance/apply.mjs dist",
     "test": "node --test src/App.lazy-loading.test.mjs src/config/runtime.test.mjs src/utils/asyncTimeout.test.mjs src/utils/csv.test.mjs src/utils/xlsxToArticles.test.mjs src/pages/LoginPage.test.mjs src/pages/KnowledgePage.test.mjs src/pages/KnowledgeCandidatesPage.test.mjs src/pages/StaffAccountsPage.test.mjs src/pages/staffAccountList.test.mjs src/pages/load-error-states.test.mjs src/services/cookie-auth-contract.test.mjs",
     "preview": "vite preview"
   },

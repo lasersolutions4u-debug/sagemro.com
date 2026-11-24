@@ -58,6 +58,8 @@
 
 另有 `deploy-maintenance`（job 名「Pause COM and CN API for approved maintenance」）**只在手动触发时运行**：它把共享 Worker 的入口换成 `worker/src/maintenance.js`，令 `api.sagemro.com` 与 `api.sagemro.cn` **同时**返回维护态。四重守卫与操作步骤见 3.6 节。**push 触发的发布永远不会运行它**——因此它在 push run 里显示为「跳过」是正常状态；若哪天它在 push 上变成了 ✓，那意味着两个市场的 API 已被主动暂停。
 
+**页面级停机是另一套机制**：`ops/maintenance/mode.json` 的 `enabled` 一旦为 `true`，前端与后台构建会往产物根目录写 `_worker.js`，Cloudflare Pages（高级模式）据此把**该项目的所有请求**答成 `503` + 维护页；CN 的 nginx 站点不在 CI 管辖范围内，需要在 ECS 上贴 `ops/maintenance/cn/pause-snippet.nginx.txt`。开关、恢复步骤与两端校验命令见 `ops/maintenance/README.md`。两套机制互相独立：API 维护不关闭页面，页面维护也不关闭 API。
+
 ### 1.4 AI 子域名发布顺序与回滚门禁
 
 首次切换及包含结构化服务请求的发布必须按以下顺序执行：
