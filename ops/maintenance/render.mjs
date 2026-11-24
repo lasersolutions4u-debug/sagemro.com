@@ -31,6 +31,18 @@ export const SUPPORT_PHONE_DISPLAY = '+86 186 1558 4520';
 export const SUPPORT_PHONE_TEL = '+8618615584520';
 
 /**
+ * The zone's email obfuscation rewrites every literal `mailto:` anchor into
+ * `/cdn-cgi/l/email-protection#…` and prints `[email protected]` instead — and the
+ * Worker answers that path with 503, so the only human contact on the maintenance
+ * page would be dead. The `email_off` markers are not preserved through this zone,
+ * so the address is entity-encoded instead: browsers decode `&#109;ailto:…&#64;…`
+ * into a working link, while the rewriter, which matches the raw markup, sees
+ * neither a `mailto:` scheme nor an `address@domain` token.
+ */
+export const SUPPORT_EMAIL_HTML = SUPPORT_EMAIL.replace('@', '&#64;');
+const MAILTO_SCHEME_HTML = '&#109;ailto';
+
+/**
  * @typedef {{ enabled: boolean, updatedAt?: string, reason?: string }} MaintenanceMode
  */
 
@@ -128,7 +140,9 @@ export function renderMaintenancePage(lang = 'en') {
 <p>${copy.lead}</p>
 <div class="urgent">
 <p>${copy.urgentLabel}</p>
-<p><a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a><br><a href="tel:${SUPPORT_PHONE_TEL}">${SUPPORT_PHONE_DISPLAY}</a></p>
+<!--email_off-->
+<p><a href="${MAILTO_SCHEME_HTML}:${SUPPORT_EMAIL_HTML}">${SUPPORT_EMAIL_HTML}</a><br><a href="tel:${SUPPORT_PHONE_TEL}">${SUPPORT_PHONE_DISPLAY}</a></p>
+<!--/email_off-->
 </div>
 <footer>${copy.note}</footer>
 </main>

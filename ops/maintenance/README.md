@@ -93,6 +93,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## 五、注意事项
 
+- **维护页上的邮箱必须保持实体编码**：Cloudflare 的邮箱混淆会把字面量 `mailto:` 与 `address@domain` 改写成 `/cdn-cgi/l/email-protection#…`、可见文字换成 `[email protected]`；而 Worker 对该路径同样返回 503，等于把维护页唯一的邮箱联系方式变成死链。这个 zone 连 `<!--email_off-->` 标记都会吃掉（实测），所以 `render.mjs` 用 `&#109;ailto:…&#64;…` 实体编码：浏览器照常解析成可点的 mailto，混淆器在原始标记里既看不到 scheme 也看不到地址。`frontend/tests/maintenance-mode.test.mjs` 会守住这条，改页面文案时别把邮箱写回字面量。
 - **关掉 admin 等于把你自己锁在知识中枢外面**：恢复要靠一次 push + 一次审批，不能从页面里点。
 - 搜索引擎看到的是 `503`（临时不可用），不是 `404` 或域名消失；恢复后正常重新抓取，不需要重新提交 sitemap。
 - 本开关只影响页面与响应码，不动 D1 数据、不动 Worker 业务代码、不动 DNS。

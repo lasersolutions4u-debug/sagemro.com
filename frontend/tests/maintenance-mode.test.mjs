@@ -16,6 +16,9 @@ import {
 
 const repoFile = (relativePath) => readFile(new URL(`../../${relativePath}`, import.meta.url), 'utf8');
 
+/** Resolve numeric HTML entities the way a browser would before following a link. */
+const decodeEntities = (value) => value.replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)));
+
 /**
  * Load the generated Pages Worker as a real module so the deployed behaviour is
  * exercised, not just its source text.
@@ -116,11 +119,27 @@ test('the maintenance page is dependency-free, accessible and gives a way to rea
     assert.doesNotMatch(html, /https?:\/\//);
     assert.doesNotMatch(html, /<script|<img|<link\b|<iframe/);
     assert.match(html, /<h1>/);
-    assert.match(html, /href="mailto:support@sagemro\.com"/);
+    assert.match(decodeEntities(html), /href="mailto:support@sagemro\.com"/);
     assert.match(html, /href="tel:\+8618615584520"/);
     assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
     // Text has to be real copy, not a placeholder shipped to customers.
     assert.doesNotMatch(html, /TODO|Lorem ipsum|placeholder/i);
+  }
+});
+
+test('the contact link survives Cloudflare email obfuscation', async () => {
+  // The zone rewrites every literal mailto:/address@domain into
+  // /cdn-cgi/l/email-protection#… and prints "[email protected]" instead. The Worker
+  // 503s that path, so a literal address would leave the maintenance page with a dead
+  // contact link — the one thing the page exists to provide.
+  const worker = await loadMaintenanceWorker();
+  for (const url of ['https://sagemro.com/', 'https://sagemro.cn/']) {
+    const html = await (await worker.fetch(new Request(url))).text();
+    assert.doesNotMatch(html, /mailto:/, `${url} must not ship a literal mailto: scheme`);
+    assert.doesNotMatch(html, /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/, `${url} must not ship a literal address`);
+    const decoded = decodeEntities(html);
+    assert.match(decoded, /<a href="mailto:support@sagemro\.com">/, url);
+    assert.match(decoded, />support@sagemro\.com<\/a>/, url);
   }
 });
 
