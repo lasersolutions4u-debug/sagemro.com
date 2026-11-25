@@ -123,6 +123,8 @@ test('the maintenance page is dependency-free, accessible and gives a way to rea
     // 运维要求维护页只留邮箱：电话已下线，别在改版时又加回来。
     assert.doesNotMatch(html, /tel:|1558 4520/);
     assert.match(html, /<meta name="viewport" content="width=device-width, initial-scale=1">/);
+    // 运维要求维护页不提 AI 助手：文案只说网站停机，别把 AI 服务范围写进对外通告。
+    assert.doesNotMatch(html, /AI assistant|AI 助手/);
     // Text has to be real copy, not a placeholder shipped to customers.
     assert.doesNotMatch(html, /TODO|Lorem ipsum|placeholder/i);
   }
