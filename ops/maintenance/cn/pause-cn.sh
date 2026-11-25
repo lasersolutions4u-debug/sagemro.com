@@ -25,7 +25,7 @@ MODE="${1:-}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/sagemro-nginx}"
-MANIFEST="${MANIFEST:-$BACKUP_DIR/last-change.txt}"
+MANIFEST="${MANIFEST:-$BACKUP_DIR/last-change.json}"
 HOSTS=(sagemro.cn www.sagemro.cn ai.sagemro.cn admin.sagemro.cn engineer.sagemro.cn)
 
 case "$MODE" in
@@ -82,7 +82,7 @@ if ! $SUDO tar -czf "$BACKUP" -C /etc nginx; then
 fi
 echo "backup: $BACKUP"
 
-edit "$MODE" --manifest "$MANIFEST"
+edit "$MODE" --manifest "$MANIFEST" --backup-dir "$BACKUP_DIR/files-$STAMP"
 rc=$?
 if [ "$rc" -ne 0 ]; then
   echo "error: the nginx editor failed (${rc}); nothing was reloaded" >&2
@@ -121,9 +121,8 @@ if ! verify "$expected"; then
   exit 1
 fi
 
-# The per-file backups have served their purpose; the tarball above remains.
-$SUDO find /etc/nginx -name '*.sagemro-bak' -delete 2>/dev/null || true
-
+# Per-file backups live outside /etc/nginx (an in-tree copy would be loaded as a
+# duplicate config); the tarball above and files-$STAMP are the recovery points.
 if [ "$MODE" = "on" ]; then
   echo "done: China sites are paused (503). Restore with: $0 off"
 else

@@ -13,7 +13,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -61,6 +61,7 @@ server {
     listen 443 ssl http2;
     server_name admin.sagemro.cn;
     root /var/www/sagemro-cn/current/admin;
+    location = /healthz { return 200 "ok"; }
     location / { try_files $uri /index.html; }
 }
 `,
@@ -116,13 +117,22 @@ function makeTree(t) {
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, content, 'utf8');
   }
-  return { root, nginxRoot, manifest: join(root, 'backups', 'last-change.txt') };
+  return { root, nginxRoot, manifest: join(root, 'backups', 'last-change.json') };
 }
 
 function run(mode, tree) {
   const result = spawnSync(
     python,
-    [script, mode, '--root', tree.nginxRoot, '--manifest', tree.manifest],
+    [
+      script,
+      mode,
+      '--root',
+      tree.nginxRoot,
+      '--manifest',
+      tree.manifest,
+      '--backup-dir',
+      join(tree.root, 'backups', 'files'),
+    ],
     { encoding: 'utf8' },
   );
   return { status: result.status, out: `${result.stdout ?? ''}${result.stderr ?? ''}` };
@@ -131,6 +141,20 @@ function run(mode, tree) {
 const read = (tree, relativePath) => readFileSync(join(tree.nginxRoot, relativePath), 'utf8');
 const snapshot = (tree) =>
   Object.fromEntries(Object.keys(FIXTURES).map((path) => [path, read(tree, path)]));
+
+/** nginx loads every file in sites-enabled, so a backup landed there is a config. */
+function inTreeBackups(tree) {
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.name.endsWith('.sagemro-bak')) found.push(full);
+    }
+  };
+  walk(tree.nginxRoot);
+  return found;
+}
 
 test('pausing CN pages patches only the blocks that declare China hostnames', (t) => {
   if (!python) return t.skip('python3 is unavailable');
@@ -163,6 +187,13 @@ test('pausing CN pages patches only the blocks that declare China hostnames', (t
 
   // The redirect block is reported, not silently ignored.
   assert.match(result.out, /server-level return already present/);
+
+  // A `return` inside a location must not block the patch: brace depth, not indentation,
+  // decides what counts as server level (this is what skipped every real block once).
+  assert.match(read(tree, 'conf.d/admin.conf'), /location = \/healthz \{ return 200 "ok"; \}/);
+
+  // No backup may land inside the tree.
+  assert.deepEqual(inTreeBackups(tree), []);
 });
 
 test('pausing twice is a no-op and keeps the config byte-identical', (t) => {
@@ -203,7 +234,19 @@ test('rollback undoes an applied pause after a failed nginx -t', (t) => {
   assert.equal(rollback.status, 0, rollback.out);
   assert.deepEqual(snapshot(tree), before);
   assert.equal(existsSync(tree.manifest), false);
-  assert.equal(existsSync(`${join(tree.nginxRoot, 'conf.d', 'admin.conf')}.sagemro-bak`), false);
+  assert.deepEqual(inTreeBackups(tree), []);
+});
+
+test('a backup left inside the nginx tree is removed before editing', (t) => {
+  if (!python) return t.skip('python3 is unavailable');
+  const tree = makeTree(t);
+  const stale = join(tree.nginxRoot, 'sites-enabled', 'old.sagemro-bak');
+  writeFileSync(stale, FIXTURES['conf.d/unrelated.conf'], 'utf8');
+
+  const result = run('on', tree);
+  assert.equal(result.status, 0, result.out);
+  assert.equal(existsSync(stale), false, 'nginx would parse it as a second server block');
+  assert.match(result.out, /removed stale in-tree backup/);
 });
 
 test('status reports which China blocks are paused', (t) => {
