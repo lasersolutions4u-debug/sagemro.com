@@ -1,6 +1,6 @@
 # 站点临时关闭 / 全站维护开关
 
-一个开关控制 COM 三个站点的页面级停机；CN 的四个站点由 ECS 上的 nginx 提供，用同一份维护页片段手工暂停（见第三节）。
+一个开关控制 COM 三个站点的页面级停机；CN 的四个站点由 ECS 上的 nginx 提供，用 `Pause or restore China sites` workflow（或同目录的脚本）暂停与恢复（见第三节）。
 
 ## 一眼看懂
 
@@ -9,7 +9,7 @@
 | sagemro.com / www | Cloudflare Pages `sagemro-com` | push `main`（公开站无审批，测试通过即发） | 同左，改回开关 |
 | ai.sagemro.com | Cloudflare Pages `sagemro-ai` | push `main` + 在 Actions 批准 `deploy-ai-frontend` | 同左 |
 | admin.sagemro.com | Cloudflare Pages `sagemro-admin` | push `main` + 在 Actions 批准 `deploy-admin` | 同左 |
-| sagemro.cn / www | 阿里云 ECS nginx | ECS 上贴 nginx 片段（第三节） | 删掉片段后 reload |
+| sagemro.cn / www | 阿里云 ECS nginx | dispatch `Pause or restore China sites`（第三节） | 同一个 workflow 选 `restore` |
 | ai / admin / engineer.sagemro.cn | 阿里云 ECS nginx | 同上 | 同上 |
 | api.sagemro.com / api.sagemro.cn | 共享 Worker | Actions 手动 dispatch `deploy-maintenance` | 重新部署正常 Worker 入口 |
 
@@ -52,40 +52,38 @@ curl -sI https://admin.sagemro.com/ | head -1      # 期望 503
 
 维护页响应头：`Cache-Control: no-store`（恢复后立刻可见，不会卡在浏览器或 CDN）、`Retry-After: 3600`、`X-Robots-Tag: noindex, nofollow, noarchive`。`.cn` 域名自动出中文页，`.com` 出英文页。
 
-## 三、CN：在 ECS 上暂停 nginx
+## 三、CN：用 workflow 或脚本暂停 nginx
 
-CN 的页面由阿里云 ECS 上的 nginx 提供，**配置只存在于服务器上，不在本仓库、也不由任何 workflow 管理**，所以上面的开关对 CN 完全无效（`_worker.js` 在 nginx 下只是个没人执行的静态文件）。
+CN 的页面由阿里云 ECS 上的 nginx 提供，**配置只存在于服务器上，不在本仓库、也不由日常发布 workflow 管理**，所以第二节的 Pages 开关对 CN 完全无效（`_worker.js` 在 nginx 下只是个没人执行的静态文件）。CN 走另一条链路，两个入口执行同一份代码：
 
-在 ECS 上：
+| 入口 | 何时用 | 怎么做 |
+| --- | --- | --- |
+| Actions → **Pause or restore China sites** | 常规 | mode 选 `pause`、确认词填 `PAUSE_CN`；恢复选 `restore` + `RESTORE_CN` |
+| ECS 上直接跑脚本 | CI 不可用 / 排查时 | `sudo bash pause-cn.sh on` / `off` / `status` |
 
-1. 备份：`sudo cp -a /etc/nginx /var/backups/nginx-$(date +%F-%H%M)`
-2. 对每个 443 server 块（`sagemro.cn` / `www` / `ai` / `admin` / `engineer`），从 `ops/maintenance/cn/pause-snippet.nginx.txt` 复制标记块三行粘进去（紧跟 `server {` 之后）。
-3. 校验并生效：
+代码：`ops/maintenance/cn/nginx_maintenance.py`（决定改什么、必须跳过什么）+ `ops/maintenance/cn/pause-cn.sh`（备份、执行、`nginx -t`、reload、校验、失败回滚）。解析与回滚行为由 `frontend/tests/cn-nginx-maintenance.test.mjs` 覆盖。
+
+执行顺序不可调换：
+
+1. 先把整个 `/etc/nginx` 打成 `/var/backups/sagemro-nginx/nginx-<UTC 时间>.tgz`，作为最后兜底。
+2. 只改**声明了** `sagemro.cn` / `www` / `ai` / `admin` / `engineer` 的 server 块；`api.sagemro.cn` 一律不动。
+3. 已经有 server 级 `return` 的块自动跳过——nginx 不允许同一上下文出现两次 `return`，硬插会让 `nginx -t` 失败（典型就是 80→443 跳转块）。`default_type` 同理，只在缺失时补。
+4. 插入带标记的三行：`default_type text/html;` + `return 503 '<维护页>';` + 结束标记。`off` 靠标记整块摘除，字节级还原原文，重复执行幂等。
+5. `nginx -t`；不通过就回滚全部改动并退出，**不 reload**。
+6. reload 后逐域名 curl 校验（暂停期望 503，恢复期望 200）；不符合同样回滚再 reload。
+7. 成功后清掉逐文件备份，tarball 保留。
+
+手动排查先看状态：
 
 ```bash
-sudo nginx -t && sudo systemctl reload nginx
-```
-
-4. 验证：
-
-```bash
-for h in sagemro.cn ai.sagemro.cn admin.sagemro.cn engineer.sagemro.cn; do
-  printf '%s ' "$h"; curl -sI "https://$h/" | head -1
-done
-```
-
-恢复（删除标记块）：
-
-```bash
-sudo sed -i '/# >>> sagemro-maintenance >>>/,/# <<< sagemro-maintenance <<</d' /etc/nginx/sites-enabled/<对应文件>
-sudo nginx -t && sudo systemctl reload nginx
+sudo bash pause-cn.sh status    # 每个中文 server 块是 PAUSED 还是 live
 ```
 
 注意：
 
-- `return` 在同一个 server 块里只能写一次。`nginx -t` 报 `return directive is duplicate` 说明该块本来就有 server 级 `return`（一般是 80→443 跳转块），跳过它即可。
 - **暂停期间不要 dispatch `Deploy China Edition to Aliyun ECS`**：它的健康检查要求四个站点返回 200，会失败并触发符号链接回滚（nginx 仍保持 503，等于白跑一次发布）。
-- `api.sagemro.cn` 的 server 块是反代，别往里贴维护片段。
+- 这个 workflow **不声明 `environment: production`**：它只能由人手动 dispatch 并输入确认词，两个方向都幂等、失败自动回滚，再叠一层审批只会让急停更慢。想加回审批就给 job 加 `environment: production`。
+- `api.sagemro.cn` 要停请走第四节，不要和页面一起停。
 
 ## 四、API（两个市场一起停）
 

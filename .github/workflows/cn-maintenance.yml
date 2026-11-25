@@ -1,0 +1,256 @@
+name: Pause or restore China sites
+
+# The China edition pages are served by nginx on the Aliyun ECS, and that configuration
+# is not in this repository. Closing those sites is therefore a remote change, and this
+# workflow is the reviewed way to make it:
+#
+#   * `ops/maintenance/cn/nginx_maintenance.py` decides what to change (and what must be
+#     skipped), with its contract covered by `frontend/tests/cn-nginx-maintenance.test.mjs`.
+#   * `ops/maintenance/cn/pause-cn.sh` wraps it: tarball backup, edit, `nginx -t`,
+#     reload, live verification, automatic rollback when any of those fail.
+#
+# Deliberate gate: this job does NOT declare `environment: production`. A dispatch with
+# a typed confirmation phrase is already an explicit human act, the job is idempotent in
+# both directions, and it rolls itself back on any failure. What it must never do is
+# reach production without someone reading the mode they selected.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'pause = close every China site with a 503 page; restore = reopen them'
+        required: true
+        type: choice
+        options:
+          - pause
+          - restore
+      confirmation:
+        description: 'Type PAUSE_CN for pause, RESTORE_CN for restore'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sagemro-cn-nginx-maintenance
+  cancel-in-progress: false
+
+jobs:
+  cn-nginx-maintenance:
+    name: Apply nginx maintenance on the China ECS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch, mode and confirmation
+        env:
+          MODE: ${{ inputs.mode }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "::error::This workflow must run from main. Current ref: ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          case "${MODE}/${CONFIRMATION}" in
+            pause/PAUSE_CN) echo "SCRIPT_MODE=on" >> "$GITHUB_ENV" ;;
+            restore/RESTORE_CN) echo "SCRIPT_MODE=off" >> "$GITHUB_ENV" ;;
+            *)
+              echo "::error::Confirmation does not match mode '${MODE}'. Nothing was changed."
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate Aliyun deploy secrets
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+          ALIYUN_ECS_SSH_KEY: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_REGION_ID: ${{ secrets.ALIYUN_REGION_ID }}
+          ALIYUN_SECURITY_GROUP_ID: ${{ secrets.ALIYUN_SECURITY_GROUP_ID }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in ALIYUN_ECS_HOST ALIYUN_ECS_PORT ALIYUN_ECS_USER ALIYUN_ECS_SSH_KEY ALIYUN_ACCESS_KEY_ID ALIYUN_ACCESS_KEY_SECRET ALIYUN_REGION_ID ALIYUN_SECURITY_GROUP_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required secret: ${name}"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Setup Aliyun CLI
+        uses: aliyun/setup-aliyun-cli-action@v1
+
+      - name: Detect GitHub runner IP
+        run: |
+          set -euo pipefail
+          runner_ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
+          if ! [[ "$runner_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unable to detect a valid IPv4 runner IP: ${runner_ip}"
+            exit 1
+          fi
+          echo "::add-mask::${runner_ip}"
+          echo "RUNNER_CIDR=${runner_ip}/32" >> "$GITHUB_ENV"
+
+      - name: Allow GitHub runner SSH
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_REGION_ID: ${{ secrets.ALIYUN_REGION_ID }}
+          ALIYUN_SECURITY_GROUP_ID: ${{ secrets.ALIYUN_SECURITY_GROUP_ID }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+        run: |
+          set -euo pipefail
+          aliyun configure set \
+            --profile sagemro-ci \
+            --mode AK \
+            --region "$ALIYUN_REGION_ID" \
+            --access-key-id "$ALIYUN_ACCESS_KEY_ID" \
+            --access-key-secret "$ALIYUN_ACCESS_KEY_SECRET"
+
+          aliyun ecs RevokeSecurityGroup \
+            --profile sagemro-ci \
+            --RegionId "$ALIYUN_REGION_ID" \
+            --SecurityGroupId "$ALIYUN_SECURITY_GROUP_ID" \
+            --IpProtocol tcp \
+            --PortRange "$ALIYUN_ECS_PORT/$ALIYUN_ECS_PORT" \
+            --SourceCidrIp "$RUNNER_CIDR" >/dev/null 2>&1 || true
+
+          aliyun ecs AuthorizeSecurityGroup \
+            --profile sagemro-ci \
+            --RegionId "$ALIYUN_REGION_ID" \
+            --SecurityGroupId "$ALIYUN_SECURITY_GROUP_ID" \
+            --IpProtocol tcp \
+            --PortRange "$ALIYUN_ECS_PORT/$ALIYUN_ECS_PORT" \
+            --SourceCidrIp "$RUNNER_CIDR" \
+            --Policy accept \
+            --Priority 1
+
+          echo "RUNNER_SSH_RULE_ADDED=true" >> "$GITHUB_ENV"
+
+      - name: Configure SSH
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+          ALIYUN_ECS_SSH_KEY: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+          ALIYUN_ECS_HOST_KEY: ${{ secrets.ALIYUN_ECS_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ALIYUN_ECS_SSH_KEY" > ~/.ssh/aliyun_ecs
+          chmod 600 ~/.ssh/aliyun_ecs
+          : > ~/.ssh/known_hosts
+          if [ -n "${ALIYUN_ECS_HOST_KEY:-}" ]; then
+            printf '%s\n' "$ALIYUN_ECS_HOST_KEY" >> ~/.ssh/known_hosts
+          else
+            set +e
+            ssh -p "$ALIYUN_ECS_PORT" \
+              -o BatchMode=yes \
+              -o PreferredAuthentications=none \
+              -o StrictHostKeyChecking=accept-new \
+              "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" true
+            set -e
+            if [ ! -s ~/.ssh/known_hosts ]; then
+              echo "::error::Unable to record the Aliyun ECS host key."
+              exit 1
+            fi
+          fi
+
+      - name: Upload maintenance scripts
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+        run: |
+          set -euo pipefail
+          scp -r -i ~/.ssh/aliyun_ecs -P "$ALIYUN_ECS_PORT" -o StrictHostKeyChecking=yes \
+            ops/maintenance/cn \
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST:/tmp/sagemro-cn-maintenance"
+
+      - name: Apply maintenance on the ECS
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" -o StrictHostKeyChecking=yes \
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" \
+            "sudo PYTHON_BIN=python3 bash /tmp/sagemro-cn-maintenance/pause-cn.sh ${SCRIPT_MODE}"
+
+      - name: Verify from the runner
+        run: |
+          set -euo pipefail
+          case "$SCRIPT_MODE" in
+            on) expected=503 ;;
+            off) expected=200 ;;
+          esac
+          failures=0
+          for host in sagemro.cn www.sagemro.cn ai.sagemro.cn admin.sagemro.cn engineer.sagemro.cn; do
+            code="$(curl -sS -L -o /dev/null -w '%{http_code}' --max-time 25 "https://${host}/" || echo 000)"
+            if [ "$code" != "$expected" ]; then
+              echo "::error::${host} returned ${code}, expected ${expected}"
+              failures=$((failures + 1))
+            else
+              echo "${host} -> ${code}"
+            fi
+          done
+          exit "$failures"
+
+      - name: Clean up uploaded scripts
+        if: always()
+        env:
+          ALIYUN_ECS_HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+          ALIYUN_ECS_USER: ${{ secrets.ALIYUN_ECS_USER }}
+        run: |
+          ssh -i ~/.ssh/aliyun_ecs -p "$ALIYUN_ECS_PORT" -o StrictHostKeyChecking=yes \
+            "$ALIYUN_ECS_USER@$ALIYUN_ECS_HOST" \
+            "rm -rf /tmp/sagemro-cn-maintenance" || true
+
+      - name: Revoke GitHub runner SSH
+        if: always()
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_REGION_ID: ${{ secrets.ALIYUN_REGION_ID }}
+          ALIYUN_SECURITY_GROUP_ID: ${{ secrets.ALIYUN_SECURITY_GROUP_ID }}
+          ALIYUN_ECS_PORT: ${{ secrets.ALIYUN_ECS_PORT }}
+        run: |
+          set -euo pipefail
+          if [ "${RUNNER_SSH_RULE_ADDED:-}" != "true" ] || [ -z "${RUNNER_CIDR:-}" ]; then
+            echo "No temporary runner SSH rule was recorded; skipping cleanup."
+            exit 0
+          fi
+
+          aliyun configure set \
+            --profile sagemro-ci \
+            --mode AK \
+            --region "$ALIYUN_REGION_ID" \
+            --access-key-id "$ALIYUN_ACCESS_KEY_ID" \
+            --access-key-secret "$ALIYUN_ACCESS_KEY_SECRET"
+
+          aliyun ecs RevokeSecurityGroup \
+            --profile sagemro-ci \
+            --RegionId "$ALIYUN_REGION_ID" \
+            --SecurityGroupId "$ALIYUN_SECURITY_GROUP_ID" \
+            --IpProtocol tcp \
+            --PortRange "$ALIYUN_ECS_PORT/$ALIYUN_ECS_PORT" \
+            --SourceCidrIp "$RUNNER_CIDR"
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "### China sites: ${SCRIPT_MODE:-unknown}"
+            echo ""
+            echo "- sagemro.cn / www / ai / admin / engineer"
+            echo "- Backups: \`/var/backups/sagemro-nginx/\`"
+            echo "- Restore: run this workflow with mode=restore and confirmation RESTORE_CN"
+          } >> "$GITHUB_STEP_SUMMARY"
